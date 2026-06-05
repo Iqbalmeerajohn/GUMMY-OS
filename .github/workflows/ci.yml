@@ -1,0 +1,147 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# GUMMY OS — Continuous Integration
+# ──────────────────────────────────────────────────────────────────────────────
+# Quality gate on every push/PR: lint, format-check, type-check, test for both
+# the FastAPI backend and the Next.js frontend (see CONVENTIONS.md §7 and
+# tech-stack.md §15).
+#
+# Phase 0 note: `frontend/` and `backend/` are placeholders today. Each job
+# guards on the presence of its manifest (package.json / pyproject.toml), so CI
+# stays GREEN now and switches on automatically the moment real code lands — no
+# workflow edit required.
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Detect which parts of the monorepo actually have code/changes ───────────
+  detect:
+    name: Detect projects
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.check.outputs.backend }}
+      frontend: ${{ steps.check.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        shell: bash
+        run: |
+          if [ -f backend/pyproject.toml ]; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "backend=false" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -f frontend/package.json ]; then
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "frontend=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ── Backend: Python + FastAPI (Ruff + Black + pytest) ───────────────────────
+  backend:
+    name: Backend (lint · types · test)
+    needs: detect
+    if: needs.detect.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Lint (Ruff)
+        run: uv run ruff check .
+
+      - name: Format check (Black)
+        run: uv run black --check .
+
+      - name: Type check (mypy)
+        run: uv run mypy .
+
+      - name: Test (pytest)
+        run: uv run pytest --maxfail=1 --disable-warnings -q
+
+  # ── Frontend: Next.js + TypeScript (ESLint + Prettier + tsc) ────────────────
+  frontend:
+    name: Frontend (lint · types · build)
+    needs: detect
+    if: needs.detect.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint (ESLint)
+        run: pnpm run lint
+
+      - name: Format check (Prettier)
+        run: pnpm run format:check
+
+      - name: Type check (tsc)
+        run: pnpm run typecheck
+
+      - name: Test
+        run: pnpm run test --if-present
+
+      - name: Build
+        run: pnpm run build
+
+  # ── Aggregate gate: a single required check for branch protection ───────────
+  ci-ok:
+    name: CI passed
+    needs: [backend, frontend]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify no job failed
+        shell: bash
+        run: |
+          # Skipped jobs (no code yet) are acceptable; failures are not.
+          if [ "${{ needs.backend.result }}" = "failure" ] || \
+             [ "${{ needs.frontend.result }}" = "failure" ]; then
+            echo "A CI job failed."
+            exit 1
+          fi
+          echo "All present CI jobs passed (or were skipped)."

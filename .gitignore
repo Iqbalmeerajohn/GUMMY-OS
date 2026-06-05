@@ -1,0 +1,98 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# GUMMY OS — .gitignore
+# Monorepo: Next.js (frontend/) + FastAPI (backend/) + Docker. Phase 0+.
+# Rule of thumb: never commit secrets, build artifacts, or machine-local state.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ── Secrets & environment ─────────────────────────────────────────────────────
+# Only .env.example is tracked (placeholders). Never commit a real .env.
+.env
+.env.*
+!.env.example
+*.local
+secrets/
+*.pem
+*.key
+service-account*.json
+
+# ── Node / Next.js (frontend) ─────────────────────────────────────────────────
+node_modules/
+.pnpm-store/
+.next/
+out/
+build/
+dist/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+.vercel/
+.eslintcache
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+
+# ── Python / FastAPI (backend) ────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.uv/
+.python-version
+*.egg-info/
+.eggs/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.hypothesis/
+dist/
+
+# ── Databases & local data ────────────────────────────────────────────────────
+*.sqlite
+*.sqlite3
+*.db
+pgdata/
+supabase/.branches/
+supabase/.temp/
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+docker-compose.override.yml
+
+# ── Logs & runtime ────────────────────────────────────────────────────────────
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+pids/
+*.pid
+*.seed
+
+# ── Editors & OS ──────────────────────────────────────────────────────────────
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.shared.json
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Misc ──────────────────────────────────────────────────────────────────────
+tmp/
+temp/
+.cache/
+*.bak
