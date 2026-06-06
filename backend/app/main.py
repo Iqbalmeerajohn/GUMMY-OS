@@ -20,14 +20,16 @@ from app.api.v1 import health
 from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging
-from app.database.session import dispose_engine
+from app.database.session import dispose_engine, get_sessionmaker
+from app.services.embeddings.factory import get_embedding_service
+from app.workers.embedding_worker import embedding_worker
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """Startup/shutdown lifecycle: configure logging, release DB pool on exit."""
+    """Startup/shutdown lifecycle: logging, embedding worker, DB pool."""
     settings = get_settings()
     configure_logging(settings.log_level)
     logger.info(
@@ -36,7 +38,19 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         settings.app_env,
         settings.version,
     )
+
+    # Start the background embedding worker when a database is configured.
+    sessionmaker = get_sessionmaker()
+    if sessionmaker is not None:
+        embedding_worker.configure(
+            sessionmaker=sessionmaker,
+            embedding_service=get_embedding_service(),
+        )
+        embedding_worker.start()
+
     yield
+
+    await embedding_worker.stop()
     await dispose_engine()
     logger.info("shutdown complete")
 

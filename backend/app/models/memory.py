@@ -16,6 +16,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Index,
+    Integer,
     Text,
     text,
 )
@@ -68,6 +69,16 @@ class Memory(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    recall_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    last_recalled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     user: Mapped[User] = relationship(back_populates="memories")
     versions: Mapped[list[MemoryVersion]] = relationship(
@@ -87,6 +98,11 @@ class Memory(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_memories_user_id_category", "user_id", "category"),
         Index("ix_memories_user_id_status", "user_id", "status"),
         Index("ix_memories_user_id_deleted_at", "user_id", "deleted_at"),
+        Index(
+            "ix_memories_user_id_last_recalled_at",
+            "user_id",
+            "last_recalled_at",
+        ),
         CheckConstraint(
             "importance_score >= 0 AND importance_score <= 1",
             name="importance_score_range",

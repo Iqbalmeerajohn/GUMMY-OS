@@ -27,6 +27,7 @@ from app.models.enums import MemoryCategory, MemoryChangeReason, MemoryStatus
 from app.models.memory import Memory
 from app.repositories import memory_repository as repo
 from app.schemas.memory import MemoryCreate, MemoryUpdate
+from app.workers.embedding_worker import embedding_worker
 
 
 class MemoryNotFoundError(AppError):
@@ -86,6 +87,8 @@ async def create_memory(
     )
     await session.commit()
     await session.refresh(memory)
+    # Keep the embedding fresh automatically (background, best-effort).
+    embedding_worker.enqueue(memory.id, user_id)
     return memory
 
 
@@ -163,6 +166,8 @@ async def update_memory(
 
     await session.commit()
     await session.refresh(memory)
+    # Re-embed on edit (the worker dedupes if content is unchanged).
+    embedding_worker.enqueue(memory.id, user_id)
     return memory
 
 

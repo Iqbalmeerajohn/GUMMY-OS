@@ -21,13 +21,18 @@ from app.schemas.memory import (
     MemoryResponse,
     MemoryUpdate,
 )
+from app.schemas.retrieval import (
+    MemoryRetrievalRequest,
+    MemoryRetrievalResponse,
+    RetrievedMemory,
+)
 from app.schemas.search import (
     MemoryEmbeddingResponse,
     MemorySearchRequest,
     MemorySearchResponse,
     MemorySearchResult,
 )
-from app.services.memory import memory_service
+from app.services.memory import memory_retrieval_service, memory_service
 
 router = APIRouter(prefix="/memories", tags=["memories"])
 
@@ -173,6 +178,52 @@ async def search_memories(
         for memory, distance in rows
     ]
     return MemorySearchResponse(
+        query=payload.query,
+        count=len(results),
+        results=results,
+    )
+
+
+@router.post(
+    "/retrieve",
+    response_model=MemoryRetrievalResponse,
+    summary="Hybrid retrieval (semantic + importance + confidence + recency)",
+)
+async def retrieve_memories(
+    payload: MemoryRetrievalRequest,
+    user_id: CurrentUserId,
+    db: DbSession,
+    embeddings: EmbeddingServiceDep,
+) -> MemoryRetrievalResponse:
+    ranked = await memory_retrieval_service.retrieve_memories(
+        db,
+        user_id=user_id,
+        query=payload.query,
+        embedding_service=embeddings,
+        limit=payload.limit,
+        category=payload.category,
+        include_archived=payload.include_archived,
+        reinforce=payload.reinforce,
+    )
+    results = [
+        RetrievedMemory(
+            id=item.memory.id,
+            user_id=item.memory.user_id,
+            category=item.memory.category,
+            content=item.memory.content,
+            importance_score=item.memory.importance_score,
+            confidence_score=item.memory.confidence_score,
+            status=item.memory.status,
+            recall_count=item.memory.recall_count,
+            semantic_similarity=item.semantic_similarity,
+            recency_score=item.recency_score,
+            final_score=item.final_score,
+            created_at=item.memory.created_at,
+            updated_at=item.memory.updated_at,
+        )
+        for item in ranked
+    ]
+    return MemoryRetrievalResponse(
         query=payload.query,
         count=len(results),
         results=results,

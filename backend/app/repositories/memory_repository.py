@@ -110,6 +110,24 @@ async def update_memory(
     return memory
 
 
+async def apply_recall(
+    session: AsyncSession,
+    memory: Memory,
+    *,
+    recall_count: int,
+    importance_score: float,
+    confidence_score: float,
+    last_recalled_at: datetime,
+) -> Memory:
+    """Persist reinforcement results onto a loaded memory and flush."""
+    memory.recall_count = recall_count
+    memory.importance_score = importance_score
+    memory.confidence_score = confidence_score
+    memory.last_recalled_at = last_recalled_at
+    await session.flush()
+    return memory
+
+
 async def archive_memory(session: AsyncSession, memory: Memory) -> Memory:
     """Mark a loaded memory as archived."""
     memory.status = MemoryStatus.ARCHIVED

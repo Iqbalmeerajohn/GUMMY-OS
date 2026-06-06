@@ -238,6 +238,8 @@ Gummy: "Updated — now targeting NVIDIA. I kept the history in case you switch 
 - Sensitive categories follow the **Red permission** path before any storage.
 - **Embeddings & semantic recall** (model choice, `memory_embeddings`, pgvector cosine
   search) are specified in [embeddings-and-search.md](embeddings-and-search.md).
+- **Hybrid ranking, reinforcement, and automatic embedding sync** are specified in
+  [hybrid-retrieval.md](hybrid-retrieval.md).
 
 ---
 
