@@ -29,6 +29,8 @@ from app.models.user import User
 from app.services.embeddings.embedding_service import EmbeddingService
 from app.services.embeddings.factory import get_embedding_service
 from app.services.embeddings.fake_provider import FakeEmbeddingProvider
+from app.services.llm.factory import get_llm_provider
+from app.services.llm.fake_provider import FakeLLMProvider
 
 
 def _make_sqlite_compatible() -> None:
@@ -92,6 +94,9 @@ async def api_client(
     app.dependency_overrides[get_db] = _override_get_db
     app.dependency_overrides[get_embedding_service] = lambda: EmbeddingService(
         FakeEmbeddingProvider()
+    )
+    app.dependency_overrides[get_llm_provider] = lambda: FakeLLMProvider(
+        reply="You are preparing for Qualcomm."
     )
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:

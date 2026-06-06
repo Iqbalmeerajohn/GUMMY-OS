@@ -64,3 +64,22 @@ REINFORCEMENT_COOLDOWN_SECONDS = 60
 # ── Embedding background worker ───────────────────────────────────────────────
 EMBEDDING_MAX_RETRIES = 3
 EMBEDDING_RETRY_BASE_DELAY_SECONDS = 0.5
+
+# ── Context assembly & chat ───────────────────────────────────────────────────
+# Rough heuristic for token estimation without calling the model's tokenizer.
+APPROX_CHARS_PER_TOKEN = 4
+# Token budget for the memory context packed into a chat prompt.
+DEFAULT_CONTEXT_TOKEN_BUDGET = 2000
+# Upper bound on how many memories the retriever feeds into context assembly.
+DEFAULT_CONTEXT_MAX_MEMORIES = 20
+
+# ── LLM gateway defaults (Claude / Anthropic) ─────────────────────────────────
+# Chat-facing default model. Configurable; the tiered fast/smart/frontier model
+# ids support the project's cost-tiering strategy (see tech-stack.md §7).
+DEFAULT_CHAT_MODEL = "claude-opus-4-8"
+DEFAULT_CLAUDE_MODEL_FAST = "claude-haiku-4-5"
+DEFAULT_CLAUDE_MODEL_SMART = "claude-sonnet-4-6"
+DEFAULT_CLAUDE_MODEL_FRONTIER = "claude-opus-4-8"
+DEFAULT_CHAT_MAX_TOKENS = 2048
+DEFAULT_LLM_TIMEOUT_SECONDS = 30.0
+DEFAULT_LLM_MAX_RETRIES = 2

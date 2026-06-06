@@ -16,10 +16,13 @@ from app.core.config import Settings, get_settings
 from app.database.session import get_db
 from app.services.embeddings.embedding_service import EmbeddingService
 from app.services.embeddings.factory import get_embedding_service
+from app.services.llm.base import LLMProvider
+from app.services.llm.factory import get_llm_provider
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 EmbeddingServiceDep = Annotated[EmbeddingService, Depends(get_embedding_service)]
+LLMProviderDep = Annotated[LLMProvider, Depends(get_llm_provider)]
 
 
 async def get_current_user_id(

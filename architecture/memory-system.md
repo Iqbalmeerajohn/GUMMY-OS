@@ -240,6 +240,8 @@ Gummy: "Updated — now targeting NVIDIA. I kept the history in case you switch 
   search) are specified in [embeddings-and-search.md](embeddings-and-search.md).
 - **Hybrid ranking, reinforcement, and automatic embedding sync** are specified in
   [hybrid-retrieval.md](hybrid-retrieval.md).
+- **Context assembly, the Claude gateway, and memory-aware chat** are specified in
+  [chat-and-context.md](chat-and-context.md).
 
 ---
 

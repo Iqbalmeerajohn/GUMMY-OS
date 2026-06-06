@@ -15,7 +15,19 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app import __version__
-from app.core.constants import DEFAULT_EMBEDDING_MODEL, EMBEDDING_DIMENSION
+from app.core.constants import (
+    DEFAULT_CHAT_MAX_TOKENS,
+    DEFAULT_CHAT_MODEL,
+    DEFAULT_CLAUDE_MODEL_FAST,
+    DEFAULT_CLAUDE_MODEL_FRONTIER,
+    DEFAULT_CLAUDE_MODEL_SMART,
+    DEFAULT_CONTEXT_MAX_MEMORIES,
+    DEFAULT_CONTEXT_TOKEN_BUDGET,
+    DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_LLM_MAX_RETRIES,
+    DEFAULT_LLM_TIMEOUT_SECONDS,
+    EMBEDDING_DIMENSION,
+)
 
 # Substring marking the placeholder DATABASE_URL shipped in `.env.example`. When
 # present we treat the database as "not configured" so Day 1 runs without a DB.
@@ -72,6 +84,21 @@ class Settings(BaseSettings):
     embeddings_provider: str = "huggingface"
     embeddings_model: str = DEFAULT_EMBEDDING_MODEL
     embedding_dimension: int = EMBEDDING_DIMENSION
+
+    # ── LLM gateway (Claude / Anthropic) ──────────────────────────────────────
+    # provider: "claude" (real) | "fake" (dev/tests). Future: openai, gemini.
+    llm_provider: str = "claude"
+    claude_model: str = DEFAULT_CHAT_MODEL
+    claude_model_fast: str = DEFAULT_CLAUDE_MODEL_FAST
+    claude_model_smart: str = DEFAULT_CLAUDE_MODEL_SMART
+    claude_model_frontier: str = DEFAULT_CLAUDE_MODEL_FRONTIER
+    claude_max_tokens: int = DEFAULT_CHAT_MAX_TOKENS
+    llm_timeout_seconds: float = DEFAULT_LLM_TIMEOUT_SECONDS
+    llm_max_retries: int = DEFAULT_LLM_MAX_RETRIES
+
+    # ── Context assembly ──────────────────────────────────────────────────────
+    context_token_budget: int = DEFAULT_CONTEXT_TOKEN_BUDGET
+    context_max_memories: int = DEFAULT_CONTEXT_MAX_MEMORIES
 
     @field_validator("log_level")
     @classmethod
