@@ -7,10 +7,12 @@ structured, queryable fields and the lifecycle status.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     CheckConstraint,
+    DateTime,
     Float,
     ForeignKey,
     Index,
@@ -61,6 +63,10 @@ class Memory(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=MemoryStatus.ACTIVE,
         server_default=text("'active'"),
     )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     user: Mapped[User] = relationship(back_populates="memories")
     versions: Mapped[list[MemoryVersion]] = relationship(
@@ -74,6 +80,7 @@ class Memory(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_memories_user_id", "user_id"),
         Index("ix_memories_user_id_category", "user_id", "category"),
         Index("ix_memories_user_id_status", "user_id", "status"),
+        Index("ix_memories_user_id_deleted_at", "user_id", "deleted_at"),
         CheckConstraint(
             "importance_score >= 0 AND importance_score <= 1",
             name="importance_score_range",
