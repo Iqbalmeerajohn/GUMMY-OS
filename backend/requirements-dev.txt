@@ -1,0 +1,9 @@
+# Development dependencies (lint, types, tests).
+# Install:  pip install -r requirements-dev.txt
+-r requirements.txt
+ruff>=0.7
+black>=24.10
+mypy>=1.13
+pytest>=8.3
+pytest-asyncio>=0.24
+httpx>=0.27
