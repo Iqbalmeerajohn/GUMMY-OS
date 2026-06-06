@@ -50,6 +50,29 @@ uv run mypy .
 uv run pytest
 ```
 
+## Database migrations (Alembic)
+
+Migrations need a real Postgres connection. Set `DATABASE_URL` (and ideally
+`DIRECT_DATABASE_URL`, the non-pooled Supabase connection) in `.env`, then:
+
+```bash
+cd backend
+uv run alembic upgrade head            # apply all migrations
+uv run alembic current                 # show the applied revision
+uv run alembic downgrade -1            # roll back one revision
+uv run alembic revision --autogenerate -m "describe change"   # new migration
+```
+
+Preview the SQL without touching a database (works offline):
+
+```bash
+uv run alembic upgrade head --sql
+```
+
+> Alembic reads the database URL from app settings (`migrations/env.py`), not from
+> `alembic.ini`. It prefers `DIRECT_DATABASE_URL` so schema changes bypass the
+> connection pooler.
+
 ## Run with Docker
 
 ```bash

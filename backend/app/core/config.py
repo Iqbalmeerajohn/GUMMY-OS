@@ -21,6 +21,17 @@ from app import __version__
 _DB_PLACEHOLDER = "password@localhost"
 
 
+def _normalize_asyncpg(url: str) -> str:
+    """Rewrite a Postgres URL to the SQLAlchemy asyncpg driver."""
+    if url.startswith("postgresql+asyncpg://"):
+        return url
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+asyncpg://", 1)
+    return url
+
+
 class Settings(BaseSettings):
     """Typed application configuration."""
 
@@ -83,13 +94,19 @@ class Settings(BaseSettings):
         url = self.database_url
         if not self.is_database_configured or url is None:
             return None
-        if url.startswith("postgresql+asyncpg://"):
-            return url
-        if url.startswith("postgresql://"):
-            return url.replace("postgresql://", "postgresql+asyncpg://", 1)
-        if url.startswith("postgres://"):
-            return url.replace("postgres://", "postgresql+asyncpg://", 1)
-        return url
+        return _normalize_asyncpg(url)
+
+    @property
+    def migration_async_url(self) -> str | None:
+        """URL Alembic should use — prefers the direct (non-pooled) connection.
+
+        Migrations run schema DDL and should bypass the transaction pooler, so we
+        prefer DIRECT_DATABASE_URL and fall back to DATABASE_URL.
+        """
+        raw = self.direct_database_url or self.database_url
+        if not raw or _DB_PLACEHOLDER in raw:
+            return None
+        return _normalize_asyncpg(raw)
 
 
 @lru_cache

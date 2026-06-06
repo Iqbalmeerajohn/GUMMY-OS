@@ -7,3 +7,4 @@ pydantic-settings>=2.6
 sqlalchemy[asyncio]>=2.0
 asyncpg>=0.30
 greenlet>=3.1
+alembic>=1.13
