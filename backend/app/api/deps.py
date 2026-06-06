@@ -14,9 +14,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.database.session import get_db
+from app.services.embeddings.embedding_service import EmbeddingService
+from app.services.embeddings.factory import get_embedding_service
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 DbSession = Annotated[AsyncSession, Depends(get_db)]
+EmbeddingServiceDep = Annotated[EmbeddingService, Depends(get_embedding_service)]
 
 
 async def get_current_user_id(

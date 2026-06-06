@@ -26,6 +26,9 @@ from app.database.base import Base
 from app.database.session import get_db
 from app.main import app
 from app.models.user import User
+from app.services.embeddings.embedding_service import EmbeddingService
+from app.services.embeddings.factory import get_embedding_service
+from app.services.embeddings.fake_provider import FakeEmbeddingProvider
 
 
 def _make_sqlite_compatible() -> None:
@@ -87,6 +90,9 @@ async def api_client(
                 raise
 
     app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[get_embedding_service] = lambda: EmbeddingService(
+        FakeEmbeddingProvider()
+    )
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac

@@ -25,3 +25,14 @@ MAX_PAGE_SIZE = 100
 
 # The first version number assigned to a newly created memory.
 INITIAL_VERSION_NUMBER = 1
+
+# ── Embeddings & semantic search ──────────────────────────────────────────────
+# Lightweight, CPU-friendly sentence encoder. 384-dim, strong retrieval quality,
+# zero per-call cost. The DB vector column dimension is fixed to this value, so
+# changing it requires a migration.
+DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+EMBEDDING_DIMENSION = 384
+
+# Semantic search result bounds.
+DEFAULT_SEARCH_LIMIT = 10
+MAX_SEARCH_LIMIT = 50

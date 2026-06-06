@@ -15,6 +15,7 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app import __version__
+from app.core.constants import DEFAULT_EMBEDDING_MODEL, EMBEDDING_DIMENSION
 
 # Substring marking the placeholder DATABASE_URL shipped in `.env.example`. When
 # present we treat the database as "not configured" so Day 1 runs without a DB.
@@ -65,6 +66,12 @@ class Settings(BaseSettings):
 
     # ── AI (used from Day 3+) ─────────────────────────────────────────────────
     anthropic_api_key: str | None = None
+
+    # ── Embeddings / semantic search ──────────────────────────────────────────
+    # provider: "huggingface" (real, local model) | "fake" (deterministic, dev/tests)
+    embeddings_provider: str = "huggingface"
+    embeddings_model: str = DEFAULT_EMBEDDING_MODEL
+    embedding_dimension: int = EMBEDDING_DIMENSION
 
     @field_validator("log_level")
     @classmethod

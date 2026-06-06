@@ -8,3 +8,6 @@ sqlalchemy[asyncio]>=2.0
 asyncpg>=0.30
 greenlet>=3.1
 alembic>=1.13
+pgvector>=0.3
+# Real embedding provider (heavy: torch). Install when using the HF provider:
+#   pip install "sentence-transformers>=3.0"

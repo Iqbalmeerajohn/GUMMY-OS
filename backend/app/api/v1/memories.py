@@ -11,14 +11,21 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 
-from app.api.deps import CurrentUserId, DbSession
+from app.api.deps import CurrentUserId, DbSession, EmbeddingServiceDep
 from app.core.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from app.models.enums import MemoryCategory, MemoryStatus
+from app.repositories import search_repository as search_repo
 from app.schemas.memory import (
     MemoryCreate,
     MemoryListResponse,
     MemoryResponse,
     MemoryUpdate,
+)
+from app.schemas.search import (
+    MemoryEmbeddingResponse,
+    MemorySearchRequest,
+    MemorySearchResponse,
+    MemorySearchResult,
 )
 from app.services.memory import memory_service
 
@@ -127,3 +134,65 @@ async def delete_memory(
     db: DbSession,
 ) -> None:
     await memory_service.delete_memory(db, user_id=user_id, memory_id=memory_id)
+
+
+@router.post(
+    "/search",
+    response_model=MemorySearchResponse,
+    summary="Semantic search over memories",
+)
+async def search_memories(
+    payload: MemorySearchRequest,
+    user_id: CurrentUserId,
+    db: DbSession,
+    embeddings: EmbeddingServiceDep,
+) -> MemorySearchResponse:
+    query_vector = await embeddings.embed_query(payload.query)
+    rows = await search_repo.search_similar_memories(
+        db,
+        user_id=user_id,
+        query_vector=query_vector,
+        embedding_model=embeddings.model_name,
+        limit=payload.limit,
+        include_archived=payload.include_archived,
+        category=payload.category,
+    )
+    results = [
+        MemorySearchResult(
+            id=memory.id,
+            user_id=memory.user_id,
+            category=memory.category,
+            content=memory.content,
+            importance_score=memory.importance_score,
+            confidence_score=memory.confidence_score,
+            status=memory.status,
+            similarity_score=1.0 - distance,
+            created_at=memory.created_at,
+            updated_at=memory.updated_at,
+        )
+        for memory, distance in rows
+    ]
+    return MemorySearchResponse(
+        query=payload.query,
+        count=len(results),
+        results=results,
+    )
+
+
+@router.post(
+    "/{memory_id}/embed",
+    response_model=MemoryEmbeddingResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Generate or refresh a memory's embedding",
+)
+async def embed_memory(
+    memory_id: uuid.UUID,
+    user_id: CurrentUserId,
+    db: DbSession,
+    embeddings: EmbeddingServiceDep,
+) -> MemoryEmbeddingResponse:
+    memory = await memory_service.get_memory(db, user_id=user_id, memory_id=memory_id)
+    embedding = await embeddings.sync_memory_embedding(db, memory=memory)
+    await db.commit()
+    await db.refresh(embedding)
+    return MemoryEmbeddingResponse.model_validate(embedding)

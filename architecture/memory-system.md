@@ -236,6 +236,8 @@ Gummy: "Updated — now targeting NVIDIA. I kept the history in case you switch 
 - Every write and recall is **tenant-scoped** and audit-logged (see
   [security-system.md](security-system.md)).
 - Sensitive categories follow the **Red permission** path before any storage.
+- **Embeddings & semantic recall** (model choice, `memory_embeddings`, pgvector cosine
+  search) are specified in [embeddings-and-search.md](embeddings-and-search.md).
 
 ---
 

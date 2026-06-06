@@ -18,9 +18,15 @@ dependencies = [
     "asyncpg>=0.30",
     "greenlet>=3.1",
     "alembic>=1.13",
+    "pgvector>=0.3",
 ]
 
 [project.optional-dependencies]
+# Heavy ML stack for the real Hugging Face embedding provider. Kept optional so
+# the core app/tests stay lightweight; install with `uv sync --extra embeddings`.
+embeddings = [
+    "sentence-transformers>=3.0",
+]
 dev = [
     "ruff>=0.7",
     "black>=24.10",

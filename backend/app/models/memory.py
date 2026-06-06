@@ -25,6 +25,7 @@ from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.enums import MemoryCategory, MemoryStatus, enum_type
 
 if TYPE_CHECKING:
+    from app.models.memory_embedding import MemoryEmbedding
     from app.models.memory_version import MemoryVersion
     from app.models.user import User
 
@@ -74,6 +75,11 @@ class Memory(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
         order_by="MemoryVersion.version_number",
+    )
+    embeddings: Mapped[list[MemoryEmbedding]] = relationship(
+        back_populates="memory",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     __table_args__ = (
