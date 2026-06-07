@@ -4,6 +4,14 @@
 > `0005_enable_rls` enables RLS + policies; **role creation is a cluster privilege
 > done out-of-band** (here), not in the migration.
 
+> **Applied status:** `gummy_app` is **created and the runtime `DATABASE_URL` is
+> switched to it** (connecting on the **direct** host, `:5432` — guaranteed role
+> auth; the Supavisor pooler as `gummy_app.<ref>` is a later perf optimization).
+> RLS is **actively enforced** through the app runtime (verified: tenant sees only
+> its own rows; without the GUC, **zero** rows — i.e. no bypass). `DIRECT_DATABASE_URL`
+> stays the owner connection for migrations. The previous URL is backed up at
+> `backend/.env.bak`.
+
 ## Why a dedicated role
 
 RLS policies are **not enforced for table owners or superusers** (they bypass RLS
