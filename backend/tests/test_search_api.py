@@ -78,8 +78,8 @@ async def test_search_rejects_empty_query(
     assert resp.status_code == 422
 
 
-async def test_search_requires_user_id(api_client: AsyncClient) -> None:
+async def test_search_requires_authentication(api_client: AsyncClient) -> None:
     resp = await api_client.post(
         "/api/v1/memories/search", json={"query": "companies I applied to"}
     )
-    assert resp.status_code == 422
+    assert resp.status_code == 401

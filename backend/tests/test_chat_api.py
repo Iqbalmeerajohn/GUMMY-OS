@@ -70,6 +70,6 @@ async def test_chat_rejects_empty_message(
     assert resp.status_code == 422
 
 
-async def test_chat_requires_user_id(api_client: AsyncClient) -> None:
+async def test_chat_requires_authentication(api_client: AsyncClient) -> None:
     resp = await api_client.post("/api/v1/chat", json={"message": "hi"})
-    assert resp.status_code == 422
+    assert resp.status_code == 401

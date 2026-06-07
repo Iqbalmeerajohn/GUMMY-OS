@@ -1,7 +1,9 @@
 """Shared FastAPI dependencies.
 
-Exposes the settings dependency and the request-scoped database session. The
-authenticated ``current_user`` dependency lands with auth (Day 2+ of the plan).
+Tenancy is resolved from a verified Supabase JWT (`get_current_user`). The
+``CurrentUserId`` alias keeps the **same name and type** it had under the legacy
+query-parameter seam, so every endpoint and service is unchanged — only the
+dependency behind it changed.
 """
 
 from __future__ import annotations
@@ -10,34 +12,76 @@ import uuid
 from typing import Annotated
 
 from fastapi import Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings, get_settings
-from app.database.session import get_db
+from app.core.exceptions import AppError
+from app.core.security import CurrentUser, verify_access_token
+from app.database.session import get_auth_sessionmaker, get_db
+from app.repositories import user_repository
 from app.services.embeddings.embedding_service import EmbeddingService
 from app.services.embeddings.factory import get_embedding_service
 from app.services.llm.base import LLMProvider
 from app.services.llm.factory import get_llm_provider
 
+bearer_scheme = HTTPBearer(auto_error=False)
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 EmbeddingServiceDep = Annotated[EmbeddingService, Depends(get_embedding_service)]
 LLMProviderDep = Annotated[LLMProvider, Depends(get_llm_provider)]
+AuthSessionmakerDep = Annotated[
+    async_sessionmaker[AsyncSession] | None, Depends(get_auth_sessionmaker)
+]
 
 
-async def get_current_user_id(
+async def get_current_user(
+    settings: SettingsDep,
+    sessionmaker: AuthSessionmakerDep,
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(bearer_scheme)
+    ] = None,
     user_id: Annotated[
-        uuid.UUID,
-        Query(description="Tenant user id. Temporary until auth lands."),
-    ],
-) -> uuid.UUID:
-    """Resolve the acting tenant.
+        uuid.UUID | None,
+        Query(description="Legacy/dev tenant id (replaced by the bearer token)."),
+    ] = None,
+) -> CurrentUser:
+    """Resolve the acting tenant from a verified JWT (with a dev/legacy fallback).
 
-    Day 3 has no auth, so the tenant is passed explicitly as ``user_id``. This is
-    the single seam that the authenticated ``current_user`` dependency replaces
-    when auth ships — endpoints and services stay unchanged.
+    Order: (1) a bearer token is verified and the local user is upserted; (2) only
+    if no token is present and ``auth_dev_bypass`` is on, the legacy ``user_id``
+    query param (or a configured dev user) is accepted; (3) otherwise → 401.
     """
-    return user_id
+    if credentials is not None:
+        claims = verify_access_token(credentials.credentials, settings)
+        if sessionmaker is None:
+            raise AppError(
+                "Database is not configured.",
+                code="database_unavailable",
+                status_code=503,
+            )
+        async with sessionmaker() as session:
+            user = await user_repository.upsert_user(
+                session, user_id=claims.sub, email=claims.email
+            )
+            await session.commit()
+        return CurrentUser(id=user.id, email=user.email)
+
+    if settings.auth_dev_bypass:
+        if user_id is not None:
+            return CurrentUser(id=user_id, email=None)
+        if settings.auth_dev_user_id is not None:
+            return CurrentUser(id=settings.auth_dev_user_id, email=None)
+
+    raise AppError("Authentication required.", code="missing_token", status_code=401)
 
 
-CurrentUserId = Annotated[uuid.UUID, Depends(get_current_user_id)]
+async def _current_user_id(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> uuid.UUID:
+    return user.id
+
+
+CurrentUserDep = Annotated[CurrentUser, Depends(get_current_user)]
+CurrentUserId = Annotated[uuid.UUID, Depends(_current_user_id)]

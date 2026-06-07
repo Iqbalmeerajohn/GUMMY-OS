@@ -60,6 +60,16 @@ def get_sessionmaker() -> async_sessionmaker[AsyncSession] | None:
     return _sessionmaker
 
 
+def get_auth_sessionmaker() -> async_sessionmaker[AsyncSession] | None:
+    """Sessionmaker for the pre-request user upsert.
+
+    Deliberately separate from ``get_db`` and never tenant-scoped: the auth
+    dependency resolves the user *before* the request's (future RLS-scoped)
+    session exists. Returns None when no database is configured.
+    """
+    return get_sessionmaker()
+
+
 async def get_db() -> AsyncIterator[AsyncSession]:
     """FastAPI dependency: yield a session, rolling back on unhandled errors."""
     sessionmaker = get_sessionmaker()

@@ -103,8 +103,8 @@ async def test_retrieve_rejects_empty_query(
     assert resp.status_code == 422
 
 
-async def test_retrieve_requires_user_id(api_client: AsyncClient) -> None:
+async def test_retrieve_requires_authentication(api_client: AsyncClient) -> None:
     resp = await api_client.post(
         "/api/v1/memories/retrieve", json={"query": "anything"}
     )
-    assert resp.status_code == 422
+    assert resp.status_code == 401

@@ -17,6 +17,11 @@ import os
 # the settings singleton reads the environment at construction time.
 os.environ["DATABASE_URL"] = ""
 os.environ["DIRECT_DATABASE_URL"] = ""
+# Auth in tests: enable the dev bypass so existing API tests keep passing the
+# tenant via the legacy `user_id` query param, and provide a fixed JWT secret so
+# token-path tests can mint and verify HS256 tokens hermetically.
+os.environ["AUTH_DEV_BYPASS"] = "true"
+os.environ["SUPABASE_JWT_SECRET"] = "test-jwt-secret"
 
 import uuid
 from collections.abc import AsyncIterator
@@ -32,7 +37,7 @@ from sqlalchemy.pool import StaticPool
 
 from app import models as _models  # noqa: F401  registers tables on Base.metadata
 from app.database.base import Base
-from app.database.session import get_db
+from app.database.session import get_auth_sessionmaker, get_db
 from app.main import app
 from app.models.user import User
 from app.services.embeddings.embedding_service import EmbeddingService
@@ -101,6 +106,9 @@ async def api_client(
                 raise
 
     app.dependency_overrides[get_db] = _override_get_db
+    # Token-path auth upserts the user via the auth sessionmaker — point it at the
+    # same in-memory SQLite engine so it shares the test database.
+    app.dependency_overrides[get_auth_sessionmaker] = lambda: sessionmaker_fixture
     app.dependency_overrides[get_embedding_service] = lambda: EmbeddingService(
         FakeEmbeddingProvider()
     )

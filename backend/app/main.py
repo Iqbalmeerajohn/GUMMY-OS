@@ -20,6 +20,7 @@ from app.api.v1 import health
 from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging
+from app.core.security import assert_auth_safe
 from app.database.session import dispose_engine, get_sessionmaker
 from app.services.embeddings.factory import get_embedding_service
 from app.workers.embedding_worker import embedding_worker
@@ -58,6 +59,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     """Construct and configure the FastAPI application."""
     settings = get_settings()
+    assert_auth_safe(settings)  # fail fast if dev auth bypass reaches production
 
     app = FastAPI(
         title=settings.app_name,

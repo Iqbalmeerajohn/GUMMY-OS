@@ -10,6 +10,11 @@
 > [PHASE1_VERIFICATION.md](PHASE1_VERIFICATION.md),
 > [../architecture/security-system.md](../architecture/security-system.md).
 
+> **Implementation status (2026-06-07):** **Increment A (JWT Authentication) —
+> implemented and verified** (HS256; `CurrentUser` dependency; dev/legacy bypass +
+> production guard; 17 auth tests; full gate green). **Increment B (RLS) — not
+> started.**
+
 ---
 
 ## 1. Objective & Rationale

@@ -131,7 +131,8 @@ async def test_delete_is_soft(api_client: AsyncClient, seed_user: uuid.UUID) -> 
     assert after.status_code == 404
 
 
-async def test_requires_user_id(api_client: AsyncClient) -> None:
-    # Missing the tenant query param -> validation error.
+async def test_requires_authentication(api_client: AsyncClient) -> None:
+    # No bearer token and no legacy tenant -> unauthenticated.
     resp = await api_client.get("/api/v1/memories")
-    assert resp.status_code == 422
+    assert resp.status_code == 401
+    assert resp.json()["error"]["code"] == "missing_token"
