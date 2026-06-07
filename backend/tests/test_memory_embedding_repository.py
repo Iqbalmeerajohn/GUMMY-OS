@@ -40,6 +40,7 @@ async def test_create_and_get(db_session: AsyncSession, seed_user: uuid.UUID) ->
     memory_id = await _memory_id(db_session, seed_user)
     created = await embed_repo.create_embedding(
         db_session,
+        user_id=seed_user,
         memory_id=memory_id,
         embedding_model=_MODEL,
         embedding_dimension=384,
@@ -63,6 +64,7 @@ async def test_update_overwrites_vector_and_hash(
     memory_id = await _memory_id(db_session, seed_user)
     created = await embed_repo.create_embedding(
         db_session,
+        user_id=seed_user,
         memory_id=memory_id,
         embedding_model=_MODEL,
         embedding_dimension=384,
@@ -93,6 +95,7 @@ async def test_list_embeddings(db_session: AsyncSession, seed_user: uuid.UUID) -
     assert await embed_repo.list_embeddings(db_session, memory_id=memory_id) == []
     await embed_repo.create_embedding(
         db_session,
+        user_id=seed_user,
         memory_id=memory_id,
         embedding_model=_MODEL,
         embedding_dimension=384,

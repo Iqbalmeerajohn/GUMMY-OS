@@ -28,6 +28,7 @@ async def get_embedding(
 async def create_embedding(
     session: AsyncSession,
     *,
+    user_id: uuid.UUID,
     memory_id: uuid.UUID,
     embedding_model: str,
     embedding_dimension: int,
@@ -36,6 +37,7 @@ async def create_embedding(
 ) -> MemoryEmbedding:
     """Insert a new embedding row and flush."""
     embedding = MemoryEmbedding(
+        user_id=user_id,
         memory_id=memory_id,
         embedding_model=embedding_model,
         embedding_dimension=embedding_dimension,

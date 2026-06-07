@@ -10,22 +10,47 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator
+from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import event, text
+from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.exceptions import AppError
+from app.core.tenant_context import get_current_user_id, set_current_user_id
 
 logger = logging.getLogger(__name__)
 
 _engine: AsyncEngine | None = None
 _sessionmaker: async_sessionmaker[AsyncSession] | None = None
+
+
+@event.listens_for(Session, "after_begin")
+def _set_tenant_guc(session: Session, transaction: Any, connection: Connection) -> None:
+    """Set the tenant GUC at the start of every PostgreSQL transaction.
+
+    Read by RLS policies as ``current_setting('app.current_user_id', true)``.
+    No-op on non-PostgreSQL backends (e.g. the SQLite test database), so the
+    fast suite is unaffected. Runs once per transaction, which is required —
+    services commit multiple times per request and Supabase's transaction
+    pooler does not carry session-level settings across transactions.
+    """
+    if connection.dialect.name != "postgresql":
+        return
+    user_id = get_current_user_id()
+    if user_id is None:
+        return
+    connection.execute(
+        text("SELECT set_config('app.current_user_id', :uid, true)"),
+        {"uid": str(user_id)},
+    )
 
 
 def get_engine() -> AsyncEngine | None:
@@ -85,6 +110,10 @@ async def get_db() -> AsyncIterator[AsyncSession]:
         except Exception:
             await session.rollback()
             raise
+        finally:
+            # Clear the tenant so it never leaks to the next request on a
+            # keep-alive connection (every data request goes through get_db).
+            set_current_user_id(None)
 
 
 async def check_database() -> tuple[str, str | None]:

@@ -74,6 +74,7 @@ class EmbeddingService:
             )
         return await embed_repo.create_embedding(
             session,
+            user_id=memory.user_id,
             memory_id=memory.id,
             embedding_model=self._provider.model_name,
             embedding_dimension=self._provider.dimension,

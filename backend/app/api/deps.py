@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import Settings, get_settings
 from app.core.exceptions import AppError
 from app.core.security import CurrentUser, verify_access_token
+from app.core.tenant_context import set_current_user_id
 from app.database.session import get_auth_sessionmaker, get_db
 from app.repositories import user_repository
 from app.services.embeddings.embedding_service import EmbeddingService
@@ -55,6 +56,9 @@ async def get_current_user(
     """
     if credentials is not None:
         claims = verify_access_token(credentials.credentials, settings)
+        # Publish the tenant before any DB work so RLS (the per-transaction GUC)
+        # applies to the user upsert itself.
+        set_current_user_id(claims.sub)
         if sessionmaker is None:
             raise AppError(
                 "Database is not configured.",
@@ -70,8 +74,10 @@ async def get_current_user(
 
     if settings.auth_dev_bypass:
         if user_id is not None:
+            set_current_user_id(user_id)
             return CurrentUser(id=user_id, email=None)
         if settings.auth_dev_user_id is not None:
+            set_current_user_id(settings.auth_dev_user_id)
             return CurrentUser(id=settings.auth_dev_user_id, email=None)
 
     raise AppError("Authentication required.", code="missing_token", status_code=401)

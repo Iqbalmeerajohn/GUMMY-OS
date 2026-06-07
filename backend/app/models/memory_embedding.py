@@ -26,6 +26,10 @@ class MemoryEmbedding(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
 
     __tablename__ = "memory_embeddings"
 
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
     memory_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("memories.id", ondelete="CASCADE"),
         nullable=False,
@@ -47,6 +51,7 @@ class MemoryEmbedding(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
             name="uq_memory_embeddings_memory_id_embedding_model",
         ),
         Index("ix_memory_embeddings_memory_id", "memory_id"),
+        Index("ix_memory_embeddings_user_id", "user_id"),
     )
 
     def __repr__(self) -> str:
