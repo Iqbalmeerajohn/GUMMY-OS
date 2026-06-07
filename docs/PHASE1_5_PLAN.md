@@ -10,10 +10,12 @@
 > [PHASE1_VERIFICATION.md](PHASE1_VERIFICATION.md),
 > [../architecture/security-system.md](../architecture/security-system.md).
 
-> **Implementation status (2026-06-07):** **Increment A (JWT Authentication) —
-> implemented and verified** (HS256; `CurrentUser` dependency; dev/legacy bypass +
-> production guard; 17 auth tests; full gate green). **Increment B (RLS) — not
-> started.**
+> **Implementation status:** **Increment A (JWT Authentication)** — implemented &
+> verified (HS256; `CurrentUser` dependency; dev/legacy bypass + production guard;
+> 17 auth tests). **Increment B (RLS)** — implemented & **verified live on
+> Supabase** (migration `0005`; per-transaction GUC; policies on all 4 tables;
+> 6/6 isolation checks passed as `gummy_app`). Full gate green (106 + 1 gated). See
+> [PHASE1_5_RLS_OPS.md](PHASE1_5_RLS_OPS.md).
 
 ---
 
