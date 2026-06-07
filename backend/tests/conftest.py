@@ -9,6 +9,15 @@ Python-side ``uuid4`` default, so behavior is unchanged.
 
 from __future__ import annotations
 
+import os
+
+# Hermetic tests: ignore any developer `.env` database so the suite never depends
+# on (or connects to) live infrastructure. Tests that need a database use the
+# in-memory SQLite fixtures below. This must run before `app` is imported, since
+# the settings singleton reads the environment at construction time.
+os.environ["DATABASE_URL"] = ""
+os.environ["DIRECT_DATABASE_URL"] = ""
+
 import uuid
 from collections.abc import AsyncIterator
 
