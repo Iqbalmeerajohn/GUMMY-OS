@@ -9,6 +9,7 @@ every integration is wired up.
 
 from __future__ import annotations
 
+import uuid
 from functools import lru_cache
 
 from pydantic import field_validator
@@ -76,6 +77,15 @@ class Settings(BaseSettings):
     supabase_service_role_key: str | None = None
     supabase_jwt_secret: str | None = None
 
+    # ── Authentication (Phase 1.5) ────────────────────────────────────────────
+    # JWTs are verified locally (HS256) with `supabase_jwt_secret`. The algorithm
+    # list is a config seam for future JWKS/RS256 — comma-separated, HS256 today.
+    auth_enabled: bool = True
+    auth_dev_bypass: bool = False  # MUST stay false in production (startup guard)
+    auth_dev_user_id: uuid.UUID | None = None
+    supabase_jwt_aud: str = "authenticated"
+    supabase_jwt_algorithms: str = "HS256"
+
     # ── AI (used from Day 3+) ─────────────────────────────────────────────────
     anthropic_api_key: str | None = None
 
@@ -109,6 +119,11 @@ class Settings(BaseSettings):
     def cors_origins(self) -> list[str]:
         """CORS origins parsed from the comma-separated env value."""
         return [o.strip() for o in self.backend_cors_origins.split(",") if o.strip()]
+
+    @property
+    def jwt_algorithms(self) -> list[str]:
+        """Accepted JWT algorithms, parsed from the comma-separated env value."""
+        return [a.strip() for a in self.supabase_jwt_algorithms.split(",") if a.strip()]
 
     @property
     def is_production(self) -> bool:
