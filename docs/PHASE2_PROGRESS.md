@@ -14,7 +14,7 @@ test suite `106 passed, 1 skipped`.
 | --- | --- | --- |
 | **M1** | Schema + RLS foundation (5 tables, migrations 0006–0009) | ✅ **Complete & gate-verified on live Postgres** |
 | **M2** | Repositories (pure persistence) | ✅ **Complete** |
-| M3 | Conversation lifecycle services + API | ⏳ Not started |
+| **M3** | Conversation lifecycle services + API | ✅ **Complete** |
 | M4 | The turn + enrichment-dispatcher seam | ⏳ Not started |
 | M5 | Enrichment consumers (title + summaries + embeddings) | ⏳ Not started |
 | M6 | Conversation → Memory extraction | ⏳ Not started |
@@ -165,5 +165,43 @@ in **M7 (Search)** alongside the search service (same pattern as the existing
 
 ---
 
-_Next: M3 — conversation lifecycle services + API (`conversation_service`,
-`message_service`, `/conversations` CRUD + `/messages` history)._
+## M3 — Conversation lifecycle services + API ✅
+
+**Goal:** make conversations usable end-to-end — create/list/get/rename·pin·archive/
+soft-delete a thread, and read its message history — without any turn, enrichment,
+summary, extraction, retrieval, or search logic (those are M4–M7). Narrow lifecycle
+scope only.
+
+### Delivered (new files)
+- **Services** (new `app/services/conversation/` package — domain-separated from memory):
+  - [conversation_service.py](../backend/app/services/conversation/conversation_service.py) — create, get (404), list (filters + pagination), update (rename/pin/archive/re-tag; empty-update → 400), soft-delete. Owns the transaction boundary; `ConversationNotFoundError` / `EmptyUpdateError`.
+  - [message_service.py](../backend/app/services/conversation/message_service.py) — `list_messages` (history), ownership-checked (resolves the conversation first → 404 for unknown/foreign threads).
+- **Schemas**: [conversation.py](../backend/app/schemas/conversation.py) (Create/Update/Response/ListResponse, title validation) · [message.py](../backend/app/schemas/message.py) (read-only `MessageResponse`; ORM `extra_metadata` exposed to clients as `metadata` via `validation_alias`).
+- **API** ([conversations.py](../backend/app/api/v1/conversations.py), registered in `router.py`):
+  - `POST /api/v1/conversations` · `GET /api/v1/conversations` (status/agent_context/pinned filters) · `GET /{id}` · `PATCH /{id}` · `DELETE /{id}` (204) · `GET /{id}/messages` (history).
+- **Constant**: `CONVERSATION_TITLE_MAX_LENGTH = 200`.
+
+### Scope discipline (explicitly NOT in M3)
+No turn endpoint / message creation, no enrichment dispatcher, no summaries, no
+memory extraction, no retrieval orchestration, no search. Repository ↔ service ↔
+API separation preserved (HTTP thin, services own the unit of work, repos persist).
+The stateless `chat_service` is untouched (its shim/retirement is M4/M8).
+
+### Verification
+| Check | Result |
+| --- | --- |
+| `ruff check app/ tests/` | ✅ all passed |
+| `mypy app/` | ✅ no issues, 85 files |
+| `pytest` (full suite, SQLite) | ✅ **156 passed, 2 skipped** (was 137/2; +19 M3 tests) |
+| App-level tenant isolation (API test: other tenant → list 0 / get 404) | ✅ |
+| `metadata` alias serialization (`extra_metadata` → `metadata`) | ✅ |
+| Live RLS gate re-run under `gummy_app` (no regression; M3 has no migrations) | ✅ 2 passed |
+| Live head unchanged at `0010` | ✅ |
+
+Tests added: `test_conversation_service.py` (10), `test_conversation_api.py` (9).
+
+---
+
+_Next: M4 — the turn (`conversation_turn_service`, refactor of `chat_service` via a
+shim) + the post-commit enrichment-dispatcher seam (no-op consumers); the
+`POST /conversations/{id}/messages` turn endpoint._

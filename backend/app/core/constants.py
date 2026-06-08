@@ -23,6 +23,10 @@ MAX_CONTENT_LENGTH = 10_000
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 100
 
+# ── Conversations (Phase 2) ───────────────────────────────────────────────────
+# Title bound; titles are short labels (auto-generated or user-edited).
+CONVERSATION_TITLE_MAX_LENGTH = 200
+
 # The first version number assigned to a newly created memory.
 INITIAL_VERSION_NUMBER = 1
 
