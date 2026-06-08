@@ -17,7 +17,7 @@ test suite `106 passed, 1 skipped`.
 | **M3** | Conversation lifecycle services + API | ✅ **Complete** |
 | **M4** | The turn + enrichment-dispatcher seam | ✅ **Complete** |
 | **M5** | Enrichment consumers (title + summaries + embeddings) | ✅ **Complete** |
-| M6 | Conversation → Memory extraction | ⏳ Not started |
+| **M6** | Conversation → Memory extraction | ✅ **Complete** |
 | M7 | Conversation search | ⏳ Not started |
 | M8 | Hardening & seal | ⏳ Not started |
 
@@ -343,3 +343,76 @@ switch (enqueue spy; extraction-still-no-op).
 _Next: M6 — conversation→memory extraction (consent-gated, routed through the
 existing Memory Engine) + `memory_sources` provenance; replaces the `extract_memories`
 stub._
+
+---
+
+## M6 — Conversation → Memory extraction ✅
+
+**Goal:** turn conversations into durable long-term memory — distil facts from new
+messages and persist them **exclusively through the existing Memory Engine**,
+consent-gated, with provenance, without reprocessing.
+
+### Delivered
+- [memory_extraction_service.py](../backend/app/services/conversation/memory_extraction_service.py) — the extraction pipeline:
+  1. **Consent gate** (`ConsentMode`): only `autonomous` auto-saves; `explicit` and
+     `assisted` persist nothing automatically (assisted's proposal surface is future
+     work). Resolved from `settings.memory_consent_mode` (default **`assisted`** —
+     safe: nothing auto-saved until a tenant opts in).
+  2. **Delta + threshold**: works the unsummarized delta after the per-conversation
+     watermark; fires on the same token/count cadence as summaries (plan Q3).
+  3. **LLM extraction** → JSON candidates (code-fence tolerant; invalid
+     JSON/category dropped; sensitive-category guard wired but currently empty).
+  4. **Reuse, don't duplicate**: every candidate goes through
+     `memory_service.create_memory` (scoring defaults, versioning, embedding sync) —
+     no memory logic reimplemented.
+  5. **Provenance**: a `memory_sources` link (memory → conversation) per created
+     memory.
+- **Watermark** — `conversations.last_extracted_seq` (migration **0011**) +
+  `conversation_repository.set_extraction_watermark`. Advanced *before* persistence
+  so the worker's commit/rollback gives clean semantics: on LLM failure the whole
+  unit of work rolls back (window retried, not silently skipped); on success the
+  window is marked processed (no re-extraction / duplicates).
+- **Consumer wired** — `enrichment.extract_memories` now calls the service (was the
+  M4/M5 no-op stub). Title + summary consumers **unchanged**.
+- `ConsentMode` enum; `memory_consent_mode` setting; `EXTRACTION_MAX_MEMORIES`.
+
+### Scope discipline (explicitly honored)
+Memory Engine reused **exclusively** (no duplicated memory logic); all extracted
+memories routed through `memory_service`; consent-gated; provenance created &
+verified; title/summary consumers untouched; **no search**; repo/service/worker
+separation preserved.
+
+### Migration fix found during the live apply
+The first revision id (`0011_add_conversation_extraction_watermark`, 42 chars)
+exceeded Alembic's `alembic_version.version_num` **VARCHAR(32)** on Postgres — the
+`ADD COLUMN` ran but recording the version failed; transactional DDL rolled it back
+cleanly (no partial state). Shortened to **`0011_extraction_watermark`**; SQLite
+tests don't enforce this length, which is why it only surfaced on the live apply.
+
+### Verification
+| Check | Result |
+| --- | --- |
+| `ruff` / `mypy` | ✅ clean (91 files) |
+| `pytest` (full suite, SQLite) | ✅ **194 passed, 2 skipped** (was 185/2; +9 M6 tests) |
+| Consent gate (autonomous saves; explicit/assisted save nothing) | ✅ |
+| Routed through Memory Engine (default scores) + provenance link created | ✅ |
+| Watermark prevents re-extraction (no duplicates) | ✅ |
+| Worker e2e in autonomous mode (memory + provenance persisted) | ✅ |
+| 0011 applied to live Postgres + down/up cycle; column `bigint`, `gummy_app` UPDATE inherited | ✅ |
+| Live RLS gate re-run under `gummy_app` | ✅ 2 passed |
+| Live head | ✅ `0011_extraction_watermark` |
+
+Tests added: `test_memory_extraction_service.py` (8: autonomous-with-provenance,
+explicit/assisted gates, below-threshold, watermark-prevents-reextraction,
+invalid-category skip, unparseable output, code-fenced JSON) + autonomous worker
+e2e in `test_enrichment_worker.py` (1); model column assertion updated.
+
+### Known limitation (noted, not in scope)
+Cross-window semantic duplicates (the *same* fact restated in a later delta) aren't
+de-duplicated — true dedup is a Memory-Engine concern, deliberately not added here.
+The watermark eliminates same-window reprocessing.
+
+---
+
+_Next: M7 — conversation search (`conversation_search_repository` FTS over messages +
+pgvector over summary embeddings + search service/API)._

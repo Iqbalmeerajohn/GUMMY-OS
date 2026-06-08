@@ -46,6 +46,7 @@ def test_conversation_columns() -> None:
         "pinned",
         "last_message_at",
         "message_count",
+        "last_extracted_seq",
         "deleted_at",
         "created_at",
         "updated_at",

@@ -38,6 +38,10 @@ SUMMARY_TRIGGER_MESSAGE_COUNT = 6
 # Cap on how many delta messages are rendered into one summarization prompt.
 SUMMARY_MAX_DELTA_MESSAGES = 100
 
+# Extraction (Phase 2, M6) reuses the summary trigger cadence (same delta window);
+# this caps how many memories one extraction pass may create.
+EXTRACTION_MAX_MEMORIES = 10
+
 # The first version number assigned to a newly created memory.
 INITIAL_VERSION_NUMBER = 1
 

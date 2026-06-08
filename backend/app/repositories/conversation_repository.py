@@ -141,6 +141,18 @@ async def touch_last_message(
     return conversation
 
 
+async def set_extraction_watermark(
+    session: AsyncSession,
+    conversation: Conversation,
+    *,
+    seq: int,
+) -> Conversation:
+    """Advance the memory-extraction watermark and flush."""
+    conversation.last_extracted_seq = seq
+    await session.flush()
+    return conversation
+
+
 async def soft_delete_conversation(
     session: AsyncSession,
     conversation: Conversation,

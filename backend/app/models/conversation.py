@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -74,6 +75,14 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     message_count: Mapped[int] = mapped_column(
         Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    # Watermark: messages with seq <= this have been processed by memory
+    # extraction. Avoids re-extracting (and re-saving) the same facts.
+    last_extracted_seq: Mapped[int] = mapped_column(
+        BigInteger,
         nullable=False,
         default=0,
         server_default=text("0"),

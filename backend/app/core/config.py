@@ -110,6 +110,12 @@ class Settings(BaseSettings):
     context_token_budget: int = DEFAULT_CONTEXT_TOKEN_BUDGET
     context_max_memories: int = DEFAULT_CONTEXT_MAX_MEMORIES
 
+    # ── Memory extraction consent (Phase 2 / memory-system §2) ────────────────
+    # Gates the automatic conversation→memory extraction consumer. Safe default:
+    # "assisted" persists nothing automatically (proposal surface is future work);
+    # "autonomous" auto-saves; "explicit" disables automatic extraction entirely.
+    memory_consent_mode: str = "assisted"
+
     @field_validator("log_level")
     @classmethod
     def _normalize_log_level(cls, value: str) -> str:

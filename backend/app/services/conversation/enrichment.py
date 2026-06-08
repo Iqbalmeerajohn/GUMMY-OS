@@ -8,7 +8,7 @@ services it calls, and lets the worker own the commit.
 Status:
   * title backfill   → implemented (M5)
   * rolling summary  → implemented (M5)
-  * memory extraction → NO-OP STUB (lands in M6, via the existing Memory Engine)
+  * memory extraction → implemented (M6) — consent-gated, via the Memory Engine
 """
 
 from __future__ import annotations
@@ -19,7 +19,11 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.conversation import conversation_service, summary_service
+from app.services.conversation import (
+    conversation_service,
+    memory_extraction_service,
+    summary_service,
+)
 from app.services.embeddings.embedding_service import EmbeddingService
 from app.services.llm.base import LLMProvider
 
@@ -76,8 +80,17 @@ async def extract_memories(
     llm: LLMProvider,
     embedding_service: EmbeddingService,
 ) -> None:
-    """NO-OP stub — conversation→memory extraction lands in M6."""
-    return None
+    """Extract durable facts → long-term memory (consent-gated, M6).
+
+    Routes through the existing Memory Engine and links provenance. Consent mode
+    is resolved from settings inside the service.
+    """
+    await memory_extraction_service.extract_and_store(
+        session,
+        user_id=job.user_id,
+        conversation_id=job.conversation_id,
+        llm=llm,
+    )
 
 
 # Ordered registry the worker iterates (each consumer in its own session).

@@ -89,6 +89,20 @@ class SourceKind(StrEnum):
     CONVERSATION = "conversation"
 
 
+class ConsentMode(StrEnum):
+    """How automatic memory extraction may persist (memory-system §2).
+
+    ``explicit`` — no automatic extraction (only direct "remember this").
+    ``assisted`` — propose, don't auto-save (the proposal surface is future work,
+      so the background consumer persists nothing in this mode for now).
+    ``autonomous`` — auto-save clearly-durable facts.
+    """
+
+    EXPLICIT = "explicit"
+    ASSISTED = "assisted"
+    AUTONOMOUS = "autonomous"
+
+
 def enum_type(enum_cls: type[Enum], name: str) -> SAEnum:
     """Build a consistent string-backed SQLAlchemy Enum column type.
 

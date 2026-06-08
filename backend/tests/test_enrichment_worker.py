@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.config import get_settings
 from app.models.enums import MessageRole, SummaryType
 from app.repositories import conversation_repository as conv_repo
 from app.repositories import conversation_summary_repository as sum_repo
+from app.repositories import memory_repository as mem_repo
+from app.repositories import memory_source_repository as src_repo
 from app.repositories import message_repository as msg_repo
 from app.services.embeddings.embedding_service import EmbeddingService
 from app.services.embeddings.fake_provider import FakeEmbeddingProvider
@@ -112,6 +117,40 @@ async def test_worker_survives_failing_consumer(
             session, conversation_id=conv_id, user_id=seed_user
         )
         assert summary is None
+
+
+async def test_worker_extracts_memory_in_autonomous_mode(
+    sessionmaker_fixture: async_sessionmaker[AsyncSession],
+    seed_user: uuid.UUID,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Consent gate: autonomous → the extraction consumer auto-saves.
+    monkeypatch.setattr(get_settings(), "memory_consent_mode", "autonomous")
+    conv_id = await _seed_conversation(sessionmaker_fixture, seed_user, messages=6)
+
+    candidate = json.dumps([{"content": "Targeting Qualcomm", "category": "career"}])
+    worker = EnrichmentWorker()
+    worker.configure(
+        sessionmaker=sessionmaker_fixture,
+        llm=FakeLLMProvider(reply=candidate),
+        embedding_service=_embeddings(),
+    )
+    worker.start()
+    worker.enqueue(conv_id, seed_user)
+    await asyncio.wait_for(worker.join(), timeout=5)
+    await worker.stop()
+
+    async with sessionmaker_fixture() as session:
+        memories, total = await mem_repo.list_memories(
+            session, user_id=seed_user, limit=10, offset=0
+        )
+        assert total == 1
+        assert memories[0].content == "Targeting Qualcomm"
+        links = await src_repo.list_for_memory(
+            session, memory_id=memories[0].id, user_id=seed_user
+        )
+        assert len(links) == 1
+        assert links[0].conversation_id == conv_id
 
 
 async def test_enqueue_is_noop_when_idle() -> None:
