@@ -2,14 +2,14 @@
 
 Orchestrates a turn end to end:
 
-    load history → persist user msg → retrieve memories → assemble context →
-    prompt → LLM → persist assistant msg → update lifecycle → commit →
-    dispatch enrichment (post-commit, no-op consumers in M4)
+    load history → persist user msg → retrieve memories → assemble context (recent
+    history + rolling summary + long-term memories) → prompt → LLM → persist
+    assistant msg → update lifecycle → commit → enqueue enrichment (post-commit)
 
 It reuses the existing memory pipeline (retrieval, context assembly, prompt
-builder, LLM gateway) unchanged. The stateless ``generate_grounded_reply`` core is
-shared with the legacy ``chat_service`` shim. No summaries, extraction, retrieval
-tuning, or search here — those are later milestones (PHASE2_PLAN.md §2/§8).
+builder, LLM gateway) unchanged. ``generate_grounded_reply`` is the stateless reply
+core; the persistent turn is ``run_turn``. This is the single memory-aware chat
+entrypoint (the legacy stateless ``/chat`` route was retired in M8).
 """
 
 from __future__ import annotations
@@ -86,7 +86,7 @@ async def generate_grounded_reply(
     """Ground a reply in the user's memories (+ optional thread history/summary).
 
     Stateless: retrieves, assembles, prompts, and calls the LLM, but persists
-    nothing and does not commit. Shared by the turn flow and the chat shim.
+    nothing and does not commit. Used by ``run_turn``.
     """
     ranked = await memory_retrieval_service.retrieve_memories(
         session,

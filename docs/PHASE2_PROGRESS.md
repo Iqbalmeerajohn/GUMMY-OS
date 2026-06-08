@@ -19,7 +19,11 @@ test suite `106 passed, 1 skipped`.
 | **M5** | Enrichment consumers (title + summaries + embeddings) | ✅ **Complete** |
 | **M6** | Conversation → Memory extraction | ✅ **Complete** |
 | **M7** | Conversation search | ✅ **Complete** |
-| M8 | Hardening & seal | ⏳ Not started |
+| **M8** | Hardening & seal | ✅ **Complete** |
+
+> **Phase 2 is COMPLETE** — tag `phase2-complete`. All eight milestones shipped,
+> verified on live Postgres under the non-bypass `gummy_app` role. Migration head
+> `0011_extraction_watermark`.
 
 ---
 
@@ -461,3 +465,72 @@ built and verified here alongside the service (as planned).
 
 _Next: M8 — hardening & seal: retire the `chat_service` shim, full green, tag
 `phase2-complete`._
+
+---
+
+## M8 — Hardening & seal ✅
+
+**Goal:** retire the M4 compatibility shim and the obsolete stateless `/chat` path
+so memory-aware chat flows exclusively through the conversation turn, then verify
+the whole phase end to end and tag it.
+
+### Removed (obsolete paths)
+- `app/services/memory/chat_service.py` — the compatibility shim (its stateless
+  reply core lives on as `conversation_turn_service.generate_grounded_reply`).
+- `app/api/v1/chat.py` — the legacy `POST /api/v1/chat` endpoint (superseded by
+  `POST /api/v1/conversations/{id}/messages`).
+- `app/schemas/chat.py` — `ChatRequest` / `ChatResponse` (only used by `/chat`).
+- `tests/test_chat_service.py`, `tests/test_chat_api.py` — tested the retired path.
+- The `test_chat_shim_is_stateless` case + the shim docstring references.
+
+### Modified
+- `app/api/router.py` — dropped the `chat` router import + registration.
+- `conversation_turn_service.py` — docstrings updated; it is now documented as the
+  single memory-aware chat entrypoint.
+
+### Finalized architecture (post-seal)
+Memory-aware chat is **only** the conversation turn:
+`POST /conversations/{id}/messages → run_turn → (persist user msg → context
+[recent history + rolling summary + long-term memories] → LLM → persist assistant
+msg → bump lifecycle → commit → enqueue enrichment)`. No stateless chat path
+remains; `generate_grounded_reply` is an internal step of `run_turn`.
+
+### Verification (full M1–M7 regression)
+| Check | Result |
+| --- | --- |
+| No dangling references to removed modules (source) | ✅ |
+| `ruff` / `mypy` | ✅ clean (90 source files, −3) |
+| `pytest` (full suite, SQLite) | ✅ **203 passed, 3 skipped** (was 209/3; −6 removed shim/chat tests) |
+| Live RLS + search isolation gate under `gummy_app` | ✅ **3 passed** |
+| Migration head (local == live) | ✅ `0011_extraction_watermark` |
+
+---
+
+## Phase 2 — Completion summary
+
+**Shipped:** a persistent, memory-aware Conversation System on the Phase 1 Memory
+Engine + Phase 1.5 JWT/RLS — threads & messages, the memory-grounded turn with
+rolling-summary context, background enrichment (title, summaries+embeddings,
+consent-gated memory extraction with provenance), and conversation search
+(keyword + semantic + hybrid).
+
+| Aspect | Final state |
+| --- | --- |
+| **Migrations** | `0006`→`0011` (conversations, messages, summaries+embeddings, memory_sources, message `seq`, extraction watermark); all RLS fail-closed under `gummy_app`. Head `0011_extraction_watermark`. |
+| **Tables** | `conversations`, `messages`, `conversation_summaries`, `conversation_summary_embeddings`, `memory_sources` — all tenant-isolated. |
+| **Tests** | **203 passed, 3 skipped** (SQLite); **3 Postgres-gated** isolation/search tests green live. From a 106/1 Phase-1.5 baseline. |
+| **Workers** | `embedding_worker` (reused) + new `enrichment_worker` (title / summary / extraction consumers, isolated sessions). |
+| **Frozen seams reused unchanged** | JWT auth, tenant GUC, RLS pattern, Memory Engine (`memory_service`), hybrid retrieval, embeddings, LLM gateway. |
+| **Checkpoints** | `phase2-m1` … `phase2-m7-complete`, `phase2-complete`. |
+
+**Remaining technical debt (non-blocking):**
+- LLM calls for title/summary/extraction use the provider default model; routing to
+  the cheap tier (`claude_model_fast`) is a deferred cost optimization.
+- The **Assisted** consent mode's proposal surface isn't built — assisted currently
+  persists nothing (safe); only `autonomous` auto-saves. Needs a proposals store +
+  frontend in a later phase.
+- Cross-window semantic memory de-duplication is a Memory-Engine concern, not added.
+- Search re-fetches conversations per hit (fine for `limit ≤ 50`); batchable later.
+- Rolling summaries: no closing-summary trigger on archive yet (only rolling).
+
+_Phase 2 sealed. Branch `feat/phase2-conversation-system` ready to merge to `main`._

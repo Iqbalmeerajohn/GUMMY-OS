@@ -264,30 +264,3 @@ async def test_extraction_consumer_is_still_a_noop(
         db_session, job, FakeLLMProvider(reply="x"), _embeddings()
     )
     assert result is None
-
-
-async def test_chat_shim_is_stateless(
-    db_session: AsyncSession,
-    seed_user: uuid.UUID,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # The legacy chat shim must not persist a conversation or messages.
-    monkeypatch.setattr(
-        "app.repositories.search_repository.search_similar_memories", _fake_search
-    )
-    from app.services.memory import chat_service
-
-    result = await chat_service.chat(
-        db_session,
-        user_id=seed_user,
-        message="hi",
-        embedding_service=_embeddings(),
-        llm=FakeLLMProvider(reply="reply-x"),
-    )
-    assert result.reply == "reply-x"
-
-    _, conv_total = await conversation_service.list_conversations(
-        db_session, user_id=seed_user, status=None, agent_context=None,
-        pinned=None, limit=10, offset=0,
-    )
-    assert conv_total == 0
