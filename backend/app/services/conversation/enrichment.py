@@ -1,18 +1,14 @@
-"""Post-commit enrichment dispatcher seam (Phase 2, M4).
+"""Post-commit enrichment consumers (Phase 2, M5).
 
-A single shared trigger fired *after* a turn commits — one watermark/delta window
-drives every enrichment, instead of three independent cadences (PHASE2_PLAN.md
-§21.1). This module is the **seam only**: the consumers below are intentional
-NO-OP STUBS, wired in later milestones:
+A single shared trigger fires after a turn commits; the ``enrichment_worker``
+drains the queue and runs these consumers, each in its own session (PHASE2_PLAN.md
+§21.1). Every consumer is best-effort and tenant-scoped, flushes through the
+services it calls, and lets the worker own the commit.
 
-  * title backfill            → M5
-  * rolling summary (+ embed) → M5
-  * memory extraction         → M6 (consent-gated, via the existing Memory Engine)
-
-For M4 the dispatcher runs the stubs (which do nothing) so the call site, ordering,
-and tests are in place. A later milestone moves dispatch off the request path onto
-a background worker (mirroring ``embedding_worker``); the turn service already calls
-it only after the unit of work has committed.
+Status:
+  * title backfill   → implemented (M5)
+  * rolling summary  → implemented (M5)
+  * memory extraction → NO-OP STUB (lands in M6, via the existing Memory Engine)
 """
 
 from __future__ import annotations
@@ -20,6 +16,12 @@ from __future__ import annotations
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.services.conversation import conversation_service, summary_service
+from app.services.embeddings.embedding_service import EmbeddingService
+from app.services.llm.base import LLMProvider
 
 
 @dataclass(frozen=True)
@@ -30,32 +32,57 @@ class EnrichmentJob:
     user_id: uuid.UUID
 
 
-async def _backfill_title(job: EnrichmentJob) -> None:
-    """NO-OP stub — title generation lands in M5."""
-    return None
+# A consumer: do one enrichment for a job, within the worker-provided session.
+Consumer = Callable[
+    [AsyncSession, "EnrichmentJob", LLMProvider, EmbeddingService],
+    Awaitable[None],
+]
 
 
-async def _refresh_rolling_summary(job: EnrichmentJob) -> None:
-    """NO-OP stub — rolling/closing summaries land in M5."""
-    return None
+async def backfill_title(
+    session: AsyncSession,
+    job: EnrichmentJob,
+    llm: LLMProvider,
+    embedding_service: EmbeddingService,
+) -> None:
+    """Generate a thread title from the first exchange (idempotent, M5)."""
+    await conversation_service.backfill_title(
+        session,
+        user_id=job.user_id,
+        conversation_id=job.conversation_id,
+        llm=llm,
+    )
 
 
-async def _extract_memories(job: EnrichmentJob) -> None:
+async def refresh_rolling_summary(
+    session: AsyncSession,
+    job: EnrichmentJob,
+    llm: LLMProvider,
+    embedding_service: EmbeddingService,
+) -> None:
+    """Refresh the rolling summary + its embedding when due (M5)."""
+    await summary_service.maybe_refresh_rolling_summary(
+        session,
+        user_id=job.user_id,
+        conversation_id=job.conversation_id,
+        llm=llm,
+        embedding_service=embedding_service,
+    )
+
+
+async def extract_memories(
+    session: AsyncSession,
+    job: EnrichmentJob,
+    llm: LLMProvider,
+    embedding_service: EmbeddingService,
+) -> None:
     """NO-OP stub — conversation→memory extraction lands in M6."""
     return None
 
 
-# The ordered enrichment consumers. M5/M6 replace the stub bodies above; this
-# tuple is the registry the dispatcher iterates.
-ENRICHMENT_CONSUMERS: tuple[Callable[[EnrichmentJob], Awaitable[None]], ...] = (
-    _backfill_title,
-    _refresh_rolling_summary,
-    _extract_memories,
+# Ordered registry the worker iterates (each consumer in its own session).
+ENRICHMENT_CONSUMERS: tuple[Consumer, ...] = (
+    backfill_title,
+    refresh_rolling_summary,
+    extract_memories,
 )
-
-
-async def dispatch(*, conversation_id: uuid.UUID, user_id: uuid.UUID) -> None:
-    """Run the enrichment consumers for a committed turn (no-ops in M4)."""
-    job = EnrichmentJob(conversation_id=conversation_id, user_id=user_id)
-    for consumer in ENRICHMENT_CONSUMERS:
-        await consumer(job)

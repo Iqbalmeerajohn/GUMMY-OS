@@ -122,6 +122,46 @@ async def recent_messages(
     return rows
 
 
+async def get_message(
+    session: AsyncSession,
+    *,
+    message_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> Message | None:
+    """Fetch a single tenant-scoped message by id, if it exists."""
+    stmt = select(Message).where(
+        Message.id == message_id,
+        Message.user_id == user_id,
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def messages_after(
+    session: AsyncSession,
+    *,
+    conversation_id: uuid.UUID,
+    user_id: uuid.UUID,
+    after_seq: int,
+    limit: int,
+) -> list[Message]:
+    """Return messages with ``seq`` greater than ``after_seq`` (oldest first).
+
+    The summarization delta: everything appended since a summary's watermark.
+    ``after_seq=0`` returns the whole thread.
+    """
+    stmt = (
+        select(Message)
+        .where(
+            Message.conversation_id == conversation_id,
+            Message.user_id == user_id,
+            Message.seq > after_seq,
+        )
+        .order_by(Message.seq.asc())
+        .limit(limit)
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
 async def count_messages(
     session: AsyncSession,
     *,

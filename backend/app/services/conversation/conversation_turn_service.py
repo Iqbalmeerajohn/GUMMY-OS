@@ -25,10 +25,11 @@ from app.core.constants import (
     DEFAULT_CONTEXT_TOKEN_BUDGET,
     DEFAULT_TURN_HISTORY_MESSAGES,
 )
-from app.models.enums import MessageRole
+from app.models.enums import MessageRole, SummaryType
 from app.repositories import conversation_repository as conv_repo
+from app.repositories import conversation_summary_repository as sum_repo
 from app.repositories import message_repository as msg_repo
-from app.services.conversation import conversation_service, enrichment
+from app.services.conversation import conversation_service
 from app.services.embeddings.embedding_service import EmbeddingService
 from app.services.llm.base import LLMProvider
 from app.services.memory import (
@@ -38,6 +39,7 @@ from app.services.memory import (
 )
 from app.services.memory.context_assembly_service import ContextMemory
 from app.utils.tokens import estimate_tokens
+from app.workers.enrichment_worker import enrichment_worker
 
 # Roles that belong in the LLM message history (working memory).
 _HISTORY_ROLES = (MessageRole.USER, MessageRole.ASSISTANT)
@@ -79,8 +81,9 @@ async def generate_grounded_reply(
     token_budget: int = DEFAULT_CONTEXT_TOKEN_BUDGET,
     max_memories: int = DEFAULT_CONTEXT_MAX_MEMORIES,
     history: list[dict[str, str]] | None = None,
+    summary: str | None = None,
 ) -> GeneratedReply:
-    """Ground a reply in the user's memories (+ optional thread history).
+    """Ground a reply in the user's memories (+ optional thread history/summary).
 
     Stateless: retrieves, assembles, prompts, and calls the LLM, but persists
     nothing and does not commit. Shared by the turn flow and the chat shim.
@@ -106,7 +109,7 @@ async def generate_grounded_reply(
         max_memories=max_memories,
     )
     payload = prompt_builder.build_prompt(
-        context=package, query=message, history=history
+        context=package, query=message, history=history, summary=summary
     )
     response = await llm.generate(system=payload.system, messages=payload.messages)
     return GeneratedReply(
@@ -154,6 +157,15 @@ async def run_turn(
         if m.role in _HISTORY_ROLES
     ]
 
+    # Rolling summary = compressed older context (None until M5 produces one).
+    rolling = await sum_repo.latest_summary(
+        session,
+        conversation_id=conversation_id,
+        user_id=user_id,
+        summary_type=SummaryType.ROLLING,
+    )
+    summary_text = rolling.content if rolling is not None else None
+
     user_message = await msg_repo.append_message(
         session,
         conversation_id=conversation_id,
@@ -172,6 +184,7 @@ async def run_turn(
         token_budget=token_budget,
         max_memories=max_memories,
         history=history,
+        summary=summary_text,
     )
 
     assistant_message = await msg_repo.append_message(
@@ -199,8 +212,10 @@ async def run_turn(
     await session.commit()
     await session.refresh(assistant_message)
 
-    # Post-commit, out of the persistence path. No-op consumers in M4.
-    await enrichment.dispatch(conversation_id=conversation_id, user_id=user_id)
+    # Post-commit, off the request path: the background worker runs the
+    # enrichment consumers (title backfill + rolling summary; extraction is an
+    # M6 stub). No-op when the worker is idle (e.g. in unit tests).
+    enrichment_worker.enqueue(conversation_id, user_id)
 
     return TurnResult(
         conversation_id=conversation_id,

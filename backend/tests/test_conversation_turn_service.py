@@ -24,6 +24,7 @@ from app.services.conversation.conversation_service import (
 from app.services.embeddings.embedding_service import EmbeddingService
 from app.services.embeddings.fake_provider import FakeEmbeddingProvider
 from app.services.llm.fake_provider import FakeLLMProvider
+from app.workers.enrichment_worker import enrichment_worker
 
 
 async def _fake_search(
@@ -183,6 +184,38 @@ async def test_run_turn_grounds_in_memory(
     assert "Targeting Qualcomm" in str(llm.calls[0]["system"])
 
 
+async def test_run_turn_injects_rolling_summary_into_prompt(
+    db_session: AsyncSession,
+    seed_user: uuid.UUID,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.models.enums import SummaryType
+    from app.repositories import conversation_summary_repository as sum_repo
+
+    monkeypatch.setattr(
+        "app.repositories.search_repository.search_similar_memories", _fake_search
+    )
+    conv_id = await _new_conv(db_session, seed_user)
+    await sum_repo.add_summary(
+        db_session,
+        conversation_id=conv_id,
+        user_id=seed_user,
+        summary_type=SummaryType.ROLLING,
+        content="PRIOR CONTEXT about the user",
+        version_number=1,
+    )
+    await db_session.commit()
+
+    llm = FakeLLMProvider(reply="ok")
+    await turn_svc.run_turn(
+        db_session, user_id=seed_user, conversation_id=conv_id,
+        message="continue", embedding_service=_embeddings(), llm=llm,
+    )
+    system = str(llm.calls[-1]["system"])
+    assert "<conversation_summary>" in system
+    assert "PRIOR CONTEXT about the user" in system
+
+
 async def test_run_turn_unknown_conversation_raises_404(
     db_session: AsyncSession, seed_user: uuid.UUID
 ) -> None:
@@ -197,7 +230,7 @@ async def test_run_turn_unknown_conversation_raises_404(
         )
 
 
-async def test_run_turn_dispatches_enrichment_after_commit(
+async def test_run_turn_enqueues_enrichment_after_commit(
     db_session: AsyncSession,
     seed_user: uuid.UUID,
     monkeypatch: pytest.MonkeyPatch,
@@ -207,12 +240,10 @@ async def test_run_turn_dispatches_enrichment_after_commit(
     )
     recorded: list[tuple[uuid.UUID, uuid.UUID]] = []
 
-    async def _spy(*, conversation_id: uuid.UUID, user_id: uuid.UUID) -> None:
+    def _spy(conversation_id: uuid.UUID, user_id: uuid.UUID) -> None:
         recorded.append((conversation_id, user_id))
 
-    monkeypatch.setattr(
-        "app.services.conversation.enrichment.dispatch", _spy
-    )
+    monkeypatch.setattr(enrichment_worker, "enqueue", _spy)
     conv_id = await _new_conv(db_session, seed_user)
 
     await turn_svc.run_turn(
@@ -222,18 +253,17 @@ async def test_run_turn_dispatches_enrichment_after_commit(
     assert recorded == [(conv_id, seed_user)]
 
 
-async def test_enrichment_consumers_are_noops() -> None:
+async def test_extraction_consumer_is_still_a_noop(
+    db_session: AsyncSession, seed_user: uuid.UUID
+) -> None:
+    # M6 will implement this; in M5 it must remain a no-op writing nothing.
     job = enrichment.EnrichmentJob(
-        conversation_id=uuid.uuid4(), user_id=uuid.uuid4()
+        conversation_id=uuid.uuid4(), user_id=seed_user
     )
-    for consumer in enrichment.ENRICHMENT_CONSUMERS:
-        assert await consumer(job) is None
-    assert (
-        await enrichment.dispatch(
-            conversation_id=uuid.uuid4(), user_id=uuid.uuid4()
-        )
-        is None
+    result = await enrichment.extract_memories(
+        db_session, job, FakeLLMProvider(reply="x"), _embeddings()
     )
+    assert result is None
 
 
 async def test_chat_shim_is_stateless(

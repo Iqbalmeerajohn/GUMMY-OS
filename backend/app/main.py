@@ -23,7 +23,9 @@ from app.core.logging import configure_logging
 from app.core.security import assert_auth_safe
 from app.database.session import dispose_engine, get_sessionmaker
 from app.services.embeddings.factory import get_embedding_service
+from app.services.llm.factory import get_llm_provider
 from app.workers.embedding_worker import embedding_worker
+from app.workers.enrichment_worker import enrichment_worker
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +42,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         settings.version,
     )
 
-    # Start the background embedding worker when a database is configured.
+    # Start the background workers when a database is configured.
     sessionmaker = get_sessionmaker()
     if sessionmaker is not None:
         embedding_worker.configure(
@@ -48,9 +50,16 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             embedding_service=get_embedding_service(),
         )
         embedding_worker.start()
+        enrichment_worker.configure(
+            sessionmaker=sessionmaker,
+            llm=get_llm_provider(),
+            embedding_service=get_embedding_service(),
+        )
+        enrichment_worker.start()
 
     yield
 
+    await enrichment_worker.stop()
     await embedding_worker.stop()
     await dispose_engine()
     logger.info("shutdown complete")

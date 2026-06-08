@@ -33,3 +33,25 @@ def test_query_goes_into_user_message() -> None:
 def test_empty_context_states_no_memories() -> None:
     payload = build_prompt(context=_package(), query="anything")
     assert "No relevant memories" in payload.system
+
+
+def test_history_is_prepended_before_query() -> None:
+    history = [
+        {"role": "user", "content": "earlier"},
+        {"role": "assistant", "content": "reply"},
+    ]
+    payload = build_prompt(context=_package(), query="now", history=history)
+    assert payload.messages == [*history, {"role": "user", "content": "now"}]
+
+
+def test_rolling_summary_included_when_present() -> None:
+    payload = build_prompt(
+        context=_package(), query="hi", summary="We discussed RTOS scheduling."
+    )
+    assert "<conversation_summary>" in payload.system
+    assert "We discussed RTOS scheduling." in payload.system
+
+
+def test_no_summary_block_when_absent() -> None:
+    payload = build_prompt(context=_package(), query="hi")
+    assert "conversation_summary" not in payload.system

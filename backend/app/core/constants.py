@@ -30,6 +30,14 @@ CONVERSATION_TITLE_MAX_LENGTH = 200
 # A count cap for M4; token-budgeted trimming is a later refinement.
 DEFAULT_TURN_HISTORY_MESSAGES = 20
 
+# Rolling-summary trigger (PHASE2_PLAN.md §21 Q2): token-pressure primary, with a
+# message-count safety cap. A refresh fires when the unsummarized delta exceeds
+# EITHER threshold.
+SUMMARY_TRIGGER_TOKEN_THRESHOLD = 500
+SUMMARY_TRIGGER_MESSAGE_COUNT = 6
+# Cap on how many delta messages are rendered into one summarization prompt.
+SUMMARY_MAX_DELTA_MESSAGES = 100
+
 # The first version number assigned to a newly created memory.
 INITIAL_VERSION_NUMBER = 1
 

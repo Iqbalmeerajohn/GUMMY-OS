@@ -16,7 +16,7 @@ test suite `106 passed, 1 skipped`.
 | **M2** | Repositories (pure persistence) | ✅ **Complete** |
 | **M3** | Conversation lifecycle services + API | ✅ **Complete** |
 | **M4** | The turn + enrichment-dispatcher seam | ✅ **Complete** |
-| M5 | Enrichment consumers (title + summaries + embeddings) | ⏳ Not started |
+| **M5** | Enrichment consumers (title + summaries + embeddings) | ✅ **Complete** |
 | M6 | Conversation → Memory extraction | ⏳ Not started |
 | M7 | Conversation search | ⏳ Not started |
 | M8 | Hardening & seal | ⏳ Not started |
@@ -276,3 +276,70 @@ full verification, and updated this doc.
 _Next: M5 — enrichment consumers (title backfill + rolling summaries + summary
 embeddings); replaces the no-op stubs and extends the turn context with the rolling
 summary layer._
+
+---
+
+## M5 — Enrichment consumers (title + rolling summaries + embeddings) ✅
+
+**Goal:** turn the M4 no-op enrichment seam into real, background consumers — title
+backfill and rolling summaries (+ their embeddings) — and feed the rolling summary
+back into the turn's context. The **extraction consumer stays a no-op stub** (M6).
+
+### Architecture: the enrichment moved onto a background worker
+The consumers need a DB session + LLM + embeddings, and must stay off the turn's
+latency path. So enrichment now mirrors the existing `embedding_worker`:
+- [enrichment_worker.py](../backend/app/workers/enrichment_worker.py) — a singleton
+  drained by one asyncio task; configured at lifespan with sessionmaker + LLM +
+  embedding service. Each consumer runs in **its own session/transaction** so a
+  failure is isolated and never crashes the worker. `enqueue` is a no-op when idle
+  (so unit/API tests are unaffected and the turn stays instant).
+- The turn now calls `enrichment_worker.enqueue(...)` post-commit (was
+  `enrichment.dispatch(...)`). Wired into `main.py` lifespan alongside the embedding
+  worker.
+
+### Delivered
+- **Title consumer** — [conversation_service.backfill_title](../backend/app/services/conversation/conversation_service.py):
+  generates a 3–6 word title from the first user message via the LLM; idempotent
+  (no-op if already titled / no messages / conversation gone); flush-only.
+- **Rolling summary consumer** — [summary_service.py](../backend/app/services/conversation/summary_service.py):
+  computes the unsummarized **delta** (messages after the previous summary's
+  watermark), fires on **token-pressure OR a message-count cap** (PHASE2_PLAN.md §21
+  Q2), summarizes *previous summary + delta* into a new versioned rolling summary,
+  and **embeds** it (pgvector via the existing embedding provider). Flush-only.
+- **Extraction consumer** — remains a **NO-OP stub** ([enrichment.py](../backend/app/services/conversation/enrichment.py) `extract_memories`).
+- **Context-assembly summary layer** — [prompt_builder.build_prompt](../backend/app/services/memory/prompt_builder.py)
+  gains an optional `summary` (rendered as a `<conversation_summary>` block); the
+  turn loads the latest rolling summary and injects it. Backward compatible (default
+  `None` → legacy prompt; chat shim passes none).
+- **Repo helpers** — `message_repository.get_message` + `messages_after` (delta
+  query by `seq`).
+- **Constants** — `SUMMARY_TRIGGER_TOKEN_THRESHOLD=500`, `SUMMARY_TRIGGER_MESSAGE_COUNT=6`,
+  `SUMMARY_MAX_DELTA_MESSAGES=100`.
+
+### Scope discipline (explicitly NOT in M5)
+No memory extraction (stub only), no search. Repo ↔ service ↔ worker separation
+preserved (services flush; the worker owns the commit). No new migration. The
+`chat_service` shim is untouched (its stateless path passes no summary).
+
+### Verification
+| Check | Result |
+| --- | --- |
+| `ruff check app/ tests/` | ✅ all passed |
+| `mypy app/` | ✅ no issues, 89 files |
+| `pytest` (full suite, SQLite) | ✅ **185 passed, 2 skipped** (was 170/2; +15 M5 tests) |
+| Worker end-to-end (title + summary persisted; failing consumer isolated; idle no-op) | ✅ |
+| Rolling summary injected into turn prompt; chat shim still stateless | ✅ |
+| Live RLS gate re-run under `gummy_app` (no regression; M5 adds no migration) | ✅ 2 passed |
+| Live head unchanged at `0010` | ✅ |
+
+Tests added: `test_summary_service.py` (5), `test_enrichment_worker.py` (3), title
+backfill in `test_conversation_service.py` (3), summary/history in
+`test_prompt_builder.py` (4), rolling-summary injection in
+`test_conversation_turn_service.py` (1). M4 enrichment tests updated for the worker
+switch (enqueue spy; extraction-still-no-op).
+
+---
+
+_Next: M6 — conversation→memory extraction (consent-gated, routed through the
+existing Memory Engine) + `memory_sources` provenance; replaces the `extract_memories`
+stub._

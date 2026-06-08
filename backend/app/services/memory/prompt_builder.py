@@ -47,13 +47,14 @@ def build_prompt(
     context: ContextPackage,
     query: str,
     history: list[dict[str, str]] | None = None,
+    summary: str | None = None,
 ) -> PromptPayload:
     """Build the system prompt + chat messages for a memory-grounded turn.
 
     ``history`` is the recent prior turns of THIS conversation (working memory),
     each a ``{"role", "content"}`` dict, prepended before the current ``query``.
-    Defaults to ``None`` (a single-message, stateless prompt) so the legacy chat
-    path is unchanged.
+    ``summary`` is the thread's rolling summary (compressed older context). Both
+    default to ``None`` so the legacy stateless chat path is unchanged.
     """
     system = (
         f"{_PERSONA}\n\n"
@@ -61,5 +62,10 @@ def build_prompt(
         f"Remembered context about the user:\n"
         f"<memory>\n{_render_context(context)}\n</memory>"
     )
+    if summary:
+        system += (
+            "\n\nSummary of earlier in this conversation:\n"
+            f"<conversation_summary>\n{summary}\n</conversation_summary>"
+        )
     messages = [*(history or []), {"role": "user", "content": query}]
     return PromptPayload(system=system, messages=messages)

@@ -16,6 +16,7 @@ from app.services.conversation.conversation_service import (
     ConversationNotFoundError,
     EmptyUpdateError,
 )
+from app.services.llm.fake_provider import FakeLLMProvider
 
 
 async def test_create_applies_defaults(
@@ -163,3 +164,71 @@ async def test_message_history_returns_ordered_page(
     )
     assert total == 3
     assert [m.content for m in items] == ["m0", "m1"]  # oldest first by seq
+
+
+# ── title backfill (M5) ───────────────────────────────────────────────────────
+
+
+async def test_backfill_title_sets_title_from_first_message(
+    db_session: AsyncSession, seed_user: uuid.UUID
+) -> None:
+    conv = await svc.create_conversation(
+        db_session, user_id=seed_user, payload=ConversationCreate()
+    )
+    await msg_repo.append_message(
+        db_session, conversation_id=conv.id, user_id=seed_user,
+        role=MessageRole.USER, content="Help me plan a Qualcomm interview",
+    )
+    await msg_repo.append_message(
+        db_session, conversation_id=conv.id, user_id=seed_user,
+        role=MessageRole.ASSISTANT, content="Sure!",
+    )
+    await db_session.commit()
+
+    title = await svc.backfill_title(
+        db_session, user_id=seed_user, conversation_id=conv.id,
+        llm=FakeLLMProvider(reply="Qualcomm Interview Prep"),
+    )
+    assert title == "Qualcomm Interview Prep"
+    refreshed = await svc.get_conversation(
+        db_session, user_id=seed_user, conversation_id=conv.id
+    )
+    assert refreshed.title == "Qualcomm Interview Prep"
+
+
+async def test_backfill_title_is_idempotent(
+    db_session: AsyncSession, seed_user: uuid.UUID
+) -> None:
+    conv = await svc.create_conversation(
+        db_session, user_id=seed_user,
+        payload=ConversationCreate(title="Existing"),
+    )
+    await msg_repo.append_message(
+        db_session, conversation_id=conv.id, user_id=seed_user,
+        role=MessageRole.USER, content="hello",
+    )
+    await db_session.commit()
+
+    title = await svc.backfill_title(
+        db_session, user_id=seed_user, conversation_id=conv.id,
+        llm=FakeLLMProvider(reply="New Title"),
+    )
+    assert title is None  # already titled → no-op
+    refreshed = await svc.get_conversation(
+        db_session, user_id=seed_user, conversation_id=conv.id
+    )
+    assert refreshed.title == "Existing"
+
+
+async def test_backfill_title_no_messages_returns_none(
+    db_session: AsyncSession, seed_user: uuid.UUID
+) -> None:
+    conv = await svc.create_conversation(
+        db_session, user_id=seed_user, payload=ConversationCreate()
+    )
+    await db_session.commit()
+    title = await svc.backfill_title(
+        db_session, user_id=seed_user, conversation_id=conv.id,
+        llm=FakeLLMProvider(reply="X"),
+    )
+    assert title is None

@@ -13,11 +13,19 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.constants import CONVERSATION_TITLE_MAX_LENGTH
 from app.core.exceptions import AppError
 from app.models.conversation import Conversation
-from app.models.enums import AgentContext, ConversationStatus
+from app.models.enums import AgentContext, ConversationStatus, MessageRole
 from app.repositories import conversation_repository as repo
+from app.repositories import message_repository as msg_repo
 from app.schemas.conversation import ConversationCreate, ConversationUpdate
+from app.services.llm.base import LLMProvider
+
+_TITLE_SYSTEM = (
+    "You generate a short, specific title for a chat conversation. Reply with "
+    "ONLY the title: 3-6 words, no surrounding quotes, no trailing punctuation."
+)
 
 
 class ConversationNotFoundError(AppError):
@@ -142,3 +150,49 @@ async def delete_conversation(
         session, conversation, deleted_at=datetime.now(UTC)
     )
     await session.commit()
+
+
+async def backfill_title(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    llm: LLMProvider,
+) -> str | None:
+    """Generate and set a title from the first exchange (enrichment consumer).
+
+    Idempotent and best-effort: a no-op (returns ``None``) when the conversation
+    is gone, already titled, or has no user message yet. Flushes but does NOT
+    commit — the enrichment worker owns the unit of work.
+    """
+    conversation = await repo.get_conversation(
+        session, conversation_id=conversation_id, user_id=user_id
+    )
+    if conversation is None or conversation.title is not None:
+        return None
+
+    # Title from the first user message (the topic of the thread).
+    messages, _ = await msg_repo.list_messages(
+        session,
+        conversation_id=conversation_id,
+        user_id=user_id,
+        limit=4,
+        offset=0,
+    )
+    basis = next(
+        (m.content for m in messages if m.role is MessageRole.USER), None
+    )
+    if basis is None:
+        return None
+
+    response = await llm.generate(
+        system=_TITLE_SYSTEM,
+        messages=[{"role": "user", "content": basis}],
+    )
+    title = response.text.strip().strip('"').strip()
+    if not title:
+        return None
+    title = title[:CONVERSATION_TITLE_MAX_LENGTH]
+
+    await repo.update_conversation(session, conversation, title=title)
+    return title
