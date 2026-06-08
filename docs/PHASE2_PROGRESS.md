@@ -18,7 +18,7 @@ test suite `106 passed, 1 skipped`.
 | **M4** | The turn + enrichment-dispatcher seam | ✅ **Complete** |
 | **M5** | Enrichment consumers (title + summaries + embeddings) | ✅ **Complete** |
 | **M6** | Conversation → Memory extraction | ✅ **Complete** |
-| M7 | Conversation search | ⏳ Not started |
+| **M7** | Conversation search | ✅ **Complete** |
 | M8 | Hardening & seal | ⏳ Not started |
 
 ---
@@ -416,3 +416,48 @@ The watermark eliminates same-window reprocessing.
 
 _Next: M7 — conversation search (`conversation_search_repository` FTS over messages +
 pgvector over summary embeddings + search service/API)._
+
+---
+
+## M7 — Conversation search ✅
+
+**Goal:** find a conversation by keyword (message full-text) or by meaning (summary
+embeddings), with a hybrid blend — reusing the existing search/embedding patterns,
+no migration (the FTS GIN index from 0007 and summary-embedding HNSW from 0008
+already exist).
+
+### Delivered (new files)
+- [conversation_search_repository.py](../backend/app/repositories/conversation_search_repository.py) — two tenant-scoped, PostgreSQL-only searches over **non-deleted** conversations, each with a pure `build_*_statement` (compile-tested) + execute function:
+  - **keyword** — `to_tsvector('english', messages.content) @@ plainto_tsquery(...)`, ranked by `ts_rank` (GIN index from 0007). Returns `(conversation_id, message_id, rank)`.
+  - **semantic** — pgvector cosine (`<=>`) over `conversation_summary_embeddings` (HNSW from 0008), mirroring `search_repository`. Returns `(conversation_id, summary_id, distance)`.
+- [conversation_search_service.py](../backend/app/services/conversation/conversation_search_service.py) — folds hits to conversation level (best rank/similarity per thread), **hybrid blend** (`0.5·norm_keyword + 0.5·semantic`, weights in constants), sorts, and re-fetches each result tenant-scoped (defense-in-depth; skips since-deleted). Returns deep-linkable hits (`match_message_id` for jump-to-message).
+- **API**: `GET /api/v1/conversations/search?q=&mode=keyword|semantic|hybrid&limit=` — registered **before** `/{conversation_id}` so "search" isn't parsed as an id; blank-`q` → 422; invalid mode → 422.
+- `ConversationSearchMode` enum; search schemas; keyword/semantic weight constants.
+
+### Scope discipline (explicitly honored)
+Reuses the established pgvector/`build_*_statement` pattern and `embedding_service`;
+**Memory Engine untouched**; **extraction pipeline untouched**; **auth/RLS
+unchanged** (no migration, no policy change); repo/service/API separation preserved.
+
+### Verification
+| Check | Result |
+| --- | --- |
+| `ruff` / `mypy` | ✅ clean (93 files) |
+| `pytest` (full suite, SQLite) | ✅ **209 passed, 3 skipped** (was 194/2; +15 search tests) |
+| Repo SQL compiles (FTS `@@`/`ts_rank`, pgvector `<=>`, tenant + deleted filters) | ✅ |
+| Service ranking (keyword / semantic / hybrid blend; limit; foreign-id skip) | ✅ |
+| API (routing not shadowed, default hybrid, blank-q 422, invalid-mode 422, auth 401) | ✅ |
+| **Live tenant isolation under search** (`gummy_app`, real FTS + pgvector) | ✅ **3 passed** — each tenant sees only their own threads; cross-tenant query returns nothing |
+
+Tests added: `test_conversation_search_repository.py` (4 compile), `test_conversation_search_service.py` (5 ranking), `test_conversation_search_api.py` (6), and `test_conversation_search_isolation_under_rls` in `test_rls_postgres.py` (gated — exercises live FTS + pgvector under RLS).
+
+### Note
+Search-result re-fetch loops `get_conversation` per hit (fine for `limit ≤ 50`); a
+batched fetch is a possible later optimization. Hybrid weights are tunable
+constants. `conversation_search_repository` was the M2-deferred repository, now
+built and verified here alongside the service (as planned).
+
+---
+
+_Next: M8 — hardening & seal: retire the `chat_service` shim, full green, tag
+`phase2-complete`._

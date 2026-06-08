@@ -19,12 +19,24 @@ from app.api.deps import (
     LLMProviderDep,
     SettingsDep,
 )
-from app.core.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
-from app.models.enums import AgentContext, ConversationStatus
+from app.core.constants import (
+    DEFAULT_PAGE_SIZE,
+    DEFAULT_SEARCH_LIMIT,
+    MAX_PAGE_SIZE,
+    MAX_SEARCH_LIMIT,
+)
+from app.core.exceptions import AppError
+from app.models.enums import (
+    AgentContext,
+    ConversationSearchMode,
+    ConversationStatus,
+)
 from app.schemas.conversation import (
     ConversationCreate,
     ConversationListResponse,
     ConversationResponse,
+    ConversationSearchResponse,
+    ConversationSearchResultItem,
     ConversationUpdate,
 )
 from app.schemas.message import (
@@ -34,6 +46,7 @@ from app.schemas.message import (
     TurnResponse,
 )
 from app.services.conversation import (
+    conversation_search_service,
     conversation_service,
     conversation_turn_service,
     message_service,
@@ -87,6 +100,55 @@ async def list_conversations(
         total=total,
         limit=limit,
         offset=offset,
+    )
+
+
+@router.get(
+    "/search",
+    response_model=ConversationSearchResponse,
+    summary="Search conversations (keyword / semantic / hybrid)",
+)
+async def search_conversations(
+    user_id: CurrentUserId,
+    db: DbSession,
+    embeddings: EmbeddingServiceDep,
+    q: Annotated[str, Query(min_length=1, max_length=1000)],
+    mode: ConversationSearchMode = ConversationSearchMode.HYBRID,
+    limit: Annotated[int, Query(ge=1, le=MAX_SEARCH_LIMIT)] = DEFAULT_SEARCH_LIMIT,
+) -> ConversationSearchResponse:
+    query = q.strip()
+    if not query:
+        raise AppError(
+            "query must not be empty or whitespace",
+            code="empty_query",
+            status_code=422,
+        )
+    hits = await conversation_search_service.search(
+        db,
+        user_id=user_id,
+        query=query,
+        mode=mode,
+        limit=limit,
+        embedding_service=embeddings,
+    )
+    return ConversationSearchResponse(
+        query=q,
+        mode=mode.value,
+        count=len(hits),
+        results=[
+            ConversationSearchResultItem(
+                conversation_id=hit.conversation.id,
+                title=hit.conversation.title,
+                status=hit.conversation.status,
+                last_message_at=hit.conversation.last_message_at,
+                message_count=hit.conversation.message_count,
+                score=hit.score,
+                keyword_score=hit.keyword_score,
+                semantic_score=hit.semantic_score,
+                match_message_id=hit.match_message_id,
+            )
+            for hit in hits
+        ],
     )
 
 

@@ -42,6 +42,12 @@ SUMMARY_MAX_DELTA_MESSAGES = 100
 # this caps how many memories one extraction pass may create.
 EXTRACTION_MAX_MEMORIES = 10
 
+# ── Conversation search (Phase 2, M7) ─────────────────────────────────────────
+# Hybrid blend of keyword (messages full-text) and semantic (summary embeddings).
+# Weights sum to 1.0 so the final score stays in [0, 1].
+CONVERSATION_SEARCH_KEYWORD_WEIGHT = 0.5
+CONVERSATION_SEARCH_SEMANTIC_WEIGHT = 0.5
+
 # The first version number assigned to a newly created memory.
 INITIAL_VERSION_NUMBER = 1
 

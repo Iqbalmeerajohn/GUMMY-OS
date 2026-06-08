@@ -22,6 +22,8 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from app.repositories import conversation_search_repository as search_repo
+
 pytestmark = pytest.mark.skipif(
     not (os.getenv("RUN_RLS_PG_TESTS") and os.getenv("RLS_TEST_DSN")),
     reason="set RUN_RLS_PG_TESTS=1 and RLS_TEST_DSN (gummy_app DSN) to run",
@@ -257,4 +259,124 @@ async def test_conversation_tables_isolation_under_rls() -> None:
                 text("DELETE FROM users WHERE id = :u"), {"u": str(alice)}
             )
             await s.commit()
+        await engine.dispose()
+
+
+# A non-zero unit-ish vector (avoids pgvector's zero-vector cosine NaN).
+_SEARCH_VECTOR_SQL = "[" + ",".join(["1"] + ["0"] * 383) + "]"
+_SEARCH_QUERY_VECTOR = [1.0] + [0.0] * 383
+
+
+async def _seed_searchable(
+    maker: async_sessionmaker[AsyncSession], tenant: uuid.UUID
+) -> uuid.UUID:
+    """Seed one tenant's conversation + message + summary + embedding."""
+    conv = uuid.uuid4()
+    summary = uuid.uuid4()
+    async with maker() as s:
+        await _set_tenant(s, tenant)
+        await s.execute(
+            text("INSERT INTO users (id, email) VALUES (:id, :e)"),
+            {"id": str(tenant), "e": f"{tenant}@rls.test"},
+        )
+        await s.execute(
+            text(
+                "INSERT INTO conversations (id, user_id, status, agent_context, "
+                "pinned, message_count) VALUES (:c, :u, 'active', 'general', "
+                "false, 1)"
+            ),
+            {"c": str(conv), "u": str(tenant)},
+        )
+        await s.execute(
+            text(
+                "INSERT INTO messages (conversation_id, user_id, seq, role, "
+                "content) VALUES (:c, :u, 1, 'user', 'roadmap planning session')"
+            ),
+            {"c": str(conv), "u": str(tenant)},
+        )
+        await s.execute(
+            text(
+                "INSERT INTO conversation_summaries (id, conversation_id, "
+                "user_id, summary_type, content, version_number) VALUES "
+                "(:sm, :c, :u, 'rolling', 'roadmap summary', 1)"
+            ),
+            {"sm": str(summary), "c": str(conv), "u": str(tenant)},
+        )
+        await s.execute(
+            text(
+                "INSERT INTO conversation_summary_embeddings (summary_id, "
+                "user_id, embedding_model, embedding_dimension, content_hash, "
+                "embedding_vector) VALUES (:sm, :u, 'test', 384, 'h', "
+                "CAST(:vec AS vector))"
+            ),
+            {"sm": str(summary), "u": str(tenant), "vec": _SEARCH_VECTOR_SQL},
+        )
+        await s.commit()
+    return conv
+
+
+async def test_conversation_search_isolation_under_rls() -> None:
+    """M7: keyword + semantic search return only the acting tenant's threads."""
+    dsn = os.environ["RLS_TEST_DSN"]
+    engine = create_async_engine(dsn, poolclass=None)
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+
+    alice = uuid.uuid4()
+    bob = uuid.uuid4()
+    try:
+        alice_conv = await _seed_searchable(maker, alice)
+        bob_conv = await _seed_searchable(maker, bob)
+
+        # Keyword: each tenant sees only their own matching conversation.
+        async with maker() as s:
+            await _set_tenant(s, alice)
+            kw = await search_repo.keyword_search(
+                s, user_id=alice, query="roadmap", limit=10
+            )
+            assert [row[0] for row in kw] == [alice_conv]
+
+            sem = await search_repo.summary_semantic_search(
+                s,
+                user_id=alice,
+                query_vector=_SEARCH_QUERY_VECTOR,
+                embedding_model="test",
+                limit=10,
+            )
+            assert [row[0] for row in sem] == [alice_conv]
+
+        async with maker() as s:
+            await _set_tenant(s, bob)
+            kw = await search_repo.keyword_search(
+                s, user_id=bob, query="roadmap", limit=10
+            )
+            assert [row[0] for row in kw] == [bob_conv]
+
+        # Cross-tenant: under Alice's GUC, querying Bob's id returns nothing
+        # (RLS hides Bob's rows AND the user_id filter excludes them).
+        async with maker() as s:
+            await _set_tenant(s, alice)
+            kw = await search_repo.keyword_search(
+                s, user_id=bob, query="roadmap", limit=10
+            )
+            assert kw == []
+            sem = await search_repo.summary_semantic_search(
+                s,
+                user_id=bob,
+                query_vector=_SEARCH_QUERY_VECTOR,
+                embedding_model="test",
+                limit=10,
+            )
+            assert sem == []
+    finally:
+        for tenant in (alice, bob):
+            async with maker() as s:
+                await _set_tenant(s, tenant)
+                await s.execute(
+                    text("DELETE FROM conversations WHERE user_id = :u"),
+                    {"u": str(tenant)},
+                )
+                await s.execute(
+                    text("DELETE FROM users WHERE id = :u"), {"u": str(tenant)}
+                )
+                await s.commit()
         await engine.dispose()

@@ -74,3 +74,27 @@ class ConversationListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class ConversationSearchResultItem(BaseModel):
+    """A single ranked conversation search hit (deep-linkable)."""
+
+    conversation_id: uuid.UUID
+    title: str | None
+    status: ConversationStatus
+    last_message_at: datetime | None
+    message_count: int
+    score: float
+    keyword_score: float
+    semantic_score: float
+    # The best-matching message (keyword mode) for jump-to-message; None otherwise.
+    match_message_id: uuid.UUID | None
+
+
+class ConversationSearchResponse(BaseModel):
+    """Ranked conversation search results."""
+
+    query: str
+    mode: str
+    count: int
+    results: list[ConversationSearchResultItem]

@@ -89,6 +89,14 @@ class SourceKind(StrEnum):
     CONVERSATION = "conversation"
 
 
+class ConversationSearchMode(StrEnum):
+    """How to search conversations (see PHASE2_PLAN.md §4/§10)."""
+
+    KEYWORD = "keyword"
+    SEMANTIC = "semantic"
+    HYBRID = "hybrid"
+
+
 class ConsentMode(StrEnum):
     """How automatic memory extraction may persist (memory-system §2).
 
