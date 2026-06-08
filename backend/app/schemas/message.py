@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.enums import MessageRole
 
@@ -42,3 +42,31 @@ class MessageListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class TurnRequest(BaseModel):
+    """A user message that drives one conversation turn."""
+
+    message: str = Field(min_length=1, max_length=4000)
+
+    @field_validator("message")
+    @classmethod
+    def _strip_message(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("message must not be empty or whitespace")
+        return stripped
+
+
+class TurnResponse(BaseModel):
+    """The result of a persisted turn: the assistant reply + persistence info."""
+
+    conversation_id: uuid.UUID
+    user_message_id: uuid.UUID
+    assistant_message_id: uuid.UUID
+    reply: str
+    model: str
+    memories_used: int
+    input_tokens: int
+    output_tokens: int
+    message_count: int

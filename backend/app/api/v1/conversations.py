@@ -12,7 +12,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 
-from app.api.deps import CurrentUserId, DbSession
+from app.api.deps import (
+    CurrentUserId,
+    DbSession,
+    EmbeddingServiceDep,
+    LLMProviderDep,
+    SettingsDep,
+)
 from app.core.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from app.models.enums import AgentContext, ConversationStatus
 from app.schemas.conversation import (
@@ -21,8 +27,17 @@ from app.schemas.conversation import (
     ConversationResponse,
     ConversationUpdate,
 )
-from app.schemas.message import MessageListResponse, MessageResponse
-from app.services.conversation import conversation_service, message_service
+from app.schemas.message import (
+    MessageListResponse,
+    MessageResponse,
+    TurnRequest,
+    TurnResponse,
+)
+from app.services.conversation import (
+    conversation_service,
+    conversation_turn_service,
+    message_service,
+)
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -147,4 +162,42 @@ async def list_messages(
         total=total,
         limit=limit,
         offset=offset,
+    )
+
+
+@router.post(
+    "/{conversation_id}/messages",
+    response_model=TurnResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Run a turn: post a message and get the assistant reply",
+)
+async def create_turn(
+    conversation_id: uuid.UUID,
+    payload: TurnRequest,
+    user_id: CurrentUserId,
+    db: DbSession,
+    embeddings: EmbeddingServiceDep,
+    llm: LLMProviderDep,
+    settings: SettingsDep,
+) -> TurnResponse:
+    result = await conversation_turn_service.run_turn(
+        db,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        message=payload.message,
+        embedding_service=embeddings,
+        llm=llm,
+        token_budget=settings.context_token_budget,
+        max_memories=settings.context_max_memories,
+    )
+    return TurnResponse(
+        conversation_id=result.conversation_id,
+        user_message_id=result.user_message_id,
+        assistant_message_id=result.assistant_message_id,
+        reply=result.reply,
+        model=result.model,
+        memories_used=result.memories_used,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        message_count=result.message_count,
     )

@@ -42,13 +42,24 @@ def _render_context(package: ContextPackage) -> str:
     return "\n".join(render_memory_line(m) for m in package.memories)
 
 
-def build_prompt(*, context: ContextPackage, query: str) -> PromptPayload:
-    """Build the system prompt + user message for a memory-grounded chat turn."""
+def build_prompt(
+    *,
+    context: ContextPackage,
+    query: str,
+    history: list[dict[str, str]] | None = None,
+) -> PromptPayload:
+    """Build the system prompt + chat messages for a memory-grounded turn.
+
+    ``history`` is the recent prior turns of THIS conversation (working memory),
+    each a ``{"role", "content"}`` dict, prepended before the current ``query``.
+    Defaults to ``None`` (a single-message, stateless prompt) so the legacy chat
+    path is unchanged.
+    """
     system = (
         f"{_PERSONA}\n\n"
         f"{_GROUNDING}\n\n"
         f"Remembered context about the user:\n"
         f"<memory>\n{_render_context(context)}\n</memory>"
     )
-    messages = [{"role": "user", "content": query}]
+    messages = [*(history or []), {"role": "user", "content": query}]
     return PromptPayload(system=system, messages=messages)

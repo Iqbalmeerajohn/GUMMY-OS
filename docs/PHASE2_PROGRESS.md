@@ -15,7 +15,7 @@ test suite `106 passed, 1 skipped`.
 | **M1** | Schema + RLS foundation (5 tables, migrations 0006–0009) | ✅ **Complete & gate-verified on live Postgres** |
 | **M2** | Repositories (pure persistence) | ✅ **Complete** |
 | **M3** | Conversation lifecycle services + API | ✅ **Complete** |
-| M4 | The turn + enrichment-dispatcher seam | ⏳ Not started |
+| **M4** | The turn + enrichment-dispatcher seam | ✅ **Complete** |
 | M5 | Enrichment consumers (title + summaries + embeddings) | ⏳ Not started |
 | M6 | Conversation → Memory extraction | ⏳ Not started |
 | M7 | Conversation search | ⏳ Not started |
@@ -205,3 +205,74 @@ Tests added: `test_conversation_service.py` (10), `test_conversation_api.py` (9)
 _Next: M4 — the turn (`conversation_turn_service`, refactor of `chat_service` via a
 shim) + the post-commit enrichment-dispatcher seam (no-op consumers); the
 `POST /conversations/{id}/messages` turn endpoint._
+
+---
+
+## M4 — The turn + enrichment-dispatcher seam ✅
+
+**Goal:** make a conversation turn stateful — persist the user message and the
+assistant reply, replay recent thread history as working memory, update the
+thread's recency/counter, and introduce the **post-commit enrichment dispatcher
+seam** (consumers are no-op stubs). Reuses the existing memory pipeline unchanged.
+
+### Delivered (new files)
+- [conversation_turn_service.py](../backend/app/services/conversation/conversation_turn_service.py):
+  - `generate_grounded_reply(...)` — the **stateless** reply core (retrieve →
+    assemble → prompt → LLM), now shared by the turn and the chat shim; takes
+    optional `history`.
+  - `run_turn(...)` — the **persistent** turn: 404-checks ownership, loads recent
+    prior messages as history, persists user + assistant messages, bumps
+    `last_message_at` + `message_count`, commits, then dispatches enrichment.
+    Returns `TurnResult`.
+- [enrichment.py](../backend/app/services/conversation/enrichment.py) — the
+  **dispatcher seam**: `EnrichmentJob`, three ordered **no-op consumer stubs**
+  (`_backfill_title` → M5, `_refresh_rolling_summary` → M5, `_extract_memories` →
+  M6), and `dispatch(...)`. One shared post-commit trigger (PHASE2_PLAN.md §21.1).
+
+### Changed files
+- [chat_service.py](../backend/app/services/memory/chat_service.py) — refactored into
+  a **compatibility shim**: same `chat()` signature + `ChatResult`, now delegating to
+  `generate_grounded_reply`. Slated for retirement in M8. (`test_chat_*` unchanged
+  and green.)
+- [prompt_builder.py](../backend/app/services/memory/prompt_builder.py) — `build_prompt`
+  gains optional `history` (prepended before the query); default `None` keeps the
+  legacy single-message prompt identical.
+- [schemas/message.py](../backend/app/schemas/message.py) — `TurnRequest` + `TurnResponse`.
+- [api/v1/conversations.py](../backend/app/api/v1/conversations.py) — `POST
+  /conversations/{id}/messages` turn endpoint (wires embeddings + LLM + settings).
+- [constants.py](../backend/app/core/constants.py) — `DEFAULT_TURN_HISTORY_MESSAGES = 20`.
+
+### Scope discipline (explicitly NOT in M4)
+Enrichment consumers stay **no-op stubs** — no title generation, summaries,
+extraction, or search. The rolling-summary *context layer* is also deferred (no
+summaries exist yet); M4's turn context = recent thread history + long-term
+memories. Repository ↔ service ↔ API separation preserved. No new migration.
+
+### Verification
+| Check | Result |
+| --- | --- |
+| `ruff check app/ tests/` | ✅ all passed |
+| `mypy app/` | ✅ no issues, 87 files |
+| `pytest` (full suite, SQLite) | ✅ **170 passed, 2 skipped** (was 156/2; +14 M4 tests) |
+| `test_chat_*` still green under the shim (no behavior change) | ✅ |
+| App-level turn tenant isolation (foreign tenant → 404) | ✅ |
+| Live RLS gate re-run under `gummy_app` (no regression; M4 adds no migration) | ✅ 2 passed |
+| Live head unchanged at `0010` | ✅ |
+
+Tests added: `test_conversation_turn_service.py` (8: persistence, lifecycle,
+history replay, memory grounding, 404, enrichment dispatched, consumers-are-no-ops,
+shim-is-stateless) and `test_turn_api.py` (6: 201 + persistence, counter bump,
+empty-message 422, unknown-conv 404, auth required, tenant isolation).
+
+### Interruption/resume note
+This milestone was finished after a session-limit interruption: M4 implementation
++ the service test were already on disk (uncommitted); resuming completed a fragile
+datetime assertion fix (SQLite returns naive datetimes for `timezone=True` columns —
+test-only coercion; product code unchanged), added the turn API test file, ran the
+full verification, and updated this doc.
+
+---
+
+_Next: M5 — enrichment consumers (title backfill + rolling summaries + summary
+embeddings); replaces the no-op stubs and extends the turn context with the rolling
+summary layer._

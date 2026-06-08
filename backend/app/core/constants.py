@@ -26,6 +26,9 @@ MAX_PAGE_SIZE = 100
 # ── Conversations (Phase 2) ───────────────────────────────────────────────────
 # Title bound; titles are short labels (auto-generated or user-edited).
 CONVERSATION_TITLE_MAX_LENGTH = 200
+# How many recent messages from the thread to replay as working memory in a turn.
+# A count cap for M4; token-budgeted trimming is a later refinement.
+DEFAULT_TURN_HISTORY_MESSAGES = 20
 
 # The first version number assigned to a newly created memory.
 INITIAL_VERSION_NUMBER = 1
