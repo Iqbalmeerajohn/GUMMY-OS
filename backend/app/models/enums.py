@@ -43,6 +43,52 @@ class MemoryChangeReason(StrEnum):
     ARCHIVED = "archived"
 
 
+# ── Phase 2: Conversation System ──────────────────────────────────────────────
+
+
+class ConversationStatus(StrEnum):
+    """Lifecycle status of a conversation thread (see PHASE2_PLAN.md §3)."""
+
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
+class AgentContext(StrEnum):
+    """Which hub a thread belongs to. Forward seam for the Agent Framework;
+    defaults to ``general`` until routing exists (see PHASE2_PLAN.md §3)."""
+
+    GENERAL = "general"
+    CAREER = "career"
+    LEARNING = "learning"
+    RESEARCH = "research"
+    BUILDER = "builder"
+
+
+class MessageRole(StrEnum):
+    """Author role of a single message turn (see PHASE2_PLAN.md §4).
+
+    ``tool`` is reserved for the future Agent Framework / GSD execution layer."""
+
+    USER = "user"
+    ASSISTANT = "assistant"
+    SYSTEM = "system"
+    TOOL = "tool"
+
+
+class SummaryType(StrEnum):
+    """Kind of conversation summary (see PHASE2_PLAN.md §5)."""
+
+    ROLLING = "rolling"
+    CLOSING = "closing"
+
+
+class SourceKind(StrEnum):
+    """Provenance kind for a memory's source. Extensible: ``document`` and
+    ``activity`` arrive in later phases (see PHASE2_PLAN.md §7)."""
+
+    CONVERSATION = "conversation"
+
+
 def enum_type(enum_cls: type[Enum], name: str) -> SAEnum:
     """Build a consistent string-backed SQLAlchemy Enum column type.
 
