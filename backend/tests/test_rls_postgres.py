@@ -152,8 +152,8 @@ async def test_conversation_tables_isolation_under_rls() -> None:
             )
             await s.execute(
                 text(
-                    "INSERT INTO messages (id, conversation_id, user_id, role, "
-                    "content) VALUES (:m, :c, :u, 'user', 'alice-msg')"
+                    "INSERT INTO messages (id, conversation_id, user_id, seq, "
+                    "role, content) VALUES (:m, :c, :u, 1, 'user', 'alice-msg')"
                 ),
                 {"m": str(msg), "c": str(conv), "u": str(alice)},
             )

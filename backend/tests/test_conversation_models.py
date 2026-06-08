@@ -58,6 +58,7 @@ def test_message_columns() -> None:
         "id",
         "conversation_id",
         "user_id",
+        "seq",
         "role",
         "content",
         "token_count",
@@ -67,6 +68,12 @@ def test_message_columns() -> None:
         "metadata",  # DB column name; attribute is `extra_metadata`
         "created_at",
     } <= cols
+
+
+def test_message_seq_unique_constraint() -> None:
+    table = Base.metadata.tables["messages"]
+    names = {c.name for c in table.constraints}
+    assert "uq_messages_conversation_id_seq" in names
 
 
 def test_message_metadata_attribute_name() -> None:

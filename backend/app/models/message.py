@@ -12,12 +12,14 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     CheckConstraint,
     ForeignKey,
     Index,
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -44,6 +46,11 @@ class Message(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )
+    # Monotonic per-conversation ordinal assigned at append. The deterministic,
+    # insertion-faithful sort key: ``created_at`` collides within a single
+    # Postgres transaction (now() is fixed per-txn) and at SQLite's second
+    # resolution, so the random uuid PK cannot be a reliable tiebreak.
+    seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
     role: Mapped[MessageRole] = mapped_column(
         enum_type(MessageRole, "message_role"),
         nullable=False,
@@ -71,6 +78,12 @@ class Message(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
             "created_at",
         ),
         Index("ix_messages_user_id", "user_id"),
+        # Insertion-order key + integrity: one ordinal per slot per conversation.
+        UniqueConstraint(
+            "conversation_id",
+            "seq",
+            name="uq_messages_conversation_id_seq",
+        ),
         CheckConstraint(
             f"role IN ({_ROLE_VALUES})",
             name="role_valid",

@@ -13,7 +13,7 @@ test suite `106 passed, 1 skipped`.
 | Milestone | Scope | Status |
 | --- | --- | --- |
 | **M1** | Schema + RLS foundation (5 tables, migrations 0006–0009) | ✅ **Complete & gate-verified on live Postgres** |
-| M2 | Repositories | ⏳ Not started |
+| **M2** | Repositories (pure persistence) | ✅ **Complete** |
 | M3 | Conversation lifecycle services + API | ⏳ Not started |
 | M4 | The turn + enrichment-dispatcher seam | ⏳ Not started |
 | M5 | Enrichment consumers (title + summaries + embeddings) | ⏳ Not started |
@@ -120,4 +120,50 @@ introduced by Phase 2.
 
 ---
 
-_Next: M2 — repositories (pure persistence, module functions, flush-not-commit)._
+## M2 — Repositories ✅
+
+**Goal:** the pure-persistence data-access layer for the Phase 2 tables — module
+functions, build/run queries, `flush()` (never commit), no business logic. Mirrors
+`memory_repository`.
+
+### Delivered (new files)
+- [conversation_repository.py](../backend/app/repositories/conversation_repository.py) — create, get (tenant-scoped, soft-delete-aware), list (filters: status/agent_context/pinned; recency order: pinned → `last_message_at` → created_at; + total), update_fields, touch_last_message, soft_delete.
+- [message_repository.py](../backend/app/repositories/message_repository.py) — append (assigns `seq`), list (paginated, ordered by seq + total), recent_messages (cap + chronological), count, next_seq.
+- [conversation_summary_repository.py](../backend/app/repositories/conversation_summary_repository.py) — next_version_number, add_summary, latest_summary (overall / by type), list_summaries.
+- [conversation_summary_embedding_repository.py](../backend/app/repositories/conversation_summary_embedding_repository.py) — get/create/update/list (mirror of `memory_embedding_repository`).
+- [memory_source_repository.py](../backend/app/repositories/memory_source_repository.py) — link_source, list_for_memory, list_for_conversation.
+
+**Tests:** [test_conversation_repository.py](../backend/tests/test_conversation_repository.py) — 16 tests across all five repos: CRUD, tenant scoping, pagination + totals, recency/pinned ordering, filters, soft-delete exclusion, message seq ordering + recent-window cap, summary version increment + latest-by-type, embedding CRUD, provenance link + lookups.
+
+### Schema addition found during M2 — `messages.seq` (migration 0010)
+Two message-ordering tests failed initially: `created_at` is **fixed per Postgres
+transaction** (and second-resolution on SQLite), so messages appended together
+collide and the random uuid PK is no reliable tiebreak — non-deterministic order.
+This is exactly the risk flagged in PHASE2_PLAN.md §4. Fix: added a monotonic
+per-conversation **`seq`** ordinal (BigInteger, assigned at append) with a
+`UNIQUE(conversation_id, seq)` constraint; all message ordering now keys on `seq`.
+
+- Migration **0010_add_message_seq** (head advances `0009 → 0010`). Column added
+  NOT NULL directly — `messages` carries no rows until the app writes (post-M3), so
+  no backfill. Applied to live Postgres; down/up cycle verified.
+
+### Scope note — `conversation_search_repository` deferred to M7
+The plan lists a search repository under M2 *and* M7. Its FTS + pgvector ranking is
+Postgres-only and not unit-testable on the SQLite suite, so it is built and verified
+in **M7 (Search)** alongside the search service (same pattern as the existing
+`search_repository`). M2 delivers the five SQLite-testable repositories.
+
+### Verification
+| Check | Result |
+| --- | --- |
+| `ruff check app/ tests/` | ✅ all passed |
+| `mypy` (repositories + models) | ✅ no issues, 21 files |
+| `alembic heads` | ✅ single head `0010_add_message_seq` |
+| `pytest` (full suite, SQLite) | ✅ **137 passed, 2 skipped** (was 121/2; +16 repo tests) |
+| 0010 applied to live Postgres + down/up cycle | ✅ |
+| RLS gate re-run under `gummy_app` (post-schema-change) | ✅ **2 passed** |
+
+---
+
+_Next: M3 — conversation lifecycle services + API (`conversation_service`,
+`message_service`, `/conversations` CRUD + `/messages` history)._
