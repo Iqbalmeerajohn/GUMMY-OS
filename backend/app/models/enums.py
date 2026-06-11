@@ -169,6 +169,26 @@ class PlanShape(StrEnum):
     PARALLEL = "parallel"
 
 
+class ToolDecision(StrEnum):
+    """The policy gate's verdict recorded on a ``tool_invocations`` row.
+
+    ``pending`` covers both the Yellow/Red "prompt the human" path and the
+    Phase 3 executor-deferred case (no non-Green tool ever runs)."""
+
+    ALLOWED = "allowed"
+    BLOCKED = "blocked"
+    PENDING = "pending"
+
+
+class ToolRunStatus(StrEnum):
+    """Execution outcome of a tool invocation (``not_executed`` for any
+    blocked/pending/deferred call — the audit row still exists)."""
+
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    NOT_EXECUTED = "not_executed"
+
+
 def enum_type(enum_cls: type[Enum], name: str) -> SAEnum:
     """Build a consistent string-backed SQLAlchemy Enum column type.
 

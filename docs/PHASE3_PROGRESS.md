@@ -19,7 +19,7 @@ Baseline at start: tag `phase2-complete`, migration head
 | **M3** | Agent Registry + Run Recording | ✅ **Complete** (flag `agents_run_recording`, default off) |
 | **M4** | Context Builder + Orchestrator (single-agent, flag) | ✅ **Complete** (flag `agents_orchestration_enabled`, default off) |
 | **M5** | Agent Router + 2nd agent (pipeline) | ✅ **Complete** (LLM fallback opt-in via `agents_router_llm_fallback`) |
-| **M6** | Tool Execution Interface + Policy Engine (Green only) | ⏳ Planned |
+| **M6** | Tool Execution Interface + Policy Engine (Green only) | ✅ **Complete & gate-verified on live Postgres** (migration 0015) |
 | **M7** | Shared agent memory writes + provenance | ⏳ Planned |
 | **M8** | Goal & Task Foundation | ⏳ Planned |
 | **M9** | Agent-to-agent trace + parallel compose | ⏳ Planned |
@@ -394,3 +394,89 @@ routing **and** a pipeline hand-off. Still Green-only, still flag-gated.
 `agents_orchestration_enabled=false` disables the whole path;
 `agents_router_llm_fallback=false` (default) already neutralizes the LLM
 classifier. Config-level, no schema, no data risk.
+
+---
+
+## M6 — Tool Execution Interface + Policy Engine (Green only) ✅
+
+**Goal:** the single, typed, **policy-gated** door for tool calls with the
+Green/Yellow/Red Policy Engine. Green executors only (memory read, web
+search, doc read); Yellow/Red tools are **modeled + gated but executors do
+not exist** — no risky action can fire before the approval UI does.
+
+### Delivered
+
+**Schema** (migration `0015_add_tool_invocations`):
+- `tool_invocations` — append-only audit of every tool call: `args` JSONB,
+  `tier`, `decision` (allowed|blocked|pending), `status`
+  (succeeded|failed|not_executed), `decision_reason`, `output_ref` (lean
+  preview, not full payloads), cost columns. Denormalized `user_id`,
+  fail-closed RLS in-migration, conditional `gummy_app` grant. Model:
+  [tool_invocation.py](../backend/app/models/tool_invocation.py); enums
+  `ToolDecision`, `ToolRunStatus` (additive). Repo:
+  [tool_invocation_repository.py](../backend/app/repositories/tool_invocation_repository.py).
+
+**Policy Engine**
+([policy_engine.py](../backend/app/services/agents/policy_engine.py)) — a
+**pure function of trusted state only** (code-defined manifest, code-defined
+catalog tier, user standing allowances): manifest check → ceiling check →
+Green=ALLOW, Yellow=ALLOW-with-allowance-else-PROMPT, **Red=always PROMPT**
+(allowances ignored — no always-allow for Red). Args and tool outputs are
+not inputs to the gate, which is the prompt-injection invariant by
+construction.
+
+**Tool Interface** (`app/services/agents/tools/`):
+- [catalog.py](../backend/app/services/agents/tools/catalog.py) — code-defined
+  `ToolSpec` registry: Green `memory_read` (real, via the Phase 1 retrieval
+  service), `web_search` (provider seam; offline-safe null provider default),
+  `doc_read` (modeled; document store is a later phase) + modeled
+  executor-less `email_send` (Yellow) and `social_publish` (Red).
+- [interface.py](../backend/app/services/agents/tools/interface.py) —
+  `invoke`: catalog lookup (unknown tool → blocked at maximal tier) →
+  manifest check → policy gate → Green executes / Yellow-Red pending handle
+  (**even a policy-ALLOWED Yellow cannot run — no non-Green executor
+  exists**) / violations blocked; **every path writes one audit row**.
+- [context.py](../backend/app/services/agents/tools/context.py) — the trusted
+  per-invocation executor context (session, tenant, embeddings).
+
+**Wiring:** `registry.KNOWN_TOOL_TIERS` now points at the real catalog;
+the recall agent's manifest declares `memory_read` (registry↔catalog
+validation exercised at startup; its handler keeps using the pre-retrieved
+pack — same retrieval service, no double cost).
+
+**Tests** (+22):
+- [test_policy_engine.py](../backend/tests/test_policy_engine.py) — the
+  **exhaustive 3×3 ceiling×tier matrix**, manifest check, standing
+  allowances, no-always-allow-for-Red, and the injection invariant (gate
+  signature is structurally untrusted-input-free + a hostile tool key is
+  just blocked).
+- [test_tool_interface.py](../backend/tests/test_tool_interface.py) — Green
+  executes + audited (output_ref preview); not-in-manifest blocked +
+  audited; **Yellow and Red return pending and never execute** (also under a
+  standing allowance); unknown tool blocked at Red tier; Green failure
+  recorded; null web-search provider offline-safe; catalog invariant: every
+  non-Green spec has **no executor at all**; schema sanity for 0015.
+- [test_rls_postgres.py](../backend/tests/test_rls_postgres.py) — the agent
+  chain test now covers `tool_invocations` (isolation + fail-closed).
+
+### Verification performed
+
+| Check | Result |
+| --- | --- |
+| `ruff check .` | ✅ all checks passed |
+| `mypy app` | ✅ no issues in 123 files |
+| `pytest` (full suite) | ✅ **298 passed, 4 skipped** (was 276/4; +22) |
+| **Policy matrix exhaustive** | ✅ 9/9 combinations + allowance branches |
+| **Injection invariant** | ✅ no escalation path exists |
+| **No non-Green execution** (even when policy allows) | ✅ asserted |
+| `alembic heads` | ✅ single head `0015_add_tool_invocations` |
+| `0015` live apply + down/up cycle (Supabase) | ✅ clean both ways |
+| Live RLS gate (now incl. `tool_invocations`) | ✅ 4 passed |
+| Supabase security advisors | ✅ nothing new (same 4 pre-existing) |
+
+### Rollback
+
+Flag-off disables agent tool use entirely; Green-only scope means no
+external side effect ever fired. Schema: `alembic downgrade 0014` drops
+`tool_invocations` (verified live, empty table). Config + reversible
+migration.

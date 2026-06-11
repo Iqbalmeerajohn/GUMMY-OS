@@ -315,7 +315,12 @@ async def _seed_searchable(
     return conv
 
 
-_PHASE3_TENANT_TABLES = ("agent_runs", "agent_steps", "agent_messages")
+_PHASE3_TENANT_TABLES = (
+    "agent_runs",
+    "agent_steps",
+    "agent_messages",
+    "tool_invocations",
+)
 
 
 async def test_agent_tables_isolation_under_rls() -> None:
@@ -378,6 +383,15 @@ async def test_agent_tables_isolation_under_rls() -> None:
                     "INSERT INTO agent_messages (run_id, user_id, from_agent, "
                     "to_agent, role, payload, seq) VALUES "
                     "(:r, :u, 'orchestrator', :k, 'task', '{}', 1)"
+                ),
+                {"r": str(run), "u": str(alice), "k": agent_key},
+            )
+            await s.execute(
+                text(
+                    "INSERT INTO tool_invocations (run_id, user_id, "
+                    "agent_key, tool_key, tier, decision, status) VALUES "
+                    "(:r, :u, :k, 'memory_read', 'green', 'allowed', "
+                    "'succeeded')"
                 ),
                 {"r": str(run), "u": str(alice), "k": agent_key},
             )

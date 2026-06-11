@@ -43,7 +43,11 @@ RECALL_AGENT = AgentManifest(
         "memories about the user's question for downstream agents."
     ),
     ceiling=PermissionTier.GREEN,
-    tools=(),
+    # memory_read is the tool form of what this agent does; its handler uses
+    # the pre-retrieved context pack (same retrieval service) rather than
+    # re-invoking the tool, so the live path costs nothing extra. Declaring
+    # it exercises registry↔catalog validation end-to-end at startup.
+    tools=("memory_read",),
     keywords=(
         "remember",
         "recall",

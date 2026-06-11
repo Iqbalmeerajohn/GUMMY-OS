@@ -5,10 +5,10 @@ startup, never per-request), and seeds/refreshes the global catalog rows so
 runtime enablement lives in the DB while capability lives in code
 (PHASE3_PLAN.md §5).
 
-Tool-tier knowledge: until M6 ships the Tool Execution Interface there are no
-known tools, so any manifest declaring one is rejected — exactly the
-"manifest lists a tool that doesn't exist" failure mode. M6 replaces
-``KNOWN_TOOL_TIERS`` with the real catalog.
+Tool-tier knowledge comes from the M6 tool catalog: a manifest may only
+declare tools that exist there, and never above its own ceiling — the
+"manifest lists a tool that doesn't exist / outranks its ceiling" failure
+modes are rejected at startup.
 """
 
 from __future__ import annotations
@@ -24,11 +24,13 @@ from app.models.enums import PermissionTier
 from app.repositories import agent_repository
 from app.schemas.agents import AgentManifest
 from app.services.agents.manifests import BUILTIN_MANIFESTS
+from app.services.agents.tools.catalog import TOOL_TIERS
 
 logger = logging.getLogger(__name__)
 
-# Tool key → permission tier. Empty until M6's catalog replaces it.
-KNOWN_TOOL_TIERS: dict[str, PermissionTier] = {}
+# Tool key → permission tier: the real M6 catalog. Manifests may only
+# declare tools that exist here, at or below their ceiling.
+KNOWN_TOOL_TIERS: dict[str, PermissionTier] = TOOL_TIERS
 
 _TIER_ORDER: dict[PermissionTier, int] = {
     PermissionTier.GREEN: 0,
