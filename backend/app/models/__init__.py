@@ -5,6 +5,10 @@ autogenerate and ``Base.metadata.create_all`` see the full schema.
 """
 
 from app.database.base import Base
+from app.models.agent import Agent
+from app.models.agent_message import AgentMessage
+from app.models.agent_run import AgentRun
+from app.models.agent_step import AgentStep
 from app.models.conversation import Conversation
 from app.models.conversation_summary import ConversationSummary
 from app.models.conversation_summary_embedding import (
@@ -12,12 +16,18 @@ from app.models.conversation_summary_embedding import (
 )
 from app.models.enums import (
     AgentContext,
+    AgentMessageRole,
     ConversationStatus,
     MemoryCategory,
     MemoryChangeReason,
     MemoryStatus,
     MessageRole,
+    PermissionTier,
+    PlanShape,
+    RunStatus,
+    RunTrigger,
     SourceKind,
+    StepStatus,
     SummaryType,
 )
 from app.models.memory import Memory
@@ -47,4 +57,15 @@ __all__ = [
     "MessageRole",
     "SummaryType",
     "SourceKind",
+    # Phase 3 — Agent Framework
+    "Agent",
+    "AgentRun",
+    "AgentStep",
+    "AgentMessage",
+    "PermissionTier",
+    "RunTrigger",
+    "RunStatus",
+    "StepStatus",
+    "AgentMessageRole",
+    "PlanShape",
 ]

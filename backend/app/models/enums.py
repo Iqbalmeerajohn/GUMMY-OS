@@ -111,6 +111,64 @@ class ConsentMode(StrEnum):
     AUTONOMOUS = "autonomous"
 
 
+# ── Phase 3: Agent Framework ──────────────────────────────────────────────────
+
+
+class PermissionTier(StrEnum):
+    """Green/Yellow/Red action tiers (see security-system.md §1).
+
+    ``green`` — read-only / reversible, auto-allowed.
+    ``yellow`` — consequential, requires confirmation (executors deferred).
+    ``red`` — irreversible / sensitive, always per-action approval, no
+      standing allowances (executors deferred).
+    """
+
+    GREEN = "green"
+    YELLOW = "yellow"
+    RED = "red"
+
+
+class RunTrigger(StrEnum):
+    """What initiated an agent run. ``scheduler`` is reserved for the future
+    GSD proactive worker (PHASE3_PLAN.md §14.3)."""
+
+    CHAT = "chat"
+    SCHEDULER = "scheduler"
+
+
+class RunStatus(StrEnum):
+    """Lifecycle status of an ``agent_runs`` orchestration trace."""
+
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+class StepStatus(StrEnum):
+    """Lifecycle status of a single ``agent_steps`` agent invocation."""
+
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+class AgentMessageRole(StrEnum):
+    """Kind of inter-agent hop recorded on ``agent_messages``."""
+
+    TASK = "task"
+    RESULT = "result"
+    ERROR = "error"
+
+
+class PlanShape(StrEnum):
+    """Execution shape of a routed orchestration (PHASE3_PLAN.md §6)."""
+
+    SINGLE = "single"
+    PIPELINE = "pipeline"
+    PARALLEL = "parallel"
+
+
 def enum_type(enum_cls: type[Enum], name: str) -> SAEnum:
     """Build a consistent string-backed SQLAlchemy Enum column type.
 

@@ -315,6 +315,166 @@ async def _seed_searchable(
     return conv
 
 
+_PHASE3_TENANT_TABLES = ("agent_runs", "agent_steps", "agent_messages")
+
+
+async def test_agent_tables_isolation_under_rls() -> None:
+    """Phase 3 M1 gate: every agent-framework table is RLS-isolated.
+
+    Inserts a run -> step -> message chain under Alice, then proves on all
+    three tenant tables: isolation, fail-closed on unset GUC, and WITH CHECK
+    rejection of a forged cross-tenant insert. Also proves the special
+    ``agents`` catalog policies: global rows are readable by every tenant but
+    writable only when no tenant GUC is set (the startup seed path), and a
+    tenant cannot insert or update a global row.
+    """
+    dsn = os.environ["RLS_TEST_DSN"]
+    engine = create_async_engine(dsn, poolclass=None)
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+
+    alice = uuid.uuid4()
+    bob = uuid.uuid4()
+    run = uuid.uuid4()
+    global_agent = uuid.uuid4()
+    agent_key = f"rls-test-{uuid.uuid4().hex[:8]}"
+    try:
+        # Seed path: with NO tenant GUC set, the app can write a global
+        # catalog row (user_id IS NULL) — this is how M3 seeding works.
+        async with maker() as s:
+            await _set_tenant(s, None)
+            await s.execute(
+                text(
+                    "INSERT INTO agents (id, key, display_name, mission, "
+                    "ceiling, tool_manifest, enabled) VALUES "
+                    "(:id, :k, 'RLS Test', 'm', 'green', '[]', true)"
+                ),
+                {"id": str(global_agent), "k": agent_key},
+            )
+            await s.commit()
+
+        # Alice builds the run -> step -> message chain.
+        async with maker() as s:
+            await _set_tenant(s, alice)
+            await s.execute(
+                text("INSERT INTO users (id, email) VALUES (:id, :e)"),
+                {"id": str(alice), "e": f"{alice}@rls.test"},
+            )
+            await s.execute(
+                text(
+                    "INSERT INTO agent_runs (id, user_id, trigger, status) "
+                    "VALUES (:r, :u, 'chat', 'running')"
+                ),
+                {"r": str(run), "u": str(alice)},
+            )
+            await s.execute(
+                text(
+                    "INSERT INTO agent_steps (run_id, user_id, agent_key, "
+                    "seq, status) VALUES (:r, :u, :k, 1, 'running')"
+                ),
+                {"r": str(run), "u": str(alice), "k": agent_key},
+            )
+            await s.execute(
+                text(
+                    "INSERT INTO agent_messages (run_id, user_id, from_agent, "
+                    "to_agent, role, payload, seq) VALUES "
+                    "(:r, :u, 'orchestrator', :k, 'task', '{}', 1)"
+                ),
+                {"r": str(run), "u": str(alice), "k": agent_key},
+            )
+            await s.commit()
+
+        # Alice sees her rows AND the global catalog row.
+        async with maker() as s:
+            await _set_tenant(s, alice)
+            for table in _PHASE3_TENANT_TABLES:
+                count = await s.scalar(text(f"SELECT count(*) FROM {table}"))
+                assert count == 1, f"alice should see her {table} row"
+            count = await s.scalar(
+                text("SELECT count(*) FROM agents WHERE key = :k"),
+                {"k": agent_key},
+            )
+            assert count == 1, "tenant must be able to read global agents"
+
+        # Bob sees nothing of Alice's (isolation) — but still the catalog.
+        async with maker() as s:
+            await _set_tenant(s, bob)
+            for table in _PHASE3_TENANT_TABLES:
+                count = await s.scalar(text(f"SELECT count(*) FROM {table}"))
+                assert count == 0, f"bob must not see alice's {table}"
+
+        # Unset GUC -> fail closed on every tenant table.
+        async with maker() as s:
+            await _set_tenant(s, None)
+            for table in _PHASE3_TENANT_TABLES:
+                count = await s.scalar(text(f"SELECT count(*) FROM {table}"))
+                assert count == 0, f"unset GUC must hide {table}"
+
+        # WITH CHECK: Bob forging Alice's user_id is rejected (agent_runs).
+        async with maker() as s:
+            await _set_tenant(s, bob)
+            with pytest.raises(Exception):  # noqa: B017,PT011 - RLS WITH CHECK
+                await s.execute(
+                    text(
+                        "INSERT INTO agent_runs (user_id, trigger, status) "
+                        "VALUES (:u, 'chat', 'running')"
+                    ),
+                    {"u": str(alice)},  # not bob's id
+                )
+                await s.commit()
+
+        # Tenant cannot INSERT a global catalog row (WITH CHECK).
+        async with maker() as s:
+            await _set_tenant(s, bob)
+            with pytest.raises(Exception):  # noqa: B017,PT011 - RLS WITH CHECK
+                await s.execute(
+                    text(
+                        "INSERT INTO agents (key, display_name, mission, "
+                        "ceiling, tool_manifest) VALUES "
+                        "(:k, 'Forged', 'm', 'green', '[]')"
+                    ),
+                    {"k": f"forged-{uuid.uuid4().hex[:8]}"},
+                )
+                await s.commit()
+
+        # Tenant cannot UPDATE a global catalog row (USING filters it out:
+        # zero rows affected, value unchanged).
+        async with maker() as s:
+            await _set_tenant(s, bob)
+            result = await s.execute(
+                text("UPDATE agents SET enabled = false WHERE key = :k"),
+                {"k": agent_key},
+            )
+            assert result.rowcount == 0, "global agents must be read-only"
+            await s.commit()
+        async with maker() as s:
+            await _set_tenant(s, None)
+            enabled = await s.scalar(
+                text("SELECT enabled FROM agents WHERE key = :k"),
+                {"k": agent_key},
+            )
+            assert enabled is True
+    finally:
+        # Cleanup: steps/messages cascade from the run; the global agent row
+        # is deleted on the seed path (no GUC).
+        async with maker() as s:
+            await _set_tenant(s, alice)
+            await s.execute(
+                text("DELETE FROM agent_runs WHERE user_id = :u"),
+                {"u": str(alice)},
+            )
+            await s.execute(
+                text("DELETE FROM users WHERE id = :u"), {"u": str(alice)}
+            )
+            await s.commit()
+        async with maker() as s:
+            await _set_tenant(s, None)
+            await s.execute(
+                text("DELETE FROM agents WHERE key = :k"), {"k": agent_key}
+            )
+            await s.commit()
+        await engine.dispose()
+
+
 async def test_conversation_search_isolation_under_rls() -> None:
     """M7: keyword + semantic search return only the acting tenant's threads."""
     dsn = os.environ["RLS_TEST_DSN"]

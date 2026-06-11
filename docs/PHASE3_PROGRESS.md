@@ -1,0 +1,132 @@
+# GUMMY OS — Phase 3 Progress
+
+Living log of Phase 3 (Agent Framework / Master Orchestrator) implementation.
+Design of record: [PHASE3_PLAN.md](PHASE3_PLAN.md). Implementation roadmap:
+[PHASE3_PROGRESS_PLAN.md](PHASE3_PROGRESS_PLAN.md). Updated continuously,
+milestone by milestone.
+
+Baseline at start: tag `phase2-complete`, migration head
+`0011_extraction_watermark`, test suite `203 passed, 3 skipped`.
+
+---
+
+## Status board
+
+| Milestone | Scope | Status |
+| --- | --- | --- |
+| **M1** | Schema & RLS foundation + contract types (migrations 0012–0014) | ✅ **Complete & gate-verified on live Postgres** |
+| **M2** | Repositories (pure persistence) | ⏳ Planned |
+| **M3** | Agent Registry + Run Recording | ⏳ Planned |
+| **M4** | Context Builder + Orchestrator (single-agent, flag) | ⏳ Planned |
+| **M5** | Agent Router + 2nd agent (pipeline) | ⏳ Planned |
+| **M6** | Tool Execution Interface + Policy Engine (Green only) | ⏳ Planned |
+| **M7** | Shared agent memory writes + provenance | ⏳ Planned |
+| **M8** | Goal & Task Foundation | ⏳ Planned |
+| **M9** | Agent-to-agent trace + parallel compose | ⏳ Planned |
+| **M10** | Action approvals (pending handles, no executors) | ⏳ Planned |
+| **M11** | Seal — orchestration default-on | ⏳ Planned |
+
+---
+
+## M1 — Schema & RLS foundation + contract types ✅
+
+**Goal:** the core framework tables (registry + observability trace) and the
+typed contract, all **inert** — nothing reads or writes them yet — so the
+riskiest live work (RLS on new tables) lands first while nothing depends on it.
+
+### Delivered
+
+**Enums** ([app/models/enums.py](../backend/app/models/enums.py), additive only):
+`PermissionTier` (green/yellow/red), `RunTrigger` (chat/scheduler), `RunStatus`,
+`StepStatus`, `AgentMessageRole` (task/result/error), `PlanShape`
+(single/pipeline/parallel).
+
+**Models** (new files):
+- [agent.py](../backend/app/models/agent.py) — `agents` registry catalog
+  (nullable `user_id`: NULL = built-in global row; `tool_manifest` JSONB;
+  `ceiling` permission tier; `uq_agents_key`).
+- [agent_run.py](../backend/app/models/agent_run.py) — `agent_runs`
+  (one per orchestration; `route_plan` JSONB; cost columns;
+  `conversation_id` FK `SET NULL` so the audit trail survives thread deletion).
+- [agent_step.py](../backend/app/models/agent_step.py) — `agent_steps`
+  (one per agent invocation; `input`/`output` JSONB; `UNIQUE(run_id, seq)`).
+- [agent_message.py](../backend/app/models/agent_message.py) — `agent_messages`
+  (append-only inter-agent audit trail; `UNIQUE(run_id, seq)`).
+- [models/__init__.py](../backend/app/models/__init__.py) — registration
+  (additive only). Every table carries a denormalized `user_id`.
+
+**Contract schemas** ([app/schemas/agents.py](../backend/app/schemas/agents.py),
+pure Pydantic, zero runtime wiring): `AgentManifest` (frozen), `AgentTask`,
+`AgentResult`, `ContextPack`, `CostInfo`, `RouteStep`, `RoutingDecision`,
+`OrchestrationResult`.
+
+**Migrations** (linear `0011 → 0014`):
+- `0012_add_agents` — registry table + **three policies**: `agents_global_read`
+  (tenants read global rows), `agents_tenant_isolation` (standard fail-closed),
+  `agents_global_seed` (global rows writable **only when no tenant GUC is
+  set** — the M3 startup-seed path; global rows are read-only inside any
+  tenant transaction).
+- `0013_add_agent_runs` — `agent_runs` + `agent_steps`, standard fail-closed
+  policy each.
+- `0014_add_agent_messages` — `agent_messages`, standard fail-closed policy.
+
+Every table: RLS enabled in the same migration that creates it, the identical
+GUC predicate (`user_id = NULLIF(current_setting('app.current_user_id', true),
+'')::uuid`), conditional `gummy_app` grant, string enums + named CHECKs.
+
+**Tests**:
+- [test_agent_models.py](../backend/tests/test_agent_models.py) — 18 tests:
+  table/column/index/constraint/FK registration, `SET NULL` audit-survival FK,
+  denormalized `user_id` everywhere, enum values, 63-char identifier guard,
+  Phase 1/2-untouched sanity, and a full ORM chain round-trip on SQLite.
+- [test_agents_contract.py](../backend/tests/test_agents_contract.py) — 8 tests:
+  defaults, validation bounds, frozen manifests, JSON round-trips.
+- [test_rls_postgres.py](../backend/tests/test_rls_postgres.py) — extended with
+  `test_agent_tables_isolation_under_rls` (skip-gated): run→step→message chain
+  isolation, fail-closed, WITH-CHECK rejection, **and** the `agents` catalog
+  semantics (tenant reads global rows; tenant cannot INSERT or UPDATE them;
+  no-GUC seed path can).
+
+### Verification performed
+
+| Check | Result |
+| --- | --- |
+| Models import + `Base.metadata.create_all` on SQLite | ✅ all 4 new tables build; ORM chain round-trips |
+| `alembic heads` | ✅ single head `0014_add_agent_messages` |
+| `alembic history` | ✅ linear `0011 → 0014`, no branches |
+| `alembic upgrade 0011:0014 --sql` (offline render) | ✅ tables, 6 policies, CHECKs, JSONB, conditional grants |
+| `ruff check .` | ✅ all checks passed |
+| `mypy app` | ✅ no issues in 98 files |
+| `pytest` (full suite) | ✅ **228 passed, 4 skipped** (was 203/3; +26 tests, +1 skip-gated RLS test) |
+
+### M1 gate — CLOSED ✅ (live Postgres, `gummy_app` non-bypass role)
+
+| Gate check | Result |
+| --- | --- |
+| `alembic upgrade head` on live Postgres | ✅ 0012–0014 applied (head was 0011) |
+| `alembic downgrade 0011` → `upgrade head` cycle | ✅ clean both ways |
+| Run/step/message isolation | ✅ Bob sees 0 of Alice's |
+| Fail-closed (unset GUC) on all tenant tables | ✅ zero rows |
+| WITH CHECK rejection (forged `user_id`) | ✅ rejected on `agent_runs` |
+| `agents` global rows readable by tenants | ✅ |
+| `agents` global rows **not writable** by tenants | ✅ INSERT rejected, UPDATE affects 0 rows |
+| `agents` global rows writable on no-GUC seed path | ✅ (how M3 seeding works) |
+| All 4 gated RLS tests (`pytest tests/test_rls_postgres.py`) | ✅ 4 passed |
+| Supabase security advisors | ✅ nothing new (4 pre-existing findings only) |
+
+### Issues found & resolved during M1
+
+1. **`agents` needed a three-policy design, not the standard single policy.**
+   Global catalog rows (`user_id IS NULL`) must be readable by every tenant but
+   seeded/updated by the app at startup — and the startup path runs with no
+   tenant GUC. A single fail-closed policy would block both. Solved with
+   `agents_global_read` (SELECT only) + `agents_tenant_isolation` (standard) +
+   `agents_global_seed` (writes allowed only when `user_id IS NULL` **and** the
+   GUC is unset), keeping global rows read-only inside tenant transactions.
+   Proven live by the new RLS test.
+
+### Rollback
+
+`alembic downgrade 0011_extraction_watermark` drops all four tables (verified
+live); revert the additive enum/model/schema/test changes. Zero data risk —
+nothing reads or writes these tables yet.
