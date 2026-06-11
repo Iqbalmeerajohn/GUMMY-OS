@@ -322,6 +322,7 @@ _PHASE3_TENANT_TABLES = (
     "tool_invocations",
     "goals",
     "tasks",
+    "action_approvals",
 )
 
 
@@ -413,6 +414,15 @@ async def test_agent_tables_isolation_under_rls() -> None:
                     "(:u, :g, :r, 'alice-task', 'pending', 0)"
                 ),
                 {"u": str(alice), "g": str(goal), "r": str(run)},
+            )
+            await s.execute(
+                text(
+                    "INSERT INTO action_approvals (user_id, run_id, "
+                    "agent_key, action_kind, tier, preview, status, "
+                    "expires_at) VALUES (:u, :r, :k, 'email_send', "
+                    "'yellow', '{}', 'pending', now() + interval '1 day')"
+                ),
+                {"u": str(alice), "r": str(run), "k": agent_key},
             )
             await s.commit()
 

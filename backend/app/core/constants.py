@@ -111,6 +111,9 @@ AGENT_TRACE_PREVIEW_CHARS = 200
 # goals / open tasks are surfaced to an agent per dispatch.
 CONTEXT_MAX_GOALS = 5
 CONTEXT_MAX_TASKS = 10
+# How long a pending action approval stays decidable (M10). After this it
+# can only expire — stale previews must never be approvable.
+ACTION_APPROVAL_TTL_SECONDS = 24 * 60 * 60
 
 # ── LLM gateway defaults (Claude / Anthropic) ─────────────────────────────────
 # Chat-facing default model. Configurable; the tiered fast/smart/frontier model

@@ -5,6 +5,7 @@ autogenerate and ``Base.metadata.create_all`` see the full schema.
 """
 
 from app.database.base import Base
+from app.models.action_approval import ActionApproval
 from app.models.agent import Agent
 from app.models.agent_message import AgentMessage
 from app.models.agent_run import AgentRun
@@ -17,6 +18,7 @@ from app.models.conversation_summary_embedding import (
 from app.models.enums import (
     AgentContext,
     AgentMessageRole,
+    ApprovalStatus,
     ConversationStatus,
     GoalStatus,
     MemoryCategory,
@@ -82,4 +84,6 @@ __all__ = [
     "Task",
     "GoalStatus",
     "TaskStatus",
+    "ActionApproval",
+    "ApprovalStatus",
 ]

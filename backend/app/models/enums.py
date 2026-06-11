@@ -194,6 +194,19 @@ class TaskStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class ApprovalStatus(StrEnum):
+    """Lifecycle of a human-in-the-loop action approval (M10).
+
+    Append-only decision trail: pending → approved | rejected | expired.
+    Approving records the decision only — **no executor fires in Phase 3**.
+    """
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+
+
 class ToolDecision(StrEnum):
     """The policy gate's verdict recorded on a ``tool_invocations`` row.
 

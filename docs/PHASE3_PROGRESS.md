@@ -23,7 +23,7 @@ Baseline at start: tag `phase2-complete`, migration head
 | **M7** | Shared agent memory writes + provenance | ✅ **Complete & gate-verified on live Postgres** (migration 0016) |
 | **M8** | Goal & Task Foundation | ✅ **Complete & gate-verified on live Postgres** (migration 0017) |
 | **M9** | Agent-to-agent trace + parallel compose | ✅ **Complete** (no migration — `agent_messages` from M1) |
-| **M10** | Action approvals (pending handles, no executors) | ⏳ Planned |
+| **M10** | Action approvals (pending handles, no executors) | ✅ **Complete & gate-verified on live Postgres** (migration 0018) |
 | **M11** | Seal — orchestration default-on | ⏳ Planned |
 
 ---
@@ -689,3 +689,75 @@ when >1 contributed). `shape_voice` is the Personality hook, applied
 Flag-off disables orchestration; no schema change to reverse. The Router
 never emits the parallel shape on its own in Phase 3 (it is injected/used by
 future routes), so the live path is unchanged by default.
+
+---
+
+## M10 — Action approvals (pending handles, no executors) ✅
+
+**Goal:** the human-in-the-loop seam: the Policy gate's "prompt" path
+creates a previewed `action_approvals` row and returns a pending handle;
+approve/reject records the decision. **No Yellow/Red executor is wired** —
+approving does not fire any external action (that's Phase 4).
+
+### Delivered
+
+**Schema** (migration `0018_add_action_approvals`):
+- `action_approvals` — `run_id?` (FK **SET NULL**: the decision trail
+  survives run cleanup), `agent_key`, `action_kind` (the tool key),
+  `tier`, `preview` JSONB (exactly what would happen), `status{pending,
+  approved,rejected,expired}`, `decided_at?`, `expires_at` (TTL
+  `ACTION_APPROVAL_TTL_SECONDS` = 24h). Denormalized `user_id`, fail-closed
+  RLS in-migration, conditional `gummy_app` grant. Model:
+  [action_approval.py](../backend/app/models/action_approval.py); enum
+  `ApprovalStatus`.
+
+**Repo/service:**
+[action_approval_repository.py](../backend/app/repositories/action_approval_repository.py)
+(flush-only create/get/list/set_decision);
+[approval_service.py](../backend/app/services/agents/approval_service.py) —
+`create_pending` (flush-only: rides the turn's unit of work), `approve` /
+`reject` (commit; **decide exactly once** → 409 `approval_already_decided`;
+expired → flips to `expired` + 409 `approval_expired` — stale previews are
+never approvable). **The executor remains nonexistent: deciding only
+records.**
+
+**Gate wiring:**
+[tools/interface.py](../backend/app/services/agents/tools/interface.py) —
+the PROMPT path now creates the previewed pending approval and returns its
+id on `ToolResult.approval_id`; the audit row's `output_ref` links it
+(`{"approval_id": …}`).
+
+**API:** [actions.py](../backend/app/api/v1/actions.py) — `GET /api/v1/actions`
+(+status filter), `GET /actions/{id}`, `POST /actions/{id}/approve|reject`.
+Tenant-scoped, standard envelope; the step-up-auth seam for Red is reserved
+for the approval-UI phase. Schemas: [action.py](../backend/app/schemas/action.py).
+
+**Tests** (+13):
+[test_approval_service.py](../backend/tests/test_approval_service.py) —
+pending created **by the real gate** (Yellow and Red), preview/run linkage,
+approve/reject once-only, expiry behavior, foreign-tenant 404 + scoped
+lists, audit linkage, and the **no-executor invariant asserted both
+structurally** (no non-Green executor exists in the catalog) **and
+behaviorally**;
+[test_actions_api.py](../backend/tests/test_actions_api.py) — list/get/
+approve/reject, 409 on double-decide, foreign-tenant 404, unknown-id 404.
+RLS chain extended to `action_approvals`.
+
+### Verification performed
+
+| Check | Result |
+| --- | --- |
+| `ruff check .` | ✅ all checks passed |
+| `mypy app` | ✅ no issues in 143 files |
+| `pytest` (full suite) | ✅ **348 passed, 4 skipped** (was 335/4; +13) |
+| **Invariant: approving fires no external side effect** | ✅ asserted |
+| Red has no always-allow (M6 matrix still green) | ✅ |
+| `alembic heads` | ✅ single head `0018_add_action_approvals` |
+| `0018` live apply + down/up cycle (Supabase) | ✅ clean both ways |
+| Live RLS gate (now incl. `action_approvals`) | ✅ 4 passed |
+
+### Rollback
+
+Endpoints are additive (unregister + `alembic downgrade 0017`, verified
+live). Because no executor exists, rollback carries no outside-world
+consequences.

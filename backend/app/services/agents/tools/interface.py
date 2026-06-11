@@ -39,7 +39,8 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class ToolResult:
     """What an agent gets back from ``invoke`` — never an exception for a
-    gate refusal (a blocked/pending call is a result, not an error)."""
+    gate refusal (a blocked/pending call is a result, not an error).
+    ``approval_id`` is the pending handle when the gate said "prompt"."""
 
     tool_key: str
     tier: PermissionTier
@@ -48,6 +49,7 @@ class ToolResult:
     output: dict | None
     reason: str
     invocation_id: uuid.UUID
+    approval_id: uuid.UUID | None = None
 
 
 async def invoke(
@@ -96,13 +98,27 @@ async def invoke(
         standing_allowances=standing_allowances,
     )
 
+    approval_id: uuid.UUID | None = None
     if verdict.decision == PolicyDecision.BLOCK:
         decision, status = ToolDecision.BLOCKED, ToolRunStatus.NOT_EXECUTED
         output: dict | None = None
         error: str | None = None
     elif verdict.decision == PolicyDecision.PROMPT:
-        # The human-in-the-loop seam: M10 turns this into an
-        # action_approvals row; today it is a recorded pending handle.
+        # The human-in-the-loop seam (M10): create a previewed pending
+        # approval and hand back its id. Deciding it later records the
+        # decision only — no Yellow/Red executor exists in Phase 3.
+        from app.services.agents import approval_service
+
+        approval = await approval_service.create_pending(
+            session,
+            user_id=user_id,
+            agent_key=agent_key,
+            action_kind=tool_key,
+            tier=spec.tier,
+            preview={"tool_key": tool_key, "args": args},
+            run_id=run_id,
+        )
+        approval_id = approval.id
         decision, status = ToolDecision.PENDING, ToolRunStatus.NOT_EXECUTED
         output, error = None, None
     elif spec.tier != PermissionTier.GREEN or spec.executor is None:
@@ -131,7 +147,11 @@ async def invoke(
         decision=decision,
         status=status,
         decision_reason=verdict.reason,
-        output_ref=_output_preview(output),
+        output_ref=(
+            {"approval_id": str(approval_id)}
+            if approval_id is not None
+            else _output_preview(output)
+        ),
         error=error,
     )
     return ToolResult(
@@ -142,6 +162,7 @@ async def invoke(
         output=output,
         reason=verdict.reason,
         invocation_id=invocation.id,
+        approval_id=approval_id,
     )
 
 

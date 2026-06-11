@@ -12,10 +12,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.v1 import conversations, goals, memories, tasks
+from app.api.v1 import actions, conversations, goals, memories, tasks
 
 api_router = APIRouter()
 api_router.include_router(memories.router)
 api_router.include_router(conversations.router)
 api_router.include_router(goals.router)
 api_router.include_router(tasks.router)
+api_router.include_router(actions.router)
