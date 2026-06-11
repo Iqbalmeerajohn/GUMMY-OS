@@ -208,7 +208,14 @@ def test_phase2_enum_values() -> None:
         "tool",
     }
     assert {t.value for t in SummaryType} == {"rolling", "closing"}
-    assert {k.value for k in SourceKind} == {"conversation"}
+    # Phase 3 M7 widened the provenance bus (agent live; document/activity
+    # reserved). 'conversation' remains the Phase 2 kind, untouched.
+    assert {k.value for k in SourceKind} == {
+        "conversation",
+        "agent",
+        "document",
+        "activity",
+    }
 
 
 def test_phase1_models_untouched() -> None:

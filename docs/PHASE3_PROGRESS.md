@@ -20,7 +20,7 @@ Baseline at start: tag `phase2-complete`, migration head
 | **M4** | Context Builder + Orchestrator (single-agent, flag) | ✅ **Complete** (flag `agents_orchestration_enabled`, default off) |
 | **M5** | Agent Router + 2nd agent (pipeline) | ✅ **Complete** (LLM fallback opt-in via `agents_router_llm_fallback`) |
 | **M6** | Tool Execution Interface + Policy Engine (Green only) | ✅ **Complete & gate-verified on live Postgres** (migration 0015) |
-| **M7** | Shared agent memory writes + provenance | ⏳ Planned |
+| **M7** | Shared agent memory writes + provenance | ✅ **Complete & gate-verified on live Postgres** (migration 0016) |
 | **M8** | Goal & Task Foundation | ⏳ Planned |
 | **M9** | Agent-to-agent trace + parallel compose | ⏳ Planned |
 | **M10** | Action approvals (pending handles, no executors) | ⏳ Planned |
@@ -480,3 +480,79 @@ Flag-off disables agent tool use entirely; Green-only scope means no
 external side effect ever fired. Schema: `alembic downgrade 0014` drops
 `tool_invocations` (verified live, empty table). Config + reversible
 migration.
+
+---
+
+## M7 — Shared agent memory writes + provenance ✅
+
+**Goal:** agents **propose** memories that persist through the existing
+consent gate and Memory Engine, tagged `source_kind='agent'` — the "shared
+provenance bus" seam. Reuse only; zero new memory logic.
+
+### Delivered
+
+**Facade**
+([agent_memory.py](../backend/app/services/agents/agent_memory.py)):
+- `recall` — pure delegation to `memory_retrieval_service` (read = Green).
+- `propose` — the exact Phase 2 extraction consent semantics (`autonomous`
+  saves; `assisted`/`explicit` persist **nothing**), candidate
+  validation/sensitive-category guard/`EXTRACTION_MAX_MEMORIES` cap, then
+  `memory_service.create_memory` (scoring, versioning, embedding enqueue —
+  unchanged) + `memory_sources.link_source(source_kind='agent')`.
+
+**Migration** `0016_widen_source_kind` — constraint-only: drops/recreates
+`ck_memory_sources_source_kind_valid` to accept
+`conversation|agent|document|activity` (document/activity reserved). No data
+migration; `conversation` rows untouched. `SourceKind` enum widened to match.
+
+**Wiring:**
+- [orchestrator_service.py](../backend/app/services/agents/orchestrator_service.py)
+  — proposals (memories/actions/citations) now **accumulate across all
+  pipeline steps**, not just the terminal one, onto `OrchestrationResult`.
+- [conversation_turn_service.py](../backend/app/services/conversation/conversation_turn_service.py)
+  — **post-commit, best-effort** propose step (mirrors the enrichment
+  dispatch): runs after the turn's unit of work because
+  `memory_service.create_memory` owns its own commit; a proposal failure can
+  never cost the user the reply. **Design note:** the roadmap placed the
+  facade call inside `orchestrate`; that would commit the in-flight turn
+  mid-transaction (create_memory commits) and break turn atomicity/parity,
+  so persistence moved to the post-commit seam — same facade, same gate,
+  safe ordering.
+
+**Tests** (+6 / 1 updated):
+- [test_agent_memory.py](../backend/tests/test_agent_memory.py) — recall
+  delegation; assisted/explicit persist nothing; autonomous writes with
+  default scores + version-1 snapshot + `agent` provenance; candidate
+  validation (empty/bad-category/non-dict skipped) + cap; settings-mode
+  resolution.
+- `test_conversation_models.py` — SourceKind assertion updated to the
+  widened set (the documented M7 change to that Phase 2 extensibility test).
+
+### Verification performed
+
+| Check | Result |
+| --- | --- |
+| `ruff check .` | ✅ all checks passed |
+| `mypy app` | ✅ no issues in 125 files |
+| `pytest` (full suite) | ✅ **304 passed, 4 skipped** (was 298/4; +6) |
+| Consent gate honored (no autonomous → zero writes) | ✅ |
+| Provenance `source_kind='agent'` recorded | ✅ |
+| `0016` live apply + down/up cycle (Supabase) | ✅ clean both ways |
+| Live constraint def (4 kinds, same name) | ✅ inspected via pg_constraint |
+| Live RLS gate re-run (4 gated tests under `gummy_app`) | ✅ 4 passed |
+
+### Issues found & resolved during M7
+
+1. **Double-prefixed constraint name on live Postgres.** Alembic applies the
+   metadata naming convention to `op.drop_constraint` as well as
+   `create_check_constraint`; passing the already-prefixed
+   `ck_memory_sources_source_kind_valid` produced
+   `ck_memory_sources_ck_memory_sources_source_kind_valid` → undefined
+   object. Fixed by passing the unprefixed `source_kind_valid` in both
+   directions (transactional DDL had rolled the failed attempt back cleanly).
+
+### Rollback
+
+Flag-off stops agent writes (no `agent`-kind rows are created). Schema:
+`downgrade 0015` restores the single-value CHECK — safe because no widened
+rows exist while the flag is off (verified by the live down/up cycle).

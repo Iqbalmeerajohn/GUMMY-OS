@@ -123,6 +123,9 @@ async def orchestrate(
     scratch: list[dict] = []
     last_result: AgentResult | None = None
     total_cost = CostInfo()
+    proposed_actions: list[dict] = []
+    proposed_memories: list[dict] = []
+    citations: list[dict] = []
     try:
         # The pack's retrieval is shared across the pipeline (same query);
         # each step sees the prior steps' outputs via scratch.
@@ -181,6 +184,12 @@ async def orchestrate(
                 tokens=total_cost.tokens + result.cost.tokens,
                 usd=total_cost.usd + result.cost.usd,
             )
+            # Proposals accumulate across the whole pipeline, not just the
+            # terminal step; persistence happens post-commit via the
+            # agent_memory facade (M7), never inside this transaction.
+            proposed_actions.extend(result.proposed_actions)
+            proposed_memories.extend(result.proposed_memories)
+            citations.extend(result.citations)
     except Exception as exc:
         await run_recorder.close_run_failure(session, run, error=str(exc))
         raise
@@ -196,9 +205,9 @@ async def orchestrate(
     return OrchestrationResult(
         reply=reply,
         run_id=run.id,
-        proposed_actions=last_result.proposed_actions,
-        proposed_memories=last_result.proposed_memories,
-        citations=last_result.citations,
+        proposed_actions=proposed_actions,
+        proposed_memories=proposed_memories,
+        citations=citations,
         cost=total_cost,
         message_metadata={
             "agent_key": decision.steps[-1].agent_key,

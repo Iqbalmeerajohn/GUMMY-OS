@@ -188,6 +188,7 @@ async def run_turn(
     #     single-agent run. Behavior byte-identical.
     # All trace rows are flush-only and commit atomically with the messages.
     settings = get_settings()
+    proposed_memories: list[dict] = []
     if settings.agents_orchestration_enabled:
         from app.services.agents import orchestrator_service
 
@@ -212,6 +213,7 @@ async def run_turn(
                 input_tokens=orch.input_tokens,
                 output_tokens=orch.output_tokens,
             )
+            proposed_memories = orch.proposed_memories
         except Exception:
             logger.exception(
                 "orchestrator failed; falling back to the legacy reply core"
@@ -309,6 +311,24 @@ async def run_turn(
     # enrichment consumers (title backfill + rolling summary; extraction is an
     # M6 stub). No-op when the worker is idle (e.g. in unit tests).
     enrichment_worker.enqueue(conversation_id, user_id)
+
+    # Phase 3 M7 (post-commit, best-effort): persist agent-proposed memories
+    # through the consent gate + Memory Engine + 'agent' provenance. Runs
+    # after the turn's unit of work because memory_service owns its own
+    # commit; a failure here must never cost the user their reply.
+    if proposed_memories:
+        from app.services.agents import agent_memory
+
+        try:
+            await agent_memory.propose(
+                session,
+                user_id=user_id,
+                candidates=proposed_memories,
+                agent_key="orchestrator",
+                conversation_id=conversation_id,
+            )
+        except Exception:
+            logger.exception("agent memory proposal failed; reply unaffected")
 
     return TurnResult(
         conversation_id=conversation_id,

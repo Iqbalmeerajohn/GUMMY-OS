@@ -83,10 +83,16 @@ class SummaryType(StrEnum):
 
 
 class SourceKind(StrEnum):
-    """Provenance kind for a memory's source. Extensible: ``document`` and
-    ``activity`` arrive in later phases (see PHASE2_PLAN.md §7)."""
+    """Provenance kind for a memory's source (the shared provenance bus).
+
+    Phase 2 shipped ``conversation``; Phase 3 M7 widens to ``agent``
+    (agent-proposed memories) and reserves ``document``/``activity`` for the
+    phases that introduce those sources (PHASE3_PLAN.md §7.5)."""
 
     CONVERSATION = "conversation"
+    AGENT = "agent"
+    DOCUMENT = "document"
+    ACTIVITY = "activity"
 
 
 class ConversationSearchMode(StrEnum):
