@@ -24,7 +24,13 @@ Baseline at start: tag `phase2-complete`, migration head
 | **M8** | Goal & Task Foundation | ✅ **Complete & gate-verified on live Postgres** (migration 0017) |
 | **M9** | Agent-to-agent trace + parallel compose | ✅ **Complete** (no migration — `agent_messages` from M1) |
 | **M10** | Action approvals (pending handles, no executors) | ✅ **Complete & gate-verified on live Postgres** (migration 0018) |
-| **M11** | Seal — orchestration default-on | ⏳ Planned |
+| **M11** | Seal — orchestration default-on | ✅ **Complete** — tag `phase3-complete` |
+
+> **Phase 3 is COMPLETE** — tag `phase3-complete`. All eleven milestones
+> shipped, verified on live Postgres under the non-bypass `gummy_app` role.
+> Migration head `0018_add_action_approvals`. Suite `348 passed, 4 skipped`
+> + 4 live-gated RLS tests. As-implemented architecture:
+> [PHASE3_ARCHITECTURE.md](PHASE3_ARCHITECTURE.md).
 
 ---
 
@@ -761,3 +767,59 @@ RLS chain extended to `action_approvals`.
 Endpoints are additive (unregister + `alembic downgrade 0017`, verified
 live). Because no executor exists, rollback carries no outside-world
 consequences.
+
+---
+
+## M11 — Seal: orchestration default-on ✅
+
+**Goal:** flip `agents_orchestration_enabled` **on by default** after the
+parity + eval gates passed, keep `generate_grounded_reply` as the permanent
+fallback, ship the as-implemented architecture doc, and tag
+`phase3-complete`. The only milestone that changes default behavior — and
+reversible with a single env var.
+
+### Delivered
+
+- [config.py](../backend/app/core/config.py) — `agents_orchestration_enabled`
+  default **true**. No code paths removed; the Phase 2 reply core stays as
+  the in-request fallback and the one-toggle rollback.
+- [PHASE3_ARCHITECTURE.md](PHASE3_ARCHITECTURE.md) — the as-built
+  architecture (flow, components, schema ledger, flags, security
+  invariants, documented deviations, Phase 4 seams).
+- Test maintenance: the three M3 recorder tests now pin
+  `agents_orchestration_enabled=false` (they test the recording branch,
+  which is subordinate to the default-on orchestrated branch).
+
+### Verification performed
+
+| Check | Result |
+| --- | --- |
+| Full M1–M10 regression **with the flag on by default** | ✅ **348 passed, 4 skipped** — every turn/API test now runs orchestrated |
+| Parity suite (orchestrated == legacy) | ✅ green under default-on |
+| Fallback on injected orchestrator failure | ✅ still triggers |
+| Router eval | ✅ 12/12 (floor 0.8) |
+| `ruff` / `mypy` | ✅ clean (143 files) |
+| Migration head: local == live | ✅ `0018_add_action_approvals` both |
+| Live RLS + isolation gate (all 8 new tables, `gummy_app`) | ✅ 4 passed |
+| Supabase security advisors | ✅ nothing new (same 4 pre-existing) |
+| Smoke: recall-style + general turn end-to-end (turn API + pipeline suites under default-on) | ✅ 17 passed |
+
+### Rollback
+
+**Single config toggle:** `AGENTS_ORCHESTRATION_ENABLED=false` instantly
+reverts every turn to the verified Phase 2 path. No schema or data change.
+
+---
+
+## Phase 3 ledger (final)
+
+- **Migrations:** `0012` agents · `0013` agent_runs+steps · `0014`
+  agent_messages · `0015` tool_invocations · `0016` widen source_kind ·
+  `0017` goals+tasks · `0018` action_approvals — all additive, all RLS
+  fail-closed under `gummy_app`, all with live-verified down paths.
+- **Suite:** 203 → **348 passed** (+145), 3 → 4 skipped (the gated RLS
+  suite grew to cover every new table).
+- **Tags:** `phase3-m1` … `phase3-m10`, `phase3-complete`.
+- **Deferred to Phase 4+ (by design):** domain agents, Yellow/Red
+  executors + Action Agent, the approval UI, LangGraph sub-graphs, the GSD
+  scheduler, the workflow-learning miner.

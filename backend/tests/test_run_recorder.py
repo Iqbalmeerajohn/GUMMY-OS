@@ -124,6 +124,11 @@ async def test_flag_off_turn_writes_no_trace(
         "app.repositories.search_repository.search_similar_memories",
         _fake_search,
     )
+    # This suite tests the M3 recording branch, which only runs when the
+    # (M11 default-on) orchestrated branch is disabled.
+    monkeypatch.setattr(
+        get_settings(), "agents_orchestration_enabled", False
+    )
     monkeypatch.setattr(get_settings(), "agents_run_recording", False)
     conv_id = await _new_conv(db_session, seed_user)
     await turn_svc.run_turn(
@@ -145,6 +150,9 @@ async def test_flag_on_turn_writes_one_run_one_step(
     monkeypatch.setattr(
         "app.repositories.search_repository.search_similar_memories",
         _fake_search,
+    )
+    monkeypatch.setattr(
+        get_settings(), "agents_orchestration_enabled", False
     )
     monkeypatch.setattr(get_settings(), "agents_run_recording", True)
     conv_id = await _new_conv(db_session, seed_user)
@@ -201,6 +209,7 @@ async def test_parity_reply_identical_flag_on_vs_off(
         _fake_search,
     )
     settings = get_settings()
+    monkeypatch.setattr(settings, "agents_orchestration_enabled", False)
 
     monkeypatch.setattr(settings, "agents_run_recording", False)
     conv_off = await _new_conv(db_session, seed_user)

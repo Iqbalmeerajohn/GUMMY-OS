@@ -115,10 +115,11 @@ class Settings(BaseSettings):
     # wrapping the unchanged Phase 2 reply call. Behavior-identical; off by
     # default until verified.
     agents_run_recording: bool = False
-    # M4: when on, run_turn delegates the reply to the Master Orchestrator
-    # (single general agent) with a guaranteed fallback to the legacy core.
-    # Off by default until the parity + eval gates pass (M11 flips it).
-    agents_orchestration_enabled: bool = False
+    # M4→M11: run_turn delegates the reply to the Master Orchestrator with a
+    # guaranteed fallback to the legacy core. Default ON since M11 (the seal):
+    # the parity + eval gates passed, and a single env var reverts every turn
+    # to the verified Phase 2 path (the legacy core is never deleted).
+    agents_orchestration_enabled: bool = True
     # M5: when on, the Router escalates ambiguous intents to an LLM
     # classifier on the cheap model tier. Off by default — the rules-first
     # path is deterministic and free, and the general agent is a safe
