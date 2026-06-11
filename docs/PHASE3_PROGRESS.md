@@ -15,7 +15,7 @@ Baseline at start: tag `phase2-complete`, migration head
 | Milestone | Scope | Status |
 | --- | --- | --- |
 | **M1** | Schema & RLS foundation + contract types (migrations 0012–0014) | ✅ **Complete & gate-verified on live Postgres** |
-| **M2** | Repositories (pure persistence) | ⏳ Planned |
+| **M2** | Repositories (pure persistence) | ✅ **Complete** |
 | **M3** | Agent Registry + Run Recording | ⏳ Planned |
 | **M4** | Context Builder + Orchestrator (single-agent, flag) | ⏳ Planned |
 | **M5** | Agent Router + 2nd agent (pipeline) | ⏳ Planned |
@@ -130,3 +130,50 @@ GUC predicate (`user_id = NULLIF(current_setting('app.current_user_id', true),
 `alembic downgrade 0011_extraction_watermark` drops all four tables (verified
 live); revert the additive enum/model/schema/test changes. Zero data risk —
 nothing reads or writes these tables yet.
+
+---
+
+## M2 — Repositories (pure persistence) ✅
+
+**Goal:** the data-access layer for the M1 tables — module functions,
+`flush()` never `commit()`, no business logic, every query tenant-scoped on
+the denormalized `user_id`. Still inert: no service consumes them yet.
+
+### Delivered
+
+**Repositories** (new files, all flush-only):
+- [agent_repository.py](../backend/app/repositories/agent_repository.py) —
+  `get_by_key`, `list_enabled` (global + own rows, enabled filter),
+  `upsert_catalog` (idempotent global-row seed; refreshes manifest fields but
+  **preserves `enabled`** so a manual disable survives redeploys).
+- [agent_run_repository.py](../backend/app/repositories/agent_run_repository.py)
+  — `create_run`, `get_run`, `list_for_conversation` (newest first),
+  `set_status` (stamps `finished_at` on terminal states), `add_cost`
+  (Decimal-safe accumulation).
+- [agent_step_repository.py](../backend/app/repositories/agent_step_repository.py)
+  — `next_seq`, `append_step` (assigns monotonic per-run seq), `list_for_run`.
+- [agent_message_repository.py](../backend/app/repositories/agent_message_repository.py)
+  — `next_seq`, `append_message`, `list_for_run`.
+
+**Tests**:
+- [test_agent_repository.py](../backend/tests/test_agent_repository.py) —
+  11 tests: catalog upsert insert/refresh (+`enabled` preservation),
+  global-vs-user visibility, run defaults, tenant scoping (foreign tenant
+  sees nothing), status + `finished_at`, cost accumulation, newest-first
+  listing, per-run seq monotonicity (independent across runs), ordered +
+  scoped step/message listing.
+
+### Verification performed
+
+| Check | Result |
+| --- | --- |
+| `ruff check .` | ✅ all checks passed |
+| `mypy app` | ✅ no issues in 102 files |
+| `pytest` (full suite) | ✅ **239 passed, 4 skipped** (was 228/4; +11 repo tests) |
+| `alembic heads` | ✅ unchanged at `0014_add_agent_messages` (no migration) |
+| Live RLS gate re-run (4 gated tests under `gummy_app`) | ✅ 4 passed, no regression |
+
+### Rollback
+
+Delete the four repository files + test file. No schema, no behavior, no data
+— trivially reversible.
