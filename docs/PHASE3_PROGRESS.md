@@ -22,7 +22,7 @@ Baseline at start: tag `phase2-complete`, migration head
 | **M6** | Tool Execution Interface + Policy Engine (Green only) | ✅ **Complete & gate-verified on live Postgres** (migration 0015) |
 | **M7** | Shared agent memory writes + provenance | ✅ **Complete & gate-verified on live Postgres** (migration 0016) |
 | **M8** | Goal & Task Foundation | ✅ **Complete & gate-verified on live Postgres** (migration 0017) |
-| **M9** | Agent-to-agent trace + parallel compose | ⏳ Planned |
+| **M9** | Agent-to-agent trace + parallel compose | ✅ **Complete** (no migration — `agent_messages` from M1) |
 | **M10** | Action approvals (pending handles, no executors) | ⏳ Planned |
 | **M11** | Seal — orchestration default-on | ⏳ Planned |
 
@@ -629,3 +629,63 @@ empty-update 400, blank-title 422, transition 409, filters, foreign-tenant
 
 Unregister the two routers and `alembic downgrade 0016` (verified live).
 Tables are empty unless users created goals/tasks — export first if so.
+
+---
+
+## M9 — Agent-to-agent trace + parallel compose ✅
+
+**Goal:** persist inter-agent hand-offs as `agent_messages` (the audit
+trail) and add **parallel fan-out/gather** with a Personality-shaped compose
+step. No new schema.
+
+### Delivered
+
+**Compose** ([compose.py](../backend/app/services/agents/compose.py)):
+deterministic, LLM-free — single/pipeline return the terminal agent's reply
+unchanged; parallel merges successful branches in dispatch order (labeled
+when >1 contributed). `shape_voice` is the Personality hook, applied
+**last** and **identity in Phase 3** (the parity gates depend on it; tested).
+
+**Orchestrator** ([orchestrator_service.py](../backend/app/services/agents/orchestrator_service.py)):
+- **A2A trail (every shape):** one `agent_messages` hop per task hand-off
+  (`orchestrator → agent`, role `task`) and per outcome (`agent →
+  orchestrator`, role `result`/`error`), seq-ordered per run.
+- **Parallel execution:** branches fan out via `asyncio.gather` — only the
+  **pure** handlers run concurrently; all DB writes stay sequential on the
+  turn's session (steps opened + task hops before the gather, outcomes
+  recorded after). A failing branch is isolated (step failed + error hop);
+  the run succeeds and composes from survivors; **all branches failed →
+  raise** (the turn's fallback fires). Step cap enforced **before** fan-out
+  (`check_before_dispatch(branch_count=n)`).
+- Parallel accounting: token sums across branches; sequential shapes keep
+  the terminal-result accounting (parity untouched).
+
+**Tests** (+12):
+- [test_compose.py](../backend/tests/test_compose.py) — terminal-reply
+  shapes, deterministic labeled merge, single-contribution unlabeled, empty
+  case, hook applied last, **hook-is-identity guard**.
+- [test_orchestrator_parallel.py](../backend/tests/test_orchestrator_parallel.py)
+  — fan-out gathers + full ordered hop trail (2 tasks then 2 results);
+  **true concurrency proven** (two slow branches overlap, max-in-flight=2);
+  failing branch isolated with error hop while the run composes the
+  survivor; all-failed raises with run marked failed; **step cap halts a
+  50-branch fan-out before dispatch**; sequential pipeline writes
+  task→result→task→result in seq order.
+
+### Verification performed
+
+| Check | Result |
+| --- | --- |
+| `ruff check .` | ✅ all checks passed |
+| `mypy app` | ✅ no issues in 137 files |
+| `pytest` (full suite) | ✅ **335 passed, 4 skipped** (was 323/4; +12) |
+| Concurrency correctness (no cross-tenant bleed; shared-session writes sequential) | ✅ |
+| Loop/cost guard on fan-out | ✅ |
+| `alembic heads` | ✅ unchanged at `0017_add_goals_tasks` |
+| Live RLS gate re-run (incl. `agent_messages` under multi-agent runs) | ✅ 4 passed |
+
+### Rollback
+
+Flag-off disables orchestration; no schema change to reverse. The Router
+never emits the parallel shape on its own in Phase 3 (it is injected/used by
+future routes), so the live path is unchanged by default.
