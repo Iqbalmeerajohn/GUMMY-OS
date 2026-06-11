@@ -15,7 +15,12 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.constants import DEFAULT_CONTEXT_MAX_MEMORIES
+from app.core.constants import (
+    CONTEXT_MAX_GOALS,
+    CONTEXT_MAX_TASKS,
+    DEFAULT_CONTEXT_MAX_MEMORIES,
+)
+from app.repositories import goal_repository, task_repository
 from app.schemas.agents import ContextPack
 from app.services.embeddings.embedding_service import EmbeddingService
 from app.services.memory import memory_retrieval_service
@@ -36,7 +41,9 @@ async def build(
 
     ``memories`` are the ranked retrieval candidates (content/category/score),
     exactly what the Phase 2 core feeds into context assembly. ``goals`` and
-    ``tasks`` stay empty until M8 wires the Goal & Task Foundation.
+    ``tasks`` carry the user's active/open work state (M8) — pack **data**
+    for agents that consume it; the general agent does not render them into
+    its prompt in Phase 3, preserving reply parity with the legacy core.
     """
     ranked = await memory_retrieval_service.retrieve_memories(
         session,
@@ -53,9 +60,35 @@ async def build(
         }
         for item in ranked
     ]
+    active_goals = await goal_repository.list_active(
+        session, user_id=user_id, limit=CONTEXT_MAX_GOALS
+    )
+    open_tasks = await task_repository.list_open(
+        session, user_id=user_id, limit=CONTEXT_MAX_TASKS
+    )
     return ContextPack(
         memories=memories,
         history=list(history or []),
         summary=summary,
+        goals=[
+            {
+                "id": str(g.id),
+                "title": g.title,
+                "status": g.status.value,
+                "priority": g.priority,
+                "agent_context": g.agent_context.value,
+            }
+            for g in active_goals
+        ],
+        tasks=[
+            {
+                "id": str(t.id),
+                "title": t.title,
+                "status": t.status.value,
+                "agent_key": t.agent_key,
+                "goal_id": str(t.goal_id) if t.goal_id else None,
+            }
+            for t in open_tasks
+        ],
         scratch=list(scratch or []),
     )

@@ -320,6 +320,8 @@ _PHASE3_TENANT_TABLES = (
     "agent_steps",
     "agent_messages",
     "tool_invocations",
+    "goals",
+    "tasks",
 )
 
 
@@ -340,6 +342,7 @@ async def test_agent_tables_isolation_under_rls() -> None:
     alice = uuid.uuid4()
     bob = uuid.uuid4()
     run = uuid.uuid4()
+    goal = uuid.uuid4()
     global_agent = uuid.uuid4()
     agent_key = f"rls-test-{uuid.uuid4().hex[:8]}"
     try:
@@ -394,6 +397,22 @@ async def test_agent_tables_isolation_under_rls() -> None:
                     "'succeeded')"
                 ),
                 {"r": str(run), "u": str(alice), "k": agent_key},
+            )
+            await s.execute(
+                text(
+                    "INSERT INTO goals (id, user_id, title, status, "
+                    "agent_context, priority) VALUES "
+                    "(:g, :u, 'alice-goal', 'active', 'general', 0)"
+                ),
+                {"g": str(goal), "u": str(alice)},
+            )
+            await s.execute(
+                text(
+                    "INSERT INTO tasks (user_id, goal_id, agent_run_id, "
+                    "title, status, seq) VALUES "
+                    "(:u, :g, :r, 'alice-task', 'pending', 0)"
+                ),
+                {"u": str(alice), "g": str(goal), "r": str(run)},
             )
             await s.commit()
 

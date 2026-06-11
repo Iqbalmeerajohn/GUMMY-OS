@@ -18,6 +18,7 @@ from app.models.enums import (
     AgentContext,
     AgentMessageRole,
     ConversationStatus,
+    GoalStatus,
     MemoryCategory,
     MemoryChangeReason,
     MemoryStatus,
@@ -29,14 +30,17 @@ from app.models.enums import (
     SourceKind,
     StepStatus,
     SummaryType,
+    TaskStatus,
     ToolDecision,
     ToolRunStatus,
 )
+from app.models.goal import Goal
 from app.models.memory import Memory
 from app.models.memory_embedding import MemoryEmbedding
 from app.models.memory_source import MemorySource
 from app.models.memory_version import MemoryVersion
 from app.models.message import Message
+from app.models.task import Task
 from app.models.tool_invocation import ToolInvocation
 from app.models.user import User
 
@@ -74,4 +78,8 @@ __all__ = [
     "ToolInvocation",
     "ToolDecision",
     "ToolRunStatus",
+    "Goal",
+    "Task",
+    "GoalStatus",
+    "TaskStatus",
 ]

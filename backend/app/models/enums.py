@@ -175,6 +175,25 @@ class PlanShape(StrEnum):
     PARALLEL = "parallel"
 
 
+class GoalStatus(StrEnum):
+    """Lifecycle of a durable goal (PHASE3_PLAN.md §11)."""
+
+    ACTIVE = "active"
+    PAUSED = "paused"
+    DONE = "done"
+    ABANDONED = "abandoned"
+
+
+class TaskStatus(StrEnum):
+    """Lifecycle of one unit of agent work (PHASE3_PLAN.md §11)."""
+
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    BLOCKED = "blocked"
+    DONE = "done"
+    CANCELLED = "cancelled"
+
+
 class ToolDecision(StrEnum):
     """The policy gate's verdict recorded on a ``tool_invocations`` row.
 

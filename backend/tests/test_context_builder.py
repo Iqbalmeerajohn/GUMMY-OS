@@ -100,6 +100,54 @@ async def test_pack_defaults_when_no_context(
     assert pack.summary is None
 
 
+async def test_pack_surfaces_active_goals_and_open_tasks(
+    db_session: AsyncSession,
+    seed_user: uuid.UUID,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.schemas.goal import GoalCreate
+    from app.schemas.task import TaskCreate
+    from app.services.agents import goal_service, task_service
+
+    monkeypatch.setattr(
+        "app.repositories.search_repository.search_similar_memories",
+        _fake_search,
+    )
+    goal = await goal_service.create_goal(
+        db_session,
+        user_id=seed_user,
+        payload=GoalCreate(title="Ship Phase 3", priority=9),
+    )
+    done_goal = await goal_service.create_goal(
+        db_session, user_id=seed_user, payload=GoalCreate(title="old")
+    )
+    await goal_service.complete_goal(
+        db_session, user_id=seed_user, goal_id=done_goal.id
+    )
+    task = await task_service.create_task(
+        db_session,
+        user_id=seed_user,
+        payload=TaskCreate(title="write M8", goal_id=goal.id),
+    )
+    closed = await task_service.create_task(
+        db_session, user_id=seed_user, payload=TaskCreate(title="closed")
+    )
+    await task_service.complete_task(
+        db_session, user_id=seed_user, task_id=closed.id
+    )
+
+    pack = await context_builder.build(
+        db_session,
+        user_id=seed_user,
+        query="status?",
+        embedding_service=_embeddings(),
+    )
+    assert [g["title"] for g in pack.goals] == ["Ship Phase 3"]
+    assert pack.goals[0]["status"] == "active"
+    assert [t["title"] for t in pack.tasks] == ["write M8"]
+    assert pack.tasks[0]["goal_id"] == str(task.goal_id)
+
+
 async def test_max_memories_caps_candidates(
     db_session: AsyncSession,
     seed_user: uuid.UUID,

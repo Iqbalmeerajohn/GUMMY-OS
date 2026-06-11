@@ -107,6 +107,10 @@ AGENT_MAX_RUN_COST_TOKENS = 60_000
 # Preview length for message/reply snippets stored on trace rows (keeps JSONB
 # rows lean; full text lives on the messages table).
 AGENT_TRACE_PREVIEW_CHARS = 200
+# Context-pack caps for the Goal & Task Foundation (M8): how many active
+# goals / open tasks are surfaced to an agent per dispatch.
+CONTEXT_MAX_GOALS = 5
+CONTEXT_MAX_TASKS = 10
 
 # ── LLM gateway defaults (Claude / Anthropic) ─────────────────────────────────
 # Chat-facing default model. Configurable; the tiered fast/smart/frontier model

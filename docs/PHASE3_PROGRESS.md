@@ -21,7 +21,7 @@ Baseline at start: tag `phase2-complete`, migration head
 | **M5** | Agent Router + 2nd agent (pipeline) | ✅ **Complete** (LLM fallback opt-in via `agents_router_llm_fallback`) |
 | **M6** | Tool Execution Interface + Policy Engine (Green only) | ✅ **Complete & gate-verified on live Postgres** (migration 0015) |
 | **M7** | Shared agent memory writes + provenance | ✅ **Complete & gate-verified on live Postgres** (migration 0016) |
-| **M8** | Goal & Task Foundation | ⏳ Planned |
+| **M8** | Goal & Task Foundation | ✅ **Complete & gate-verified on live Postgres** (migration 0017) |
 | **M9** | Agent-to-agent trace + parallel compose | ⏳ Planned |
 | **M10** | Action approvals (pending handles, no executors) | ⏳ Planned |
 | **M11** | Seal — orchestration default-on | ⏳ Planned |
@@ -556,3 +556,76 @@ migration; `conversation` rows untouched. `SourceKind` enum widened to match.
 Flag-off stops agent writes (no `agent`-kind rows are created). Schema:
 `downgrade 0015` restores the single-value CHECK — safe because no widened
 rows exist while the flag is off (verified by the live down/up cycle).
+
+---
+
+## M8 — Goal & Task Foundation ✅
+
+**Goal:** the durable work backbone — `goals` decomposed into `tasks` with
+status — that GSD and the Multi-Agent Workforce build on. The Context
+Builder surfaces active items into packs; the API exposes tenant-scoped
+CRUD. The only milestone adding user-visible read/write endpoints.
+
+### Delivered
+
+**Schema** (migration `0017_add_goals_tasks`):
+- `goals` — `title`, `description?`, `status{active,paused,done,abandoned}`,
+  `agent_context` (the Phase 2 hub seam reused), `priority`, `target_date?`.
+- `tasks` — `goal_id?` (FK **SET NULL**: work records survive goal cleanup),
+  `agent_key?`, `agent_run_id?` (FK **SET NULL**: run provenance without
+  coupling), `title`, `status{pending,in_progress,blocked,done,cancelled}`,
+  `seq` ordering, `result_ref` JSONB.
+- Both: denormalized `user_id`, fail-closed RLS in-migration, conditional
+  `gummy_app` grant, string enums + named CHECKs. Models:
+  [goal.py](../backend/app/models/goal.py) / [task.py](../backend/app/models/task.py);
+  enums `GoalStatus`, `TaskStatus`.
+
+**Repositories** (flush-only):
+[goal_repository.py](../backend/app/repositories/goal_repository.py) (create/
+get/list + `list_active`),
+[task_repository.py](../backend/app/repositories/task_repository.py) (create/
+get/list + `list_open`).
+
+**Services** (own the commit):
+[goal_service.py](../backend/app/services/agents/goal_service.py) (create /
+get-or-404 / list / update with `EmptyUpdateError` / complete),
+[task_service.py](../backend/app/services/agents/task_service.py) (create
+with goal-ownership check, advance/block/complete with **terminal-state
+guards** → 409 `invalid_task_transition`; `flush_only=True` variants let the
+Orchestrator create/advance tasks inside the turn's single transaction).
+
+**API** (thin HTTP, standard envelope, pagination):
+[goals.py](../backend/app/api/v1/goals.py) — `POST/GET /goals`,
+`GET/PATCH /goals/{id}`; [tasks.py](../backend/app/api/v1/tasks.py) —
+`POST/GET /tasks` (+`status`/`goal_id` filters), `GET/PATCH /tasks/{id}`.
+Registered in [router.py](../backend/app/api/router.py). Schemas:
+[goal.py](../backend/app/schemas/goal.py) / [task.py](../backend/app/schemas/task.py).
+
+**Context Builder** — packs now carry up to `CONTEXT_MAX_GOALS` active goals
+and `CONTEXT_MAX_TASKS` open tasks as **data**; the general agent does not
+render them into its prompt in Phase 3, preserving reply parity.
+
+**Tests** (+19): [test_goal_task_service.py](../backend/tests/test_goal_task_service.py)
+(CRUD, ordering/filters, transitions incl. terminal finality, goal linkage +
+run provenance, foreign-tenant 404s, context listings),
+[test_goal_task_api.py](../backend/tests/test_goal_task_api.py) (roundtrips,
+empty-update 400, blank-title 422, transition 409, filters, foreign-tenant
+404 on get/list/link), context-pack surfacing test, RLS chain extended to
+`goals` + `tasks`.
+
+### Verification performed
+
+| Check | Result |
+| --- | --- |
+| `ruff check .` | ✅ all checks passed |
+| `mypy app` | ✅ no issues in 136 files |
+| `pytest` (full suite) | ✅ **323 passed, 4 skipped** (was 304/4; +19) |
+| App-level tenant isolation (foreign tenant sees nothing) | ✅ |
+| `alembic heads` | ✅ single head `0017_add_goals_tasks` |
+| `0017` live apply + down/up cycle (Supabase) | ✅ clean both ways |
+| Live RLS gate (now incl. `goals`, `tasks`) | ✅ 4 passed |
+
+### Rollback
+
+Unregister the two routers and `alembic downgrade 0016` (verified live).
+Tables are empty unless users created goals/tasks — export first if so.
