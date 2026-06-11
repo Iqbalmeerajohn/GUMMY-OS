@@ -115,6 +115,10 @@ class Settings(BaseSettings):
     # wrapping the unchanged Phase 2 reply call. Behavior-identical; off by
     # default until verified.
     agents_run_recording: bool = False
+    # M4: when on, run_turn delegates the reply to the Master Orchestrator
+    # (single general agent) with a guaranteed fallback to the legacy core.
+    # Off by default until the parity + eval gates pass (M11 flips it).
+    agents_orchestration_enabled: bool = False
 
     # ── Memory extraction consent (Phase 2 / memory-system §2) ────────────────
     # Gates the automatic conversation→memory extraction consumer. Safe default:

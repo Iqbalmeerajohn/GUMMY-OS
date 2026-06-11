@@ -107,3 +107,9 @@ class OrchestrationResult(BaseModel):
     citations: list[dict] = Field(default_factory=list)
     cost: CostInfo = Field(default_factory=CostInfo)
     message_metadata: dict | None = None
+    # Reply accounting `run_turn` persists on the assistant message (the same
+    # fields GeneratedReply carries on the legacy path).
+    model: str = ""
+    memories_used: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0

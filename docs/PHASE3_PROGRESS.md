@@ -17,7 +17,7 @@ Baseline at start: tag `phase2-complete`, migration head
 | **M1** | Schema & RLS foundation + contract types (migrations 0012–0014) | ✅ **Complete & gate-verified on live Postgres** |
 | **M2** | Repositories (pure persistence) | ✅ **Complete** |
 | **M3** | Agent Registry + Run Recording | ✅ **Complete** (flag `agents_run_recording`, default off) |
-| **M4** | Context Builder + Orchestrator (single-agent, flag) | ⏳ Planned |
+| **M4** | Context Builder + Orchestrator (single-agent, flag) | ✅ **Complete** (flag `agents_orchestration_enabled`, default off) |
 | **M5** | Agent Router + 2nd agent (pipeline) | ⏳ Planned |
 | **M6** | Tool Execution Interface + Policy Engine (Green only) | ⏳ Planned |
 | **M7** | Shared agent memory writes + provenance | ⏳ Planned |
@@ -243,3 +243,71 @@ identical; flag `agents_run_recording` (default **off**).
 Set `agents_run_recording=false` (already the default) — the turn reverts to
 the pure Phase 2 path; trace rows simply stop being written. No migration to
 reverse, no data risk.
+
+---
+
+## M4 — Context Builder + Orchestrator (single-agent) ✅
+
+**Goal:** the Master Orchestrator behind `agents_orchestration_enabled`
+(default **off**): `run_turn` delegates to `orchestrate(...)`, which runs the
+one `general` agent and returns a reply-shaped result — with a **guaranteed
+fallback** to `generate_grounded_reply` on any orchestrator error. Parity
+with Phase 2 is the gate.
+
+### Delivered
+
+**New services:**
+- [context_builder.py](../backend/app/services/agents/context_builder.py) —
+  builds a `ContextPack` per dispatch: ranked memory candidates via the
+  unchanged hybrid retrieval, with history/summary supplied by `run_turn`
+  (loaded *before* the user message is appended — Phase 2 ordering exactly).
+  Goals/tasks stay empty until M8.
+- [handlers/general_agent.py](../backend/app/services/agents/handlers/general_agent.py)
+  — pure `AgentTask → AgentResult`; reuses `context_assembly_service` +
+  `prompt_builder` + the LLM gateway verbatim, so the prompt is identical to
+  the legacy core's (the parity mechanism).
+- [orchestrator_service.py](../backend/app/services/agents/orchestrator_service.py)
+  — `orchestrate(...)`: trace run open → context pack → dispatch →
+  finish/cost; `_RunGuard` enforces the per-run step cap and token-cost cap
+  (`AGENT_MAX_RUN_STEPS`/`AGENT_MAX_RUN_COST_TOKENS` in constants); failures
+  are recorded on the run and re-raised for the caller's fallback.
+
+**Modified:**
+- [conversation_turn_service.py](../backend/app/services/conversation/conversation_turn_service.py)
+  — three-way flag branch: orchestrated (with try/except fallback to the
+  legacy core) → run-recording (M3) → pure legacy. Lazy imports preserved.
+- [config.py](../backend/app/core/config.py) — `agents_orchestration_enabled:
+  bool = False`.
+- [constants.py](../backend/app/core/constants.py) — agent run caps + trace
+  preview length.
+- [schemas/agents.py](../backend/app/schemas/agents.py) — additive:
+  `OrchestrationResult` gains the reply-accounting fields `run_turn` persists
+  (`model`, `memories_used`, `input_tokens`, `output_tokens`).
+
+**Tests** (+11):
+- [test_context_builder.py](../backend/tests/test_context_builder.py) — pack
+  contents/shape, defaults, `max_memories` cap.
+- [test_orchestrator_service.py](../backend/tests/test_orchestrator_service.py)
+  — guard caps; traced single-agent run (route_plan, status, cost); failure
+  recorded + raised; **fallback** (killed handler → user still gets the
+  legacy reply, failed run trace committed); **parity (the M4 gate)**:
+  orchestrated turn == legacy turn on reply/model/memories/tokens/count;
+  foreign-tenant turn still 404s with the flag on.
+
+### Verification performed
+
+| Check | Result |
+| --- | --- |
+| `ruff check .` | ✅ all checks passed |
+| `mypy app` | ✅ no issues in 110 files |
+| `pytest` (full suite) | ✅ **263 passed, 4 skipped** (was 252/4; +11) |
+| **Parity suite** (orchestrated == legacy, single-agent) | ✅ |
+| **Fallback** (handler killed → valid reply) | ✅ |
+| `alembic heads` | ✅ unchanged at `0014_add_agent_messages` (no migration) |
+| Live RLS gate re-run (4 gated tests under `gummy_app`) | ✅ 4 passed |
+
+### Rollback
+
+`agents_orchestration_enabled=false` (already the default) → `run_turn` uses
+the Phase 2 path verbatim. Config toggle, no schema, no data risk. The legacy
+core is never deleted.

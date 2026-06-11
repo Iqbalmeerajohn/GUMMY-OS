@@ -98,6 +98,16 @@ DEFAULT_CONTEXT_TOKEN_BUDGET = 2000
 # Upper bound on how many memories the retriever feeds into context assembly.
 DEFAULT_CONTEXT_MAX_MEMORIES = 20
 
+# ── Agent Framework (Phase 3) ─────────────────────────────────────────────────
+# Per-run guards: an orchestration may dispatch at most this many agent steps
+# and spend at most this many tokens before it is halted (runaway-loop/cost
+# protection; PHASE3_PLAN.md §9.8/§12).
+AGENT_MAX_RUN_STEPS = 8
+AGENT_MAX_RUN_COST_TOKENS = 60_000
+# Preview length for message/reply snippets stored on trace rows (keeps JSONB
+# rows lean; full text lives on the messages table).
+AGENT_TRACE_PREVIEW_CHARS = 200
+
 # ── LLM gateway defaults (Claude / Anthropic) ─────────────────────────────────
 # Chat-facing default model. Configurable; the tiered fast/smart/frontier model
 # ids support the project's cost-tiering strategy (see tech-stack.md §7).

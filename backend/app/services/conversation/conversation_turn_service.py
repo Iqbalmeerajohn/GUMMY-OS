@@ -14,6 +14,7 @@ entrypoint (the legacy stateless ``/chat`` route was retired in M8).
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -41,6 +42,8 @@ from app.services.memory import (
 from app.services.memory.context_assembly_service import ContextMemory
 from app.utils.tokens import estimate_tokens
 from app.workers.enrichment_worker import enrichment_worker
+
+logger = logging.getLogger(__name__)
 
 # Roles that belong in the LLM message history (working memory).
 _HISTORY_ROLES = (MessageRole.USER, MessageRole.ASSISTANT)
@@ -176,12 +179,54 @@ async def run_turn(
         token_count=estimate_tokens(message),
     )
 
-    # Phase 3 M3 (flag-gated): trace this turn as a single-agent "general"
-    # run wrapping the unchanged reply call. Lazy import keeps the
-    # conversation domain free of a module-level agents dependency; the trace
-    # rows flush in this session and commit atomically with the messages.
-    recording = None
-    if get_settings().agents_run_recording:
+    # Phase 3 (flag-gated; lazy imports keep the conversation domain free of
+    # a module-level agents dependency):
+    #   - agents_orchestration_enabled (M4): delegate the reply to the Master
+    #     Orchestrator with a guaranteed fallback to the legacy core — an
+    #     orchestrator error never costs the user a reply.
+    #   - agents_run_recording (M3): trace the unchanged legacy call as a
+    #     single-agent run. Behavior byte-identical.
+    # All trace rows are flush-only and commit atomically with the messages.
+    settings = get_settings()
+    if settings.agents_orchestration_enabled:
+        from app.services.agents import orchestrator_service
+
+        try:
+            orch = await orchestrator_service.orchestrate(
+                session,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                message=message,
+                embedding_service=embedding_service,
+                llm=llm,
+                token_budget=token_budget,
+                max_memories=max_memories,
+                history=history,
+                summary=summary_text,
+            )
+            reply = GeneratedReply(
+                reply=orch.reply,
+                model=orch.model,
+                memories_used=orch.memories_used,
+                input_tokens=orch.input_tokens,
+                output_tokens=orch.output_tokens,
+            )
+        except Exception:
+            logger.exception(
+                "orchestrator failed; falling back to the legacy reply core"
+            )
+            reply = await generate_grounded_reply(
+                session,
+                user_id=user_id,
+                message=message,
+                embedding_service=embedding_service,
+                llm=llm,
+                token_budget=token_budget,
+                max_memories=max_memories,
+                history=history,
+                summary=summary_text,
+            )
+    elif settings.agents_run_recording:
         from app.services.agents import run_recorder
         from app.services.agents.manifests import GENERAL_AGENT_KEY
 
@@ -192,8 +237,36 @@ async def run_turn(
             conversation_id=conversation_id,
             input={"message_preview": message[:200]},
         )
-
-    try:
+        try:
+            reply = await generate_grounded_reply(
+                session,
+                user_id=user_id,
+                message=message,
+                embedding_service=embedding_service,
+                llm=llm,
+                token_budget=token_budget,
+                max_memories=max_memories,
+                history=history,
+                summary=summary_text,
+            )
+        except Exception as exc:
+            # Flush-only; without a commit the trace vanishes with the
+            # rollback — behavior stays identical to the unrecorded path.
+            await run_recorder.finish_failure(
+                session, recording, error=str(exc)
+            )
+            raise
+        await run_recorder.finish_success(
+            session,
+            recording,
+            output={
+                "reply_preview": reply.reply[:200],
+                "model": reply.model,
+                "memories_used": reply.memories_used,
+            },
+            cost_tokens=reply.input_tokens + reply.output_tokens,
+        )
+    else:
         reply = await generate_grounded_reply(
             session,
             user_id=user_id,
@@ -204,30 +277,6 @@ async def run_turn(
             max_memories=max_memories,
             history=history,
             summary=summary_text,
-        )
-    except Exception as exc:
-        if recording is not None:
-            from app.services.agents import run_recorder
-
-            # Flush-only; without a commit the trace vanishes with the
-            # rollback — behavior stays identical to the unrecorded path.
-            await run_recorder.finish_failure(
-                session, recording, error=str(exc)
-            )
-        raise
-
-    if recording is not None:
-        from app.services.agents import run_recorder
-
-        await run_recorder.finish_success(
-            session,
-            recording,
-            output={
-                "reply_preview": reply.reply[:200],
-                "model": reply.model,
-                "memories_used": reply.memories_used,
-            },
-            cost_tokens=reply.input_tokens + reply.output_tokens,
         )
 
     assistant_message = await msg_repo.append_message(
