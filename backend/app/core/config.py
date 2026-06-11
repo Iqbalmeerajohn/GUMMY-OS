@@ -110,6 +110,12 @@ class Settings(BaseSettings):
     context_token_budget: int = DEFAULT_CONTEXT_TOKEN_BUDGET
     context_max_memories: int = DEFAULT_CONTEXT_MAX_MEMORIES
 
+    # ── Agent Framework (Phase 3) ─────────────────────────────────────────────
+    # M3: when on, each turn is traced as a single-agent agent_run/agent_step
+    # wrapping the unchanged Phase 2 reply call. Behavior-identical; off by
+    # default until verified.
+    agents_run_recording: bool = False
+
     # ── Memory extraction consent (Phase 2 / memory-system §2) ────────────────
     # Gates the automatic conversation→memory extraction consumer. Safe default:
     # "assisted" persists nothing automatically (proposal surface is future work);

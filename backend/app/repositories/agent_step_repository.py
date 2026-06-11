@@ -10,6 +10,8 @@ collision into an error rather than silent reordering.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
+from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,6 +46,27 @@ async def append_step(
         input=input,
     )
     session.add(step)
+    await session.flush()
+    return step
+
+
+async def finish_step(
+    session: AsyncSession,
+    step: AgentStep,
+    *,
+    status: StepStatus,
+    output: dict | None = None,
+    error: str | None = None,
+    cost_tokens: int = 0,
+    cost_usd: Decimal | float = 0,
+) -> AgentStep:
+    """Finalize a step: status, output/error, cost, ``finished_at``. Flush-only."""
+    step.status = status
+    step.output = output
+    step.error = error
+    step.cost_tokens = cost_tokens
+    step.cost_usd = Decimal(str(cost_usd))
+    step.finished_at = datetime.now(UTC)
     await session.flush()
     return step
 

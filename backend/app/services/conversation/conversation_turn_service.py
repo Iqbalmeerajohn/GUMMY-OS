@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.constants import (
     DEFAULT_CONTEXT_MAX_MEMORIES,
     DEFAULT_CONTEXT_TOKEN_BUDGET,
@@ -175,17 +176,59 @@ async def run_turn(
         token_count=estimate_tokens(message),
     )
 
-    reply = await generate_grounded_reply(
-        session,
-        user_id=user_id,
-        message=message,
-        embedding_service=embedding_service,
-        llm=llm,
-        token_budget=token_budget,
-        max_memories=max_memories,
-        history=history,
-        summary=summary_text,
-    )
+    # Phase 3 M3 (flag-gated): trace this turn as a single-agent "general"
+    # run wrapping the unchanged reply call. Lazy import keeps the
+    # conversation domain free of a module-level agents dependency; the trace
+    # rows flush in this session and commit atomically with the messages.
+    recording = None
+    if get_settings().agents_run_recording:
+        from app.services.agents import run_recorder
+        from app.services.agents.manifests import GENERAL_AGENT_KEY
+
+        recording = await run_recorder.start_run(
+            session,
+            user_id=user_id,
+            agent_key=GENERAL_AGENT_KEY,
+            conversation_id=conversation_id,
+            input={"message_preview": message[:200]},
+        )
+
+    try:
+        reply = await generate_grounded_reply(
+            session,
+            user_id=user_id,
+            message=message,
+            embedding_service=embedding_service,
+            llm=llm,
+            token_budget=token_budget,
+            max_memories=max_memories,
+            history=history,
+            summary=summary_text,
+        )
+    except Exception as exc:
+        if recording is not None:
+            from app.services.agents import run_recorder
+
+            # Flush-only; without a commit the trace vanishes with the
+            # rollback — behavior stays identical to the unrecorded path.
+            await run_recorder.finish_failure(
+                session, recording, error=str(exc)
+            )
+        raise
+
+    if recording is not None:
+        from app.services.agents import run_recorder
+
+        await run_recorder.finish_success(
+            session,
+            recording,
+            output={
+                "reply_preview": reply.reply[:200],
+                "model": reply.model,
+                "memories_used": reply.memories_used,
+            },
+            cost_tokens=reply.input_tokens + reply.output_tokens,
+        )
 
     assistant_message = await msg_repo.append_message(
         session,

@@ -16,7 +16,7 @@ Baseline at start: tag `phase2-complete`, migration head
 | --- | --- | --- |
 | **M1** | Schema & RLS foundation + contract types (migrations 0012–0014) | ✅ **Complete & gate-verified on live Postgres** |
 | **M2** | Repositories (pure persistence) | ✅ **Complete** |
-| **M3** | Agent Registry + Run Recording | ⏳ Planned |
+| **M3** | Agent Registry + Run Recording | ✅ **Complete** (flag `agents_run_recording`, default off) |
 | **M4** | Context Builder + Orchestrator (single-agent, flag) | ⏳ Planned |
 | **M5** | Agent Router + 2nd agent (pipeline) | ⏳ Planned |
 | **M6** | Tool Execution Interface + Policy Engine (Green only) | ⏳ Planned |
@@ -177,3 +177,69 @@ the denormalized `user_id`. Still inert: no service consumes them yet.
 
 Delete the four repository files + test file. No schema, no behavior, no data
 — trivially reversible.
+
+---
+
+## M3 — Agent Registry + Run Recording ✅
+
+**Goal:** stand up the Registry (in-code manifests + the `agents` DB overlay)
+and a Run Recorder so a flag-on turn is traced as a single-agent "general"
+run wrapping **today's `generate_grounded_reply` unchanged**. Behavior
+identical; flag `agents_run_recording` (default **off**).
+
+### Delivered
+
+**New services** (`app/services/agents/`):
+- [manifests.py](../backend/app/services/agents/manifests.py) — in-code
+  built-ins; one `general` agent (Green, no tools).
+- [registry.py](../backend/app/services/agents/registry.py) — `AgentRegistry`:
+  validates at construction (duplicate key / unknown tool / ceiling below a
+  tool's tier → `ManifestValidationError`), `get`/`keys`/`list_enabled`
+  (DB-overlay enablement), `seed_catalog` (idempotent global-row upsert),
+  `get_registry()` singleton. `KNOWN_TOOL_TIERS` is empty until M6's catalog
+  replaces it — any tool declaration is rejected today.
+- [run_recorder.py](../backend/app/services/agents/run_recorder.py) —
+  `start_run` (run + first step, flush-only), `finish_success` (status, output,
+  cost accumulation), `finish_failure` (error trail). Flush-only: the trace
+  commits atomically with the turn's messages.
+
+**Modified (additive, flag-gated):**
+- [conversation_turn_service.py](../backend/app/services/conversation/conversation_turn_service.py)
+  — flag-gated recording branch around the unchanged reply call; **lazy
+  imports** keep the conversation domain free of a module-level agents
+  dependency. On reply failure the failure trace is flushed but the exception
+  propagates uncommitted — byte-identical to the unrecorded path.
+- [config.py](../backend/app/core/config.py) — `agents_run_recording: bool = False`.
+- [main.py](../backend/app/main.py) — lifespan seeds the catalog (idempotent,
+  best-effort, only when a DB is configured; runs with no tenant GUC — the
+  `agents_global_seed` policy path).
+- [agent_step_repository.py](../backend/app/repositories/agent_step_repository.py)
+  — added `finish_step` (flush-only finalizer the recorder needs).
+
+**Tests** (+13):
+- [test_agent_registry.py](../backend/tests/test_agent_registry.py) — builtin
+  validation, unknown key, duplicate key, unknown tool, ceiling-below-tier
+  rejection / at-tier acceptance, idempotent seeding, DB-overlay enablement.
+- [test_run_recorder.py](../backend/tests/test_run_recorder.py) — recorder
+  success/failure lifecycle; flag-off turn writes **zero** trace rows; flag-on
+  turn writes exactly one run + one step (status, cost, conversation link,
+  previews) with messages persisted unchanged; **parity test**: reply +
+  accounting identical flag-on vs flag-off (the M3 gate).
+
+### Verification performed
+
+| Check | Result |
+| --- | --- |
+| `ruff check .` | ✅ all checks passed |
+| `mypy app` | ✅ no issues in 106 files |
+| `pytest` (full suite) | ✅ **252 passed, 4 skipped** (was 239/4; +13) |
+| **Parity assertion** (reply identical on/off) | ✅ |
+| `alembic heads` | ✅ unchanged at `0014_add_agent_messages` (no migration) |
+| Live RLS gate re-run (4 gated tests under `gummy_app`) | ✅ 4 passed |
+| **Live seed path** (`gummy_app`, no GUC, real Supabase) | ✅ `seeded=1`, global row `('general', enabled, user_id IS NULL)`, re-seed idempotent (total stays 1) |
+
+### Rollback
+
+Set `agents_run_recording=false` (already the default) — the turn reverts to
+the pure Phase 2 path; trace rows simply stop being written. No migration to
+reverse, no data risk.

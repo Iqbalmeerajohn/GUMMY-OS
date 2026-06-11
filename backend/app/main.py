@@ -22,6 +22,7 @@ from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging
 from app.core.security import assert_auth_safe
 from app.database.session import dispose_engine, get_sessionmaker
+from app.services.agents.registry import get_registry
 from app.services.embeddings.factory import get_embedding_service
 from app.services.llm.factory import get_llm_provider
 from app.workers.embedding_worker import embedding_worker
@@ -56,6 +57,17 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             embedding_service=get_embedding_service(),
         )
         enrichment_worker.start()
+
+        # Seed the agent registry catalog (idempotent upsert of built-in
+        # manifests; runs with no tenant GUC — the agents_global_seed path).
+        # Best-effort: a seeding failure must not block boot.
+        try:
+            async with sessionmaker() as session:
+                seeded = await get_registry().seed_catalog(session)
+                await session.commit()
+            logger.info("agent registry seeded (%d built-in agents)", seeded)
+        except Exception:
+            logger.exception("agent registry seeding failed; continuing")
 
     yield
 
