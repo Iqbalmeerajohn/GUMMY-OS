@@ -119,6 +119,11 @@ class Settings(BaseSettings):
     # (single general agent) with a guaranteed fallback to the legacy core.
     # Off by default until the parity + eval gates pass (M11 flips it).
     agents_orchestration_enabled: bool = False
+    # M5: when on, the Router escalates ambiguous intents to an LLM
+    # classifier on the cheap model tier. Off by default — the rules-first
+    # path is deterministic and free, and the general agent is a safe
+    # catch-all (the plan's cost rationale, §6.9).
+    agents_router_llm_fallback: bool = False
 
     # ── Memory extraction consent (Phase 2 / memory-system §2) ────────────────
     # Gates the automatic conversation→memory extraction consumer. Safe default:

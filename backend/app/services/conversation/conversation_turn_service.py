@@ -203,6 +203,7 @@ async def run_turn(
                 max_memories=max_memories,
                 history=history,
                 summary=summary_text,
+                agent_context=conversation.agent_context,
             )
             reply = GeneratedReply(
                 reply=orch.reply,

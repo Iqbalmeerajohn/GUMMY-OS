@@ -93,12 +93,11 @@ async def test_list_enabled_respects_db_overlay(
     registry = get_registry()
     await registry.seed_catalog(db_session)
     enabled = await registry.list_enabled(db_session, user_id=seed_user)
-    assert [m.key for m in enabled] == [GENERAL_AGENT_KEY]
+    assert {m.key for m in enabled} == {m.key for m in BUILTIN_MANIFESTS}
 
     row = await agent_repository.get_by_key(db_session, GENERAL_AGENT_KEY)
     assert row is not None
     row.enabled = False
     await db_session.flush()
-    assert (
-        await registry.list_enabled(db_session, user_id=seed_user)
-    ) == []
+    remaining = await registry.list_enabled(db_session, user_id=seed_user)
+    assert GENERAL_AGENT_KEY not in {m.key for m in remaining}

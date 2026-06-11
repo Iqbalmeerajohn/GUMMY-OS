@@ -33,6 +33,94 @@ class RunRecording:
     step: AgentStep
 
 
+# ── Multi-step primitives (M5 pipelines) ──────────────────────────────────────
+
+
+async def open_run(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    conversation_id: uuid.UUID | None = None,
+    trigger: RunTrigger = RunTrigger.CHAT,
+    route_plan: dict | None = None,
+) -> AgentRun:
+    """Open a ``running`` run with no steps yet (flush-only)."""
+    return await run_repo.create_run(
+        session,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        trigger=trigger,
+        route_plan=route_plan,
+    )
+
+
+async def open_step(
+    session: AsyncSession,
+    run: AgentRun,
+    *,
+    agent_key: str,
+    input: dict | None = None,
+) -> AgentStep:
+    """Append a ``running`` step to an open run (seq auto-assigned)."""
+    return await step_repo.append_step(
+        session,
+        run_id=run.id,
+        user_id=run.user_id,
+        agent_key=agent_key,
+        input=input,
+    )
+
+
+async def close_step_success(
+    session: AsyncSession,
+    run: AgentRun,
+    step: AgentStep,
+    *,
+    output: dict | None = None,
+    cost_tokens: int = 0,
+    cost_usd: Decimal | float = 0,
+) -> None:
+    """Finish one step as ``succeeded`` and accumulate its cost on the run."""
+    await step_repo.finish_step(
+        session,
+        step,
+        status=StepStatus.SUCCEEDED,
+        output=output,
+        cost_tokens=cost_tokens,
+        cost_usd=cost_usd,
+    )
+    await run_repo.add_cost(session, run, tokens=cost_tokens, usd=cost_usd)
+
+
+async def close_step_failure(
+    session: AsyncSession,
+    step: AgentStep,
+    *,
+    error: str,
+) -> None:
+    """Finish one step as ``failed`` (the run's fate is decided separately)."""
+    await step_repo.finish_step(
+        session, step, status=StepStatus.FAILED, error=error
+    )
+
+
+async def close_run_success(session: AsyncSession, run: AgentRun) -> None:
+    """Move an open run to ``succeeded``."""
+    await run_repo.set_status(session, run, status=RunStatus.SUCCEEDED)
+
+
+async def close_run_failure(
+    session: AsyncSession, run: AgentRun, *, error: str
+) -> None:
+    """Move an open run to ``failed`` with its error recorded."""
+    await run_repo.set_status(
+        session, run, status=RunStatus.FAILED, error=error
+    )
+
+
+# ── Single-step convenience wrappers (the M3 recording path) ──────────────────
+
+
 async def start_run(
     session: AsyncSession,
     *,

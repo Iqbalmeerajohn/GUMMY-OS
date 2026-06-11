@@ -29,4 +29,30 @@ GENERAL_AGENT = AgentManifest(
     model_tier="default",
 )
 
-BUILTIN_MANIFESTS: tuple[AgentManifest, ...] = (GENERAL_AGENT,)
+RECALL_AGENT_KEY = "recall"
+
+# The M5 second specialist: a read-only memory-recall agent. Deterministic
+# (no LLM call): it digests the ranked memory candidates in its context pack
+# into a findings block the next pipeline step grounds on. Proves routing and
+# the pipeline hand-off with zero added cost or risk.
+RECALL_AGENT = AgentManifest(
+    key=RECALL_AGENT_KEY,
+    display_name="Memory Recall",
+    mission=(
+        "Surface what Gummy already knows: digest the most relevant stored "
+        "memories about the user's question for downstream agents."
+    ),
+    ceiling=PermissionTier.GREEN,
+    tools=(),
+    keywords=(
+        "remember",
+        "recall",
+        "memory",
+        "memories",
+        "what do you know",
+        "what do you remember",
+    ),
+    model_tier="fast",
+)
+
+BUILTIN_MANIFESTS: tuple[AgentManifest, ...] = (GENERAL_AGENT, RECALL_AGENT)

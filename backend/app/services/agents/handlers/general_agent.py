@@ -44,11 +44,24 @@ async def handle(task: AgentTask, *, llm: LLMProvider) -> AgentResult:
     history = [
         {str(k): str(v) for k, v in entry.items()} for entry in pack.history
     ]
+    # Pipeline hand-off (M5): fold prior agents' findings into the summary
+    # block. Empty scratch (the single-agent route) leaves the prompt
+    # byte-identical to the legacy core — the parity invariant.
+    summary = pack.summary
+    findings = [
+        str(entry["output"].get("digest", ""))
+        for entry in pack.scratch
+        if isinstance(entry.get("output"), dict)
+        and entry["output"].get("digest")
+    ]
+    if findings:
+        block = "\n\n".join(findings)
+        summary = f"{summary}\n\n{block}" if summary else block
     payload = prompt_builder.build_prompt(
         context=package,
         query=task.intent,
         history=history or None,
-        summary=pack.summary,
+        summary=summary,
     )
     response = await llm.generate(
         system=payload.system, messages=payload.messages

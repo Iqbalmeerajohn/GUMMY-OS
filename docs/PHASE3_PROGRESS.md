@@ -18,7 +18,7 @@ Baseline at start: tag `phase2-complete`, migration head
 | **M2** | Repositories (pure persistence) | ✅ **Complete** |
 | **M3** | Agent Registry + Run Recording | ✅ **Complete** (flag `agents_run_recording`, default off) |
 | **M4** | Context Builder + Orchestrator (single-agent, flag) | ✅ **Complete** (flag `agents_orchestration_enabled`, default off) |
-| **M5** | Agent Router + 2nd agent (pipeline) | ⏳ Planned |
+| **M5** | Agent Router + 2nd agent (pipeline) | ✅ **Complete** (LLM fallback opt-in via `agents_router_llm_fallback`) |
 | **M6** | Tool Execution Interface + Policy Engine (Green only) | ⏳ Planned |
 | **M7** | Shared agent memory writes + provenance | ⏳ Planned |
 | **M8** | Goal & Task Foundation | ⏳ Planned |
@@ -311,3 +311,86 @@ with Phase 2 is the gate.
 `agents_orchestration_enabled=false` (already the default) → `run_turn` uses
 the Phase 2 path verbatim. Config toggle, no schema, no data risk. The legacy
 core is never deleted.
+
+---
+
+## M5 — Agent Router + second agent (pipeline) ✅
+
+**Goal:** the layered Router (rules-first → LLM-fallback on the cheap tier)
+plus a second trivial specialist (the read-only `recall` agent) proving
+routing **and** a pipeline hand-off. Still Green-only, still flag-gated.
+
+### Delivered
+
+**New:**
+- [router.py](../backend/app/services/agents/router.py) — layered strategy:
+  (a) `agent_context` hint (research thread → recall pipeline), (b) keyword
+  rules from manifests (deterministic, free), (c) LLM classifier fallback on
+  `claude_model_fast` (budget-capped at 8 output tokens, parse-safe, failure
+  → default), (d) low-confidence default to single `general`.
+- [handlers/recall_agent.py](../backend/app/services/agents/handlers/recall_agent.py)
+  — deterministic, LLM-free digest of the pack's ranked memories (zero token
+  cost; Green; no side effects). `RECALL_AGENT` manifest with routing
+  keywords added to [manifests.py](../backend/app/services/agents/manifests.py).
+- [handlers/__init__.py](../backend/app/services/agents/handlers/__init__.py)
+  — `dispatch(task, llm)`: the orchestrator's single door to a handler.
+- Router eval fixture
+  [tests/evals/test_router_eval.py](../backend/tests/evals/test_router_eval.py)
+  — 12 labeled intents, accuracy floor 0.8 (deterministic rules score 12/12).
+
+**Modified:**
+- [orchestrator_service.py](../backend/app/services/agents/orchestrator_service.py)
+  — consumes `RoutingDecision` (single | pipeline); executes steps in order,
+  handing prior outputs to the next step via the pack's `scratch`; records
+  `route_plan` (+rationale +confidence) on the run; per-step trace via the new
+  recorder primitives; loop guard enforced before every dispatch.
+- [run_recorder.py](../backend/app/services/agents/run_recorder.py) — additive
+  multi-step primitives (`open_run`/`open_step`/`close_step_*`/`close_run_*`);
+  the M3 single-step wrappers are unchanged.
+- [general_agent.py](../backend/app/services/agents/handlers/general_agent.py)
+  — folds pipeline `scratch` digests into the summary block; **empty scratch
+  (the single-agent route) leaves the prompt byte-identical** (parity
+  invariant).
+- [conversation_turn_service.py](../backend/app/services/conversation/conversation_turn_service.py)
+  — passes the conversation's `agent_context` into `orchestrate`.
+- [config.py](../backend/app/core/config.py) — `agents_router_llm_fallback:
+  bool = False`. **Design note:** the roadmap's LLM fallback is implemented
+  but opt-in — with only two agents and `general` as a safe catch-all, an LLM
+  call on every non-keyword turn would violate the plan's own cost rationale
+  (§6.9). The rules path is deterministic and free; the flag turns the
+  classifier on when specialist density justifies it.
+
+**Tests** (+13):
+- [test_router.py](../backend/tests/test_router.py) — hint/keyword paths route
+  with **zero** LLM calls (spy-asserted); ambiguous → LLM fallback on the
+  cheap tier (`model` + `max_tokens ≤ 16` asserted — the cost/latency budget);
+  unparseable verdict and LLM failure both default to `general`; keyword
+  parametrization.
+- [test_orchestrator_pipeline.py](../backend/tests/test_orchestrator_pipeline.py)
+  — two-step pipeline hands off (recall digest provably reaches the general
+  agent's prompt); run cost accumulates; **loop guard halts an injected
+  50-step cycle** (run marked failed with the cap error); a single-agent
+  intent still routes to `general` and matches the legacy reply exactly.
+- Updated (additive evolution): orchestrator metadata assertion gains
+  `route_shape`; handler-kill patch target moved to `handlers.general_agent`;
+  registry enablement test now set-based over `BUILTIN_MANIFESTS`.
+
+### Verification performed
+
+| Check | Result |
+| --- | --- |
+| `ruff check .` | ✅ all checks passed |
+| `mypy app` | ✅ no issues in 112 files |
+| `pytest` (full suite incl. evals) | ✅ **276 passed, 4 skipped** (was 263/4; +13) |
+| Router eval accuracy | ✅ 12/12 (floor 0.8) |
+| Router fallback budget (cheap model + ≤16 tokens) | ✅ asserted |
+| Pipeline parity (non-recall intent == legacy) | ✅ |
+| Loop guard (injected cycle halted at cap) | ✅ |
+| `alembic heads` | ✅ unchanged at `0014_add_agent_messages` |
+| Live RLS gate re-run (4 gated tests under `gummy_app`) | ✅ 4 passed |
+
+### Rollback
+
+`agents_orchestration_enabled=false` disables the whole path;
+`agents_router_llm_fallback=false` (default) already neutralizes the LLM
+classifier. Config-level, no schema, no data risk.

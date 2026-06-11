@@ -116,6 +116,7 @@ async def test_orchestrate_single_agent_traced(
     assert result.message_metadata == {
         "agent_key": GENERAL_AGENT_KEY,
         "run_id": str(result.run_id),
+        "route_shape": "single",
     }
     assert result.cost.tokens == result.input_tokens + result.output_tokens
 
@@ -144,7 +145,7 @@ async def test_orchestrate_records_failure_and_raises(
         raise RuntimeError("handler exploded")
 
     monkeypatch.setattr(
-        "app.services.agents.orchestrator_service.general_agent.handle",
+        "app.services.agents.handlers.general_agent.handle",
         _boom,
     )
     conv_id = await _new_conv(db_session, seed_user)
@@ -210,7 +211,7 @@ async def test_turn_fallback_on_orchestrator_failure(
         raise RuntimeError("handler exploded")
 
     monkeypatch.setattr(
-        "app.services.agents.orchestrator_service.general_agent.handle",
+        "app.services.agents.handlers.general_agent.handle",
         _boom,
     )
     conv_id = await _new_conv(db_session, seed_user)
