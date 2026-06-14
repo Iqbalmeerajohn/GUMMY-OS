@@ -31,10 +31,11 @@ function OrbFallback({ className }: { className?: string }) {
  */
 export function LivingOrb({
   state = "idle",
-  size = 200,
+  size,
   className,
 }: {
   state?: OrbState;
+  /** Fixed px size. Omit to fill the parent (use responsive sizing classes). */
   size?: number;
   className?: string;
 }) {
@@ -42,8 +43,8 @@ export function LivingOrb({
 
   return (
     <div
-      className={cn("relative", className)}
-      style={{ width: size, height: size }}
+      className={cn("relative", size === undefined && "size-full", className)}
+      style={size === undefined ? undefined : { width: size, height: size }}
     >
       {/* Ambient glow halo (cheap, no postprocessing). */}
       <div
