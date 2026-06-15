@@ -10,6 +10,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { buttonVariants } from "@/components/ui/button";
 import { ONBOARDING_STEPS } from "@/config/onboarding";
 import { markOnboardingComplete } from "@/lib/onboarding";
+import { resolvePostAuthDestination } from "@/lib/auth/post-auth";
 import { cn } from "@/lib/utils";
 
 export function OnboardingFlow() {
@@ -24,7 +25,7 @@ export function OnboardingFlow() {
 
   function finish() {
     markOnboardingComplete();
-    router.replace(user ? "/dashboard" : "/signup");
+    router.replace(user ? resolvePostAuthDestination() : "/signup");
   }
 
   function next() {

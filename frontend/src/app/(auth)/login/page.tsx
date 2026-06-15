@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -11,13 +11,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { buttonVariants } from "@/components/ui/button";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import { hasCompletedOnboarding } from "@/lib/onboarding";
+import { resolvePostAuthDestination } from "@/lib/auth/post-auth";
 import { cn } from "@/lib/utils";
 
 function LoginForm() {
   const router = useRouter();
-  const next = useSearchParams().get("next");
+  const params = useSearchParams();
+  const next = params.get("next");
   const supabase = getSupabaseBrowserClient();
+
+  useEffect(() => {
+    if (params.get("verify") === "failed") {
+      toast.error("That verification link was invalid or expired.");
+    }
+  }, [params]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -36,10 +43,7 @@ function LoginForm() {
       toast.error(error.message);
       return;
     }
-    const dest = hasCompletedOnboarding()
-      ? (next ?? "/dashboard")
-      : "/onboarding";
-    router.replace(dest);
+    router.replace(resolvePostAuthDestination(next));
   }
 
   return (

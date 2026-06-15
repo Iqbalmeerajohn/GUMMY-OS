@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { buttonVariants } from "@/components/ui/button";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { resolvePostAuthDestination } from "@/lib/auth/post-auth";
 import { env } from "@/lib/env";
 import { cn } from "@/lib/utils";
 
@@ -20,8 +21,19 @@ function SignupForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [sent, setSent] = useState(false);
 
   if (!supabase) return <SupabaseNotice />;
+
+  if (sent) {
+    return (
+      <p className="text-muted-foreground text-center text-sm text-balance">
+        We sent a confirmation link to{" "}
+        <span className="text-foreground">{email}</span>. Click it to verify and
+        you&apos;ll come straight back into GUMMY.
+      </p>
+    );
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -29,7 +41,9 @@ function SignupForm() {
     const { data, error } = await supabase!.auth.signUp({
       email,
       password,
-      options: { emailRedirectTo: `${env.appUrl}/login` },
+      options: {
+        emailRedirectTo: `${env.appUrl}/auth/callback?next=/onboarding`,
+      },
     });
     setSubmitting(false);
     if (error) {
@@ -38,9 +52,9 @@ function SignupForm() {
     }
     if (data.session) {
       // Auto-confirmed → straight into the onboarding journey.
-      router.replace("/onboarding");
+      router.replace(resolvePostAuthDestination("/onboarding"));
     } else {
-      toast.success("Check your email to confirm your account.");
+      setSent(true);
     }
   }
 

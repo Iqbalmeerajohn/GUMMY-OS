@@ -12,7 +12,6 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { useAuth } from "@/components/auth/AuthProvider";
 import { LivingOrb } from "@/components/brand/LivingOrb";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +25,7 @@ import {
   RECOMMENDED_ACTIONS,
 } from "@/config/dashboard";
 import { formatRelativeTime, timeOfDayGreeting } from "@/lib/format";
+import { useProfile } from "@/lib/profile/useProfile";
 
 const ICONS: Record<string, LucideIcon> = {
   Compass,
@@ -38,8 +38,8 @@ const ICONS: Record<string, LucideIcon> = {
 const SOON = "Arrives with the feature milestones (M3+).";
 
 export function GreetingHeader() {
-  const { user } = useAuth();
-  const name = user?.email?.split("@")[0];
+  const { data: profile } = useProfile();
+  const name = profile?.display_name?.trim();
   return (
     <div className="flex items-center gap-5">
       <LivingOrb size={72} state="idle" className="shrink-0" />

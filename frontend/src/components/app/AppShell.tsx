@@ -1,13 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { LogOut } from "lucide-react";
+import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
-import { useAuth } from "@/components/auth/AuthProvider";
 import { LivingOrb } from "@/components/brand/LivingOrb";
-import { buttonVariants } from "@/components/ui/button";
+import { ProfileMenu } from "@/components/app/ProfileMenu";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -17,14 +15,7 @@ const NAV = [
 
 /** Shared chrome for authenticated app routes (dashboard, future, settings). */
 export function AppShell({ children }: { children: ReactNode }) {
-  const router = useRouter();
   const pathname = usePathname();
-  const { user, signOut } = useAuth();
-
-  async function handleSignOut() {
-    await signOut();
-    router.replace("/login");
-  }
 
   return (
     <div className="flex min-h-[100svh] flex-col">
@@ -57,23 +48,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               })}
             </nav>
           </div>
-          <div className="flex items-center gap-3">
-            {user?.email ? (
-              <span className="text-muted-foreground hidden text-sm md:inline">
-                {user.email}
-              </span>
-            ) : null}
-            <button
-              onClick={handleSignOut}
-              className={cn(
-                buttonVariants({ variant: "outline", size: "sm" }),
-                "gap-1.5",
-              )}
-            >
-              <LogOut className="size-3.5" />
-              <span className="hidden sm:inline">Sign out</span>
-            </button>
-          </div>
+          <ProfileMenu />
         </div>
         {/* Mobile nav */}
         <nav className="flex items-center gap-1 px-5 pb-2 sm:hidden">
