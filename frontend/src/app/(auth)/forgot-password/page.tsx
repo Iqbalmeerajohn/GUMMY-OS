@@ -25,7 +25,7 @@ function ForgotForm() {
     e.preventDefault();
     setSubmitting(true);
     const { error } = await supabase!.auth.resetPasswordForEmail(email, {
-      redirectTo: `${env.appUrl}/login`,
+      redirectTo: `${env.appUrl}/auth/callback?next=/reset-password`,
     });
     setSubmitting(false);
     if (error) {
