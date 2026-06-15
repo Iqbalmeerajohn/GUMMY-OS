@@ -6,6 +6,7 @@ import { env } from "@/lib/env";
 /** Routes that require an authenticated session. */
 const PROTECTED_PREFIXES = [
   "/dashboard",
+  "/workspace",
   "/future",
   "/settings",
   "/welcome",

@@ -1,0 +1,66 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+
+import { LivingOrb } from "@/components/brand/LivingOrb";
+import { ProfileMenu } from "@/components/app/ProfileMenu";
+import { OrbNotification } from "@/components/app/OrbNotification";
+import { cn } from "@/lib/utils";
+
+const NAV = [
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/workspace", label: "Workspace" },
+  { href: "/agents", label: "Agents" },
+  { href: "/future", label: "Future Vision" },
+  { href: "/updates", label: "Updates" },
+] as const;
+
+/** Shared top bar for all authenticated app routes. */
+export function AppHeader() {
+  const pathname = usePathname();
+
+  const link = (item: (typeof NAV)[number]) => {
+    const active = pathname.startsWith(item.href);
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        className={cn(
+          "rounded-lg px-3 py-1.5 text-sm whitespace-nowrap transition-colors",
+          active
+            ? "bg-accent text-accent-foreground"
+            : "text-muted-foreground hover:text-foreground",
+        )}
+      >
+        {item.label}
+      </Link>
+    );
+  };
+
+  return (
+    <header className="glass sticky top-0 z-30 border-b border-white/10">
+      <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-5 py-3">
+        <div className="flex items-center gap-6">
+          <Link href="/dashboard" className="flex items-center gap-2.5">
+            <LivingOrb size={30} state="idle" />
+            <span className="font-heading text-lg font-semibold tracking-tight">
+              GUMMY
+            </span>
+          </Link>
+          <nav className="hidden items-center gap-1 md:flex">
+            {NAV.map(link)}
+          </nav>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <OrbNotification />
+          <ProfileMenu />
+        </div>
+      </div>
+      {/* Mobile nav (scrollable) */}
+      <nav className="flex items-center gap-1 overflow-x-auto px-5 pb-2 md:hidden">
+        {NAV.map(link)}
+      </nav>
+    </header>
+  );
+}

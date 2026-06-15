@@ -233,14 +233,13 @@ export function QuickStartWidget() {
     <SectionCard title="Quick Start">
       <div className="flex flex-wrap gap-2">
         {QUICK_START_SUGGESTIONS.map((s) => (
-          <button
+          <Link
             key={s}
-            type="button"
-            onClick={() => toast.info(SOON)}
+            href={`/workspace?prompt=${encodeURIComponent(s)}`}
             className="glass hover:border-primary/40 rounded-full px-3.5 py-1.5 text-sm transition-colors"
           >
             {s}
-          </button>
+          </Link>
         ))}
       </div>
     </SectionCard>

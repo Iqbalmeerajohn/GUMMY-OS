@@ -26,14 +26,14 @@ export const RECOMMENDED_ACTIONS: RecommendedAction[] = [
     title: "Teach GUMMY something",
     description: "Tell GUMMY a fact to remember about you.",
     icon: "Brain",
-    soon: true,
+    href: "/workspace?prompt=Remember%20that%20",
   },
   {
-    id: "first-goal",
-    title: "Set your first goal",
-    description: "Turn an outcome you want into tracked progress.",
-    icon: "Target",
-    soon: true,
+    id: "open-workspace",
+    title: "Open the Workspace",
+    description: "Converse and co-work with GUMMY and your agents.",
+    icon: "MessageSquare",
+    href: "/workspace",
   },
 ];
 
