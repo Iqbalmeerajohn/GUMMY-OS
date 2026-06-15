@@ -62,7 +62,7 @@ export default function Home() {
           Get Started
         </Link>
         <Link
-          href="/discover"
+          href="/onboarding"
           className={cn(
             buttonVariants({ variant: "outline", size: "lg" }),
             ctaBase,

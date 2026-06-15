@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { ThemeProvider } from "next-themes";
 
+import { AuthProvider } from "@/components/auth/AuthProvider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 /**
@@ -33,7 +34,9 @@ export function Providers({ children }: { children: ReactNode }) {
       disableTransitionOnChange
     >
       <QueryClientProvider client={queryClient}>
-        <TooltipProvider delay={200}>{children}</TooltipProvider>
+        <AuthProvider>
+          <TooltipProvider delay={200}>{children}</TooltipProvider>
+        </AuthProvider>
         <ReactQueryDevtools initialIsOpen={false} />
       </QueryClientProvider>
     </ThemeProvider>
