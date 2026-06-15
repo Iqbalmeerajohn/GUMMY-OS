@@ -120,10 +120,16 @@ function MemoryPreview() {
         </Link>
       }
     >
+      <p className="text-muted-foreground mb-2 text-[11px]">
+        What GUMMY knows about you
+      </p>
       {isLoading ? (
         <Skeleton className="h-12 w-full rounded-lg" />
       ) : isError || items.length === 0 ? (
-        <p className="text-muted-foreground text-xs">Nothing remembered yet.</p>
+        <p className="text-muted-foreground text-xs text-balance">
+          GUMMY doesn&apos;t know anything about you yet — it learns as you
+          chat.
+        </p>
       ) : (
         <ul className="space-y-1.5">
           {items.slice(0, 3).map((m) => (
@@ -238,19 +244,27 @@ function VoiceSection() {
 }
 
 function LearningModeSection() {
+  const steps = ["Observe", "Understand", "Automate"];
   return (
     <Panel
       icon={Sparkles}
-      title="Learning Mode"
+      title="Workflow Learning"
       action={<StatusBadge status="researching" />}
     >
-      <div className="flex items-center justify-between">
-        <span className="text-muted-foreground text-xs">
-          Learn my workflows
-        </span>
-        <span className="bg-muted text-muted-foreground rounded-full px-2 py-0.5 text-[10px]">
-          Disabled
-        </span>
+      <p className="text-muted-foreground mb-2.5 text-[11px] text-balance">
+        GUMMY will learn how you work, then offer to automate it.
+      </p>
+      <div className="flex items-center gap-1.5">
+        {steps.map((s, i) => (
+          <div key={s} className="flex items-center gap-1.5">
+            <span className="bg-muted/60 rounded-full px-2 py-0.5 text-[10px] font-medium">
+              {s}
+            </span>
+            {i < steps.length - 1 ? (
+              <span className="text-muted-foreground text-[10px]">→</span>
+            ) : null}
+          </div>
+        ))}
       </div>
     </Panel>
   );
