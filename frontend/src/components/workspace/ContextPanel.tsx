@@ -20,7 +20,8 @@ import { toast } from "sonner";
 import { StatusBadge } from "@/components/feature/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useActiveGoals, useRecentMemories } from "@/lib/hooks/useDashboard";
+import { useActiveGoals } from "@/lib/hooks/useDashboard";
+import { useMemoriesReady, useTopMemories } from "@/lib/memory/useMemory";
 import { AGENT_MODES } from "@/lib/chat/routing";
 
 /**
@@ -137,15 +138,15 @@ function ContextPreview({ agentLabel }: { agentLabel: string }) {
 }
 
 function MemoryPreview() {
-  const { data, isLoading, isError } = useRecentMemories();
-  const items = data?.items ?? [];
+  const ready = useMemoriesReady();
+  const items = useTopMemories(3);
   return (
     <Panel
       icon={Brain}
       title="Memory"
       action={
         <Link
-          href="/dashboard"
+          href="/memories"
           className="text-muted-foreground text-xs hover:underline"
         >
           View
@@ -155,16 +156,16 @@ function MemoryPreview() {
       <p className="text-muted-foreground mb-2 text-[11px]">
         What GUMMY knows about you
       </p>
-      {isLoading ? (
+      {!ready ? (
         <Skeleton className="h-12 w-full rounded-lg" />
-      ) : isError || items.length === 0 ? (
+      ) : items.length === 0 ? (
         <p className="text-muted-foreground text-xs text-balance">
           GUMMY doesn&apos;t know anything about you yet — it learns as you
           chat.
         </p>
       ) : (
         <ul className="space-y-1.5">
-          {items.slice(0, 3).map((m) => (
+          {items.map((m) => (
             <li key={m.id} className="flex items-start gap-1.5">
               <Badge variant="secondary" className="shrink-0 text-[9px]">
                 {m.category}
@@ -174,7 +175,12 @@ function MemoryPreview() {
           ))}
         </ul>
       )}
-      <Actions items={["Search", "Manage"]} />
+      <Link
+        href="/memories"
+        className="text-primary mt-3 inline-block text-xs font-medium hover:underline"
+      >
+        View All Memories →
+      </Link>
     </Panel>
   );
 }

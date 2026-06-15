@@ -20,3 +20,22 @@ export function formatRelativeTime(iso: string | null): string {
   if (day < 7) return `${day}d ago`;
   return new Date(iso).toLocaleDateString();
 }
+
+/** Compact month + year, e.g. "Jan 2026". */
+export function formatMonthYear(iso: string | null): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleDateString(undefined, {
+    month: "short",
+    year: "numeric",
+  });
+}
+
+/** Full readable date, e.g. "12 Jan 2026". */
+export function formatFullDate(iso: string | null): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}

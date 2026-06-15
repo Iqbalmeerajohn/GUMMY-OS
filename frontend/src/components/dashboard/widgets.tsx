@@ -18,8 +18,9 @@ import { Badge } from "@/components/ui/badge";
 import {
   useActiveGoals,
   useRecentConversations,
-  useRecentMemories,
 } from "@/lib/hooks/useDashboard";
+import { useMemoriesReady, useTopMemories } from "@/lib/memory/useMemory";
+import { ImportanceBadge } from "@/components/memory/MemoryBadges";
 import {
   QUICK_START_SUGGESTIONS,
   RECOMMENDED_ACTIONS,
@@ -116,15 +117,15 @@ function ShowMore({
 }
 
 export function RecentMemoriesWidget() {
-  const { data, isLoading, isError } = useRecentMemories();
+  const ready = useMemoriesReady();
+  const items = useTopMemories(6);
   const [expanded, setExpanded] = useState(false);
-  const items = data?.items ?? [];
   const shown = expanded ? items : items.slice(0, 3);
   return (
     <SectionCard title="Recent Memories">
-      {isLoading ? (
+      {!ready ? (
         <LoadingRows />
-      ) : isError || items.length === 0 ? (
+      ) : items.length === 0 ? (
         <EmptyState
           icon={Brain}
           text="No memories yet. GUMMY will remember what matters as you chat."
@@ -140,17 +141,31 @@ export function RecentMemoriesWidget() {
                 <Badge variant="secondary" className="shrink-0 text-[10px]">
                   {m.category}
                 </Badge>
-                <span className="line-clamp-2 text-sm">{m.content}</span>
+                <span className="line-clamp-2 flex-1 text-sm">{m.content}</span>
+                <ImportanceBadge
+                  importance={m.importance}
+                  className="shrink-0"
+                />
               </li>
             ))}
           </ul>
-          {items.length > 3 ? (
-            <ShowMore
-              expanded={expanded}
-              onToggle={() => setExpanded((v) => !v)}
-              count={items.length}
-            />
-          ) : null}
+          <div className="mt-2.5 flex items-center justify-between">
+            {items.length > 3 ? (
+              <ShowMore
+                expanded={expanded}
+                onToggle={() => setExpanded((v) => !v)}
+                count={items.length}
+              />
+            ) : (
+              <span />
+            )}
+            <Link
+              href="/memories"
+              className="text-primary text-xs font-medium hover:underline"
+            >
+              View all memories →
+            </Link>
+          </div>
         </>
       )}
     </SectionCard>
