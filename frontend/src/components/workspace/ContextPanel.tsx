@@ -4,11 +4,13 @@ import Link from "next/link";
 import {
   Brain,
   FileText,
+  Image,
   Layers,
   Mic,
   Plug,
   Sparkles,
   Target,
+  Users,
   Workflow,
   Zap,
   type LucideIcon,
@@ -40,8 +42,38 @@ export function ContextPanel({ agentContext }: { agentContext: string }) {
       <ToolsSection />
       <AutomationSection />
       <VoiceSection />
+      <VisionSection />
       <LearningModeSection />
+      <AIWorkforceSection />
     </div>
+  );
+}
+
+function VisionSection() {
+  return (
+    <Panel
+      icon={Image}
+      title="Vision"
+      action={<StatusBadge status="researching" />}
+    >
+      <p className="text-muted-foreground text-xs text-balance">
+        Generate, edit, and understand images.
+      </p>
+    </Panel>
+  );
+}
+
+function AIWorkforceSection() {
+  return (
+    <Panel
+      icon={Users}
+      title="AI Workforce"
+      action={<StatusBadge status="planned" />}
+    >
+      <p className="text-muted-foreground text-xs text-balance">
+        A coordinated team of agents working together.
+      </p>
+    </Panel>
   );
 }
 

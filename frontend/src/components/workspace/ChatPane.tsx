@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { PanelLeft, PanelRight } from "lucide-react";
 import { toast } from "sonner";
 
 import { LivingOrb } from "@/components/brand/LivingOrb";
+import { AgentSelect } from "@/components/workspace/AgentSelect";
 import { Composer } from "@/components/workspace/Composer";
 import { MessageBubble } from "@/components/workspace/MessageBubble";
 import {
@@ -12,9 +14,9 @@ import {
   useSendTurn,
 } from "@/lib/hooks/useChat";
 import {
-  AGENT_MODES,
   modeToAgentContext,
   previewRoutedAgents,
+  routedAgentsWithReason,
 } from "@/lib/chat/routing";
 import { cn } from "@/lib/utils";
 
@@ -25,17 +27,50 @@ const SUGGESTIONS = [
   "What do you know about me?",
 ];
 
+function AgentChips({ labels }: { labels: string[] }) {
+  return (
+    <>
+      {labels.map((label) => (
+        <span
+          key={label}
+          className="border-primary/30 bg-primary/10 text-primary rounded-full border px-2 py-0.5 text-[11px] font-medium"
+        >
+          {label}
+        </span>
+      ))}
+    </>
+  );
+}
+
+/** Informational transparency shown after a reply. */
+function ActiveAgentsNote({ text, mode }: { text: string; mode: string }) {
+  const { agents, reason } = routedAgentsWithReason(text, mode);
+  return (
+    <div className="ml-10 flex flex-col gap-1">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-muted-foreground text-xs">Active Agent(s)</span>
+        <AgentChips labels={agents} />
+      </div>
+      <span className="text-muted-foreground text-xs">Reason: {reason}</span>
+    </div>
+  );
+}
+
 export function ChatPane({
   activeId,
   agentContext,
   onAgentContextChange,
   onActiveIdChange,
+  onOpenHistory,
+  onOpenHub,
   initialPrompt = "",
 }: {
   activeId: string | null;
   agentContext: string;
   onAgentContextChange: (v: string) => void;
   onActiveIdChange: (id: string) => void;
+  onOpenHistory: () => void;
+  onOpenHub: () => void;
   initialPrompt?: string;
 }) {
   const [value, setValue] = useState(initialPrompt);
@@ -82,41 +117,33 @@ export function ChatPane({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Agent bar */}
-      <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-2.5">
-        <div className="flex items-center gap-2">
-          <span className="text-muted-foreground text-xs">Agent</span>
-          <select
-            value={agentContext}
-            onChange={(e) => onAgentContextChange(e.target.value)}
-            className="border-input focus-visible:border-ring focus-visible:ring-ring/50 h-8 rounded-lg border bg-transparent px-2 text-sm outline-none focus-visible:ring-2"
+      {/* Slim utility bar (low visual weight). */}
+      <div className="flex items-center justify-between gap-2 px-3 py-2">
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={onOpenHistory}
+            aria-label="Conversations"
+            className="text-muted-foreground hover:bg-accent hover:text-foreground grid size-8 place-items-center rounded-lg lg:hidden"
           >
-            {AGENT_MODES.map((a) => (
-              <option key={a.value} value={a.value}>
-                {a.label}
-              </option>
-            ))}
-          </select>
+            <PanelLeft className="size-4" />
+          </button>
+          <AgentSelect value={agentContext} onChange={onAgentContextChange} />
         </div>
-        <span className="text-muted-foreground hidden text-xs sm:inline">
-          {agentContext === "auto"
-            ? "GUMMY selects agents automatically"
-            : messages.length > 0
-              ? `${messages.length} messages`
-              : "New conversation"}
-        </span>
+        <button
+          onClick={onOpenHub}
+          className="text-muted-foreground hover:bg-accent hover:text-foreground inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-sm"
+        >
+          <PanelRight className="size-4" />
+          <span className="hidden sm:inline">Workspace Hub</span>
+        </button>
       </div>
 
-      {/* Messages */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6">
+      {/* Messages — the dominant surface. */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         {isEmpty ? (
-          <WelcomeState
-            onPick={(s) => {
-              setValue(s);
-            }}
-          />
+          <WelcomeState onPick={(s) => setValue(s)} />
         ) : (
-          <div className="mx-auto flex max-w-2xl flex-col gap-6">
+          <div className="mx-auto flex max-w-3xl flex-col gap-6">
             {isLoading && activeId ? (
               <p className="text-muted-foreground text-sm">Loading…</p>
             ) : null}
@@ -125,9 +152,26 @@ export function ChatPane({
                 Couldn&apos;t load this conversation.
               </p>
             ) : null}
-            {messages.map((m) => (
-              <MessageBubble key={m.id} role={m.role} content={m.content} />
-            ))}
+            {messages.map((m, i) => {
+              const prevUser =
+                m.role === "assistant"
+                  ? messages
+                      .slice(0, i)
+                      .reverse()
+                      .find((x) => x.role === "user")
+                  : null;
+              return (
+                <div key={m.id} className="space-y-2">
+                  <MessageBubble role={m.role} content={m.content} />
+                  {prevUser ? (
+                    <ActiveAgentsNote
+                      text={prevUser.content}
+                      mode={agentContext}
+                    />
+                  ) : null}
+                </div>
+              );
+            })}
             {pending ? (
               <>
                 <MessageBubble role="user" content={pending} />
@@ -135,14 +179,9 @@ export function ChatPane({
                   <span className="text-muted-foreground text-xs">
                     Active Agents
                   </span>
-                  {previewRoutedAgents(pending, agentContext).map((label) => (
-                    <span
-                      key={label}
-                      className="border-primary/30 bg-primary/10 text-primary rounded-full border px-2 py-0.5 text-[11px] font-medium"
-                    >
-                      {label}
-                    </span>
-                  ))}
+                  <AgentChips
+                    labels={previewRoutedAgents(pending, agentContext)}
+                  />
                 </div>
                 <MessageBubble role="assistant" content="" thinking />
               </>
@@ -152,9 +191,9 @@ export function ChatPane({
         )}
       </div>
 
-      {/* Composer */}
-      <div className="border-t border-white/10 px-4 py-3">
-        <div className="mx-auto max-w-2xl">
+      {/* Composer — prominent. */}
+      <div className="px-4 pb-4">
+        <div className="mx-auto max-w-3xl">
           <Composer
             value={value}
             onChange={setValue}
@@ -169,7 +208,7 @@ export function ChatPane({
 
 function WelcomeState({ onPick }: { onPick: (s: string) => void }) {
   return (
-    <div className="mx-auto flex max-w-md flex-col items-center gap-6 py-10 text-center">
+    <div className="mx-auto flex max-w-md flex-col items-center gap-6 py-12 text-center">
       <LivingOrb size={120} state="idle" />
       <div>
         <h2 className="font-heading text-2xl font-semibold tracking-tight">

@@ -72,3 +72,23 @@ export function previewRoutedAgents(text: string, mode: string): string[] {
   ).map((r) => r.label);
   return hits.length > 0 ? hits.slice(0, 3) : ["General"];
 }
+
+/**
+ * Active agents + a human-readable reason for the transparency layer shown
+ * after replies. Informational only — does not drive backend routing.
+ */
+export function routedAgentsWithReason(
+  text: string,
+  mode: string,
+): { agents: string[]; reason: string } {
+  const agents = previewRoutedAgents(text, mode);
+  if (mode !== AUTO) {
+    return { agents, reason: "Manual agent selection (testing)." };
+  }
+  const lower = text.toLowerCase();
+  const matched = RULES.find((r) => r.keywords.some((k) => lower.includes(k)));
+  const reason = matched
+    ? `Detected a ${matched.label.toLowerCase()} request in your message.`
+    : "General request — no specialized agent needed.";
+  return { agents, reason };
+}
