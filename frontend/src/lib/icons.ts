@@ -1,0 +1,80 @@
+/**
+ * Curated lucide icon map. Registry/config items reference icons by name
+ * (string), and components resolve them here — avoids bundling all of lucide and
+ * keeps feature data serializable/data-driven.
+ */
+
+import {
+  Activity,
+  Bot,
+  Brain,
+  Briefcase,
+  Building2,
+  CalendarClock,
+  Clapperboard,
+  Dumbbell,
+  FileText,
+  Film,
+  Globe,
+  GraduationCap,
+  Image,
+  LayoutDashboard,
+  ListChecks,
+  Megaphone,
+  MessageSquare,
+  Mic,
+  PenLine,
+  Plug,
+  Rocket,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Target,
+  Telescope,
+  TrendingUp,
+  UserCircle,
+  Users,
+  Video,
+  Workflow,
+  Zap,
+  type LucideIcon,
+} from "lucide-react";
+
+const ICONS: Record<string, LucideIcon> = {
+  Activity,
+  Bot,
+  Brain,
+  Briefcase,
+  Building2,
+  CalendarClock,
+  Clapperboard,
+  Dumbbell,
+  FileText,
+  Film,
+  Globe,
+  GraduationCap,
+  Image,
+  LayoutDashboard,
+  ListChecks,
+  Megaphone,
+  MessageSquare,
+  Mic,
+  PenLine,
+  Plug,
+  Rocket,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Target,
+  Telescope,
+  TrendingUp,
+  UserCircle,
+  Users,
+  Video,
+  Workflow,
+  Zap,
+};
+
+export function getIcon(name: string): LucideIcon {
+  return ICONS[name] ?? Sparkles;
+}

@@ -5,7 +5,9 @@ import { Check } from "lucide-react";
 
 import { HeroOrb } from "@/components/brand/HeroOrb";
 import { LivingOrb } from "@/components/brand/LivingOrb";
+import { StatusBadge } from "@/components/feature/StatusBadge";
 import type { OnboardingStep, OnboardingVisual } from "@/config/onboarding";
+import { getByStatus, getReleased } from "@/config/registry";
 import { cn } from "@/lib/utils";
 
 interface VisualProps {
@@ -168,19 +170,19 @@ function EcosystemVisual({ step }: VisualProps) {
   );
 }
 
-/** Screen 6 — completed milestones on a track. */
-function RoadmapCurrentVisual({ step }: VisualProps) {
-  const items = step.items ?? [];
+/** Screen 6 — released features (from the registry — single source of truth). */
+function RoadmapCurrentVisual() {
+  const items = getReleased();
   return (
     <div className="mx-auto grid w-full max-w-lg grid-cols-1 gap-2.5 sm:grid-cols-2">
       {items.map((item, i) => (
         <motion.div
-          key={item.title}
+          key={item.id}
           className="glass flex items-center gap-3 rounded-xl px-4 py-3"
           initial={{ opacity: 0, y: 10 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          transition={{ delay: i * 0.06 }}
+          transition={{ delay: i * 0.05 }}
         >
           <span className="bg-primary text-primary-foreground grid size-6 shrink-0 place-items-center rounded-full">
             <Check className="size-3.5" />
@@ -192,32 +194,32 @@ function RoadmapCurrentVisual({ step }: VisualProps) {
   );
 }
 
-/** Screen 7 — upcoming capabilities as a futuristic roadmap. */
-function RoadmapFutureVisual({ step }: VisualProps) {
-  const items = step.items ?? [];
+/** Screen 7 — roadmap features (from the registry). */
+function RoadmapFutureVisual() {
+  const items = [
+    ...getByStatus("in-development"),
+    ...getByStatus("planned"),
+    ...getByStatus("researching"),
+  ];
   return (
     <div className="mx-auto grid w-full max-w-2xl grid-cols-1 gap-2.5 sm:grid-cols-2">
       {items.map((item, i) => (
         <motion.div
-          key={item.title}
+          key={item.id}
           className="group relative overflow-hidden rounded-xl border border-white/10 bg-white/[0.03] p-4 text-left"
           initial={{ opacity: 0, y: 12 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          transition={{ delay: i * 0.05 }}
+          transition={{ delay: i * 0.04 }}
         >
           <div className="from-primary/10 absolute inset-0 bg-gradient-to-br to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
           <div className="relative flex items-center justify-between gap-2">
             <span className="text-sm font-semibold">{item.title}</span>
-            <span className="text-primary/80 border-primary/30 rounded-full border px-2 py-0.5 text-[10px] tracking-wide uppercase">
-              Soon
-            </span>
+            <StatusBadge status={item.status} />
           </div>
-          {item.desc ? (
-            <p className="text-muted-foreground relative mt-1.5 text-xs">
-              {item.desc}
-            </p>
-          ) : null}
+          <p className="text-muted-foreground relative mt-1.5 text-xs">
+            {item.description}
+          </p>
         </motion.div>
       ))}
     </div>

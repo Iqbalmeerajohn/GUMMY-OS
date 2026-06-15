@@ -6,11 +6,14 @@ import type { ReactNode } from "react";
 
 import { LivingOrb } from "@/components/brand/LivingOrb";
 import { ProfileMenu } from "@/components/app/ProfileMenu";
+import { OrbNotification } from "@/components/app/OrbNotification";
 import { cn } from "@/lib/utils";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/agents", label: "Agents" },
   { href: "/future", label: "Future Vision" },
+  { href: "/updates", label: "Updates" },
 ] as const;
 
 /** Shared chrome for authenticated app routes (dashboard, future, settings). */
@@ -48,7 +51,10 @@ export function AppShell({ children }: { children: ReactNode }) {
               })}
             </nav>
           </div>
-          <ProfileMenu />
+          <div className="flex items-center gap-1.5">
+            <OrbNotification />
+            <ProfileMenu />
+          </div>
         </div>
         {/* Mobile nav */}
         <nav className="flex items-center gap-1 px-5 pb-2 sm:hidden">

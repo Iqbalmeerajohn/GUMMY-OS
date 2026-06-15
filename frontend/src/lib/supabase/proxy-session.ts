@@ -4,7 +4,17 @@ import { createServerClient } from "@supabase/ssr";
 import { env } from "@/lib/env";
 
 /** Routes that require an authenticated session. */
-const PROTECTED_PREFIXES = ["/dashboard", "/future", "/settings", "/welcome"];
+const PROTECTED_PREFIXES = [
+  "/dashboard",
+  "/future",
+  "/settings",
+  "/welcome",
+  "/agents",
+  "/updates",
+  "/voice",
+  "/automation",
+  "/about-gummy",
+];
 /** Auth pages a signed-in user should be bounced away from. */
 const AUTH_PAGES = ["/login", "/signup", "/forgot-password"];
 

@@ -15,9 +15,9 @@ export interface RecommendedAction {
 
 export const RECOMMENDED_ACTIONS: RecommendedAction[] = [
   {
-    id: "tour",
-    title: "Take the tour",
-    description: "See what GUMMY can do and where it's headed.",
+    id: "explore",
+    title: "Explore GUMMY",
+    description: "See new releases, capabilities, and roadmap progress.",
     icon: "Compass",
     href: "/onboarding",
   },

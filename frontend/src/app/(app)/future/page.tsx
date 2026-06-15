@@ -1,20 +1,36 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { ArrowRight, Check } from "lucide-react";
 
 import { LivingOrb } from "@/components/brand/LivingOrb";
+import { StatusBadge } from "@/components/feature/StatusBadge";
 import { Reveal } from "@/components/motion/Reveal";
 import { Stagger, StaggerItem } from "@/components/motion/Stagger";
 import {
-  COMPLETED_MILESTONES,
   EVOLUTION_STAGES,
   LONG_TERM_VISION,
-  PLANNED_EVOLUTION,
   VISION_PILLARS,
-} from "@/config/futureVision";
+  getByStatus,
+  getReleased,
+} from "@/config/registry";
+import { getIcon } from "@/lib/icons";
 
 export const metadata: Metadata = {
   title: "Future Vision",
 };
+
+const ROADMAP = [
+  ...getByStatus("in-development"),
+  ...getByStatus("planned"),
+  ...getByStatus("researching"),
+];
+
+const CROSS_LINKS = [
+  { href: "/agents", label: "Agent Directory" },
+  { href: "/voice", label: "Voice" },
+  { href: "/automation", label: "Automation" },
+  { href: "/about-gummy", label: "About GUMMY" },
+] as const;
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
@@ -24,11 +40,12 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** The living roadmap inside GUMMY. */
+/** The living roadmap inside GUMMY — generated from the Feature Registry. */
 export default function FuturePage() {
+  const released = getReleased();
+
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-20 py-4">
-      {/* Hero */}
       <Reveal className="flex flex-col items-center gap-6 text-center">
         <LivingOrb size={140} state="idle" />
         <div>
@@ -41,26 +58,26 @@ export default function FuturePage() {
         </div>
       </Reveal>
 
-      {/* Section 1 — today */}
+      {/* Today */}
       <section className="space-y-6">
         <Reveal>
           <SectionHeading>Where GUMMY Is Today</SectionHeading>
         </Reveal>
-        <Stagger className="relative space-y-3 border-l border-white/10 pl-6">
-          {COMPLETED_MILESTONES.map((m) => (
-            <StaggerItem key={m}>
-              <div className="relative flex items-center gap-3">
-                <span className="bg-primary text-primary-foreground absolute -left-[34px] grid size-6 place-items-center rounded-full">
+        <Stagger className="grid gap-2.5 sm:grid-cols-2">
+          {released.map((m) => (
+            <StaggerItem key={m.id}>
+              <div className="glass flex items-center gap-3 rounded-xl px-4 py-3">
+                <span className="bg-primary text-primary-foreground grid size-6 shrink-0 place-items-center rounded-full">
                   <Check className="size-3.5" />
                 </span>
-                <span className="text-base font-medium">{m}</span>
+                <span className="text-sm font-medium">{m.title}</span>
               </div>
             </StaggerItem>
           ))}
         </Stagger>
       </section>
 
-      {/* Section 2 — becoming */}
+      {/* Becoming */}
       <section className="space-y-6">
         <Reveal>
           <SectionHeading>What GUMMY Is Becoming</SectionHeading>
@@ -84,7 +101,7 @@ export default function FuturePage() {
         </Stagger>
       </section>
 
-      {/* Section 3 — planned evolution */}
+      {/* Planned evolution */}
       <section className="space-y-6">
         <Reveal>
           <p className="text-primary/85 text-xs font-medium tracking-[0.2em] uppercase">
@@ -93,21 +110,30 @@ export default function FuturePage() {
           <SectionHeading>Future Capabilities</SectionHeading>
         </Reveal>
         <Stagger className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {PLANNED_EVOLUTION.map((c) => (
-            <StaggerItem key={c.title}>
-              <div className="group hover:border-primary/40 relative h-full overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-5 transition-colors">
-                <div className="from-primary/10 absolute inset-0 bg-gradient-to-br to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
-                <h3 className="relative text-sm font-semibold">{c.title}</h3>
-                <p className="text-muted-foreground relative mt-1.5 text-xs">
-                  {c.description}
-                </p>
-              </div>
-            </StaggerItem>
-          ))}
+          {ROADMAP.map((c) => {
+            const Icon = getIcon(c.icon);
+            return (
+              <StaggerItem key={c.id}>
+                <div className="group hover:border-primary/40 relative h-full overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-5 transition-colors">
+                  <div className="from-primary/10 absolute inset-0 bg-gradient-to-br to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
+                  <div className="relative flex items-center justify-between gap-2">
+                    <Icon className="text-primary size-5" />
+                    <StatusBadge status={c.status} />
+                  </div>
+                  <h3 className="relative mt-3 text-sm font-semibold">
+                    {c.title}
+                  </h3>
+                  <p className="text-muted-foreground relative mt-1 text-xs">
+                    {c.description}
+                  </p>
+                </div>
+              </StaggerItem>
+            );
+          })}
         </Stagger>
       </section>
 
-      {/* Section 4 — long-term vision */}
+      {/* Long-term vision */}
       <section>
         <Reveal className="glass elevation-2 rounded-3xl p-8 text-center sm:p-12">
           <SectionHeading>The Long-Term Vision</SectionHeading>
@@ -117,7 +143,7 @@ export default function FuturePage() {
         </Reveal>
       </section>
 
-      {/* Section 5 — your future */}
+      {/* Your future */}
       <section className="space-y-6">
         <Reveal>
           <SectionHeading>Your Future With GUMMY</SectionHeading>
@@ -141,6 +167,20 @@ export default function FuturePage() {
             </div>
           ))}
         </div>
+      </section>
+
+      {/* Cross-links */}
+      <section className="flex flex-wrap justify-center gap-2.5">
+        {CROSS_LINKS.map((l) => (
+          <Link
+            key={l.href}
+            href={l.href}
+            className="glass hover:border-primary/40 inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm transition-colors"
+          >
+            {l.label}
+            <ArrowRight className="size-3.5" />
+          </Link>
+        ))}
       </section>
     </div>
   );

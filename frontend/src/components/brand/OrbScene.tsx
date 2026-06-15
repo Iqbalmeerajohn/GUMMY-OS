@@ -103,6 +103,7 @@ const STATE_TARGET: Record<
   idle: { amp: 0.12, speed: 0.35, intensity: 1.1 },
   thinking: { amp: 0.26, speed: 1.2, intensity: 1.8 },
   listening: { amp: 0.18, speed: 0.7, intensity: 1.45 },
+  update: { amp: 0.17, speed: 0.6, intensity: 1.7 },
 };
 
 function OrbMesh({ state }: { state: OrbState }) {
