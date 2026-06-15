@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LogOut, Rocket, Settings, User } from "lucide-react";
+import { Bell, LogOut, Rocket, Settings, User } from "lucide-react";
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
@@ -49,7 +49,7 @@ export function ProfileMenu() {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem render={<Link href="/settings/profile" />}>
+        <DropdownMenuItem render={<Link href="/profile" />}>
           <User />
           Profile
         </DropdownMenuItem>
@@ -60,6 +60,10 @@ export function ProfileMenu() {
         <DropdownMenuItem render={<Link href="/future" />}>
           <Rocket />
           Future Vision
+        </DropdownMenuItem>
+        <DropdownMenuItem render={<Link href="/updates" />}>
+          <Bell />
+          Updates
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onClick={handleSignOut}>

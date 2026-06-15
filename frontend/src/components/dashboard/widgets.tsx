@@ -10,7 +10,7 @@ import {
   Target,
   type LucideIcon,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { LivingOrb } from "@/components/brand/LivingOrb";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -96,9 +96,30 @@ function LoadingRows() {
   );
 }
 
+function ShowMore({
+  expanded,
+  onToggle,
+  count,
+}: {
+  expanded: boolean;
+  onToggle: () => void;
+  count: number;
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      className="text-primary mt-2.5 text-xs font-medium hover:underline"
+    >
+      {expanded ? "Show less" : `Show all ${count}`}
+    </button>
+  );
+}
+
 export function RecentMemoriesWidget() {
   const { data, isLoading, isError } = useRecentMemories();
+  const [expanded, setExpanded] = useState(false);
   const items = data?.items ?? [];
+  const shown = expanded ? items : items.slice(0, 3);
   return (
     <SectionCard title="Recent Memories">
       {isLoading ? (
@@ -109,19 +130,28 @@ export function RecentMemoriesWidget() {
           text="No memories yet. GUMMY will remember what matters as you chat."
         />
       ) : (
-        <ul className="space-y-2.5">
-          {items.map((m) => (
-            <li
-              key={m.id}
-              className="border-border/50 bg-background/40 flex items-start gap-2 rounded-lg border p-2.5"
-            >
-              <Badge variant="secondary" className="shrink-0 text-[10px]">
-                {m.category}
-              </Badge>
-              <span className="line-clamp-2 text-sm">{m.content}</span>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="space-y-2.5">
+            {shown.map((m) => (
+              <li
+                key={m.id}
+                className="border-border/50 bg-background/40 flex items-start gap-2 rounded-lg border p-2.5"
+              >
+                <Badge variant="secondary" className="shrink-0 text-[10px]">
+                  {m.category}
+                </Badge>
+                <span className="line-clamp-2 text-sm">{m.content}</span>
+              </li>
+            ))}
+          </ul>
+          {items.length > 3 ? (
+            <ShowMore
+              expanded={expanded}
+              onToggle={() => setExpanded((v) => !v)}
+              count={items.length}
+            />
+          ) : null}
+        </>
       )}
     </SectionCard>
   );
@@ -129,7 +159,9 @@ export function RecentMemoriesWidget() {
 
 export function GoalsWidget() {
   const { data, isLoading, isError } = useActiveGoals();
+  const [expanded, setExpanded] = useState(false);
   const items = data?.items ?? [];
+  const shown = expanded ? items : items.slice(0, 3);
   return (
     <SectionCard title="Goals">
       {isLoading ? (
@@ -140,21 +172,30 @@ export function GoalsWidget() {
           text="No active goals. Set one to start tracking progress."
         />
       ) : (
-        <ul className="space-y-2.5">
-          {items.map((g) => (
-            <li
-              key={g.id}
-              className="border-border/50 bg-background/40 flex items-center justify-between gap-2 rounded-lg border p-2.5"
-            >
-              <span className="line-clamp-1 text-sm font-medium">
-                {g.title}
-              </span>
-              <Badge variant="secondary" className="shrink-0 text-[10px]">
-                {g.status}
-              </Badge>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="space-y-2.5">
+            {shown.map((g) => (
+              <li
+                key={g.id}
+                className="border-border/50 bg-background/40 flex items-center justify-between gap-2 rounded-lg border p-2.5"
+              >
+                <span className="line-clamp-1 text-sm font-medium">
+                  {g.title}
+                </span>
+                <Badge variant="secondary" className="shrink-0 text-[10px]">
+                  {g.status}
+                </Badge>
+              </li>
+            ))}
+          </ul>
+          {items.length > 3 ? (
+            <ShowMore
+              expanded={expanded}
+              onToggle={() => setExpanded((v) => !v)}
+              count={items.length}
+            />
+          ) : null}
+        </>
       )}
     </SectionCard>
   );

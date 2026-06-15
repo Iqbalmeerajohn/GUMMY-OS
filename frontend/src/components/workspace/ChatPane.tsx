@@ -11,7 +11,11 @@ import {
   useMessages,
   useSendTurn,
 } from "@/lib/hooks/useChat";
-import { AGENT_CONTEXTS } from "@/lib/chat/agents";
+import {
+  AGENT_MODES,
+  modeToAgentContext,
+  previewRoutedAgents,
+} from "@/lib/chat/routing";
 import { cn } from "@/lib/utils";
 
 const SUGGESTIONS = [
@@ -58,7 +62,9 @@ export function ChatPane({
     try {
       let id = activeId;
       if (!id) {
-        const conv = await createConv.mutateAsync(agentContext);
+        const conv = await createConv.mutateAsync(
+          modeToAgentContext(agentContext),
+        );
         id = conv.id;
         onActiveIdChange(id);
       }
@@ -85,7 +91,7 @@ export function ChatPane({
             onChange={(e) => onAgentContextChange(e.target.value)}
             className="border-input focus-visible:border-ring focus-visible:ring-ring/50 h-8 rounded-lg border bg-transparent px-2 text-sm outline-none focus-visible:ring-2"
           >
-            {AGENT_CONTEXTS.map((a) => (
+            {AGENT_MODES.map((a) => (
               <option key={a.value} value={a.value}>
                 {a.label}
               </option>
@@ -93,9 +99,11 @@ export function ChatPane({
           </select>
         </div>
         <span className="text-muted-foreground hidden text-xs sm:inline">
-          {messages.length > 0
-            ? `${messages.length} messages`
-            : "New conversation"}
+          {agentContext === "auto"
+            ? "GUMMY selects agents automatically"
+            : messages.length > 0
+              ? `${messages.length} messages`
+              : "New conversation"}
         </span>
       </div>
 
@@ -123,6 +131,19 @@ export function ChatPane({
             {pending ? (
               <>
                 <MessageBubble role="user" content={pending} />
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-muted-foreground text-xs">
+                    Active Agents
+                  </span>
+                  {previewRoutedAgents(pending, agentContext).map((label) => (
+                    <span
+                      key={label}
+                      className="border-primary/30 bg-primary/10 text-primary rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                    >
+                      {label}
+                    </span>
+                  ))}
+                </div>
                 <MessageBubble role="assistant" content="" thinking />
               </>
             ) : null}

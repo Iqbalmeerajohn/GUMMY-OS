@@ -7,6 +7,7 @@ import { env } from "@/lib/env";
 const PROTECTED_PREFIXES = [
   "/dashboard",
   "/workspace",
+  "/profile",
   "/future",
   "/settings",
   "/welcome",

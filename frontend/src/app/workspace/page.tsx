@@ -14,7 +14,7 @@ type MobilePanel = "history" | "context" | null;
 function Workspace() {
   const initialPrompt = useSearchParams().get("prompt") ?? "";
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [agentContext, setAgentContext] = useState("general");
+  const [agentContext, setAgentContext] = useState("auto");
   const [panel, setPanel] = useState<MobilePanel>(null);
   const createConv = useCreateConversation();
 

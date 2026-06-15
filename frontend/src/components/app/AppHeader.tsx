@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { LivingOrb } from "@/components/brand/LivingOrb";
 import { ProfileMenu } from "@/components/app/ProfileMenu";
 import { OrbNotification } from "@/components/app/OrbNotification";
+import { useHideOnScroll } from "@/lib/hooks/useScrollDirection";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -16,30 +17,19 @@ const NAV = [
   { href: "/updates", label: "Updates" },
 ] as const;
 
-/** Shared top bar for all authenticated app routes. */
+/** Shared top bar — desktop nav inline; mobile relies on the bottom nav.
+ *  Auto-hides on scroll-down, reveals on scroll-up (iPhone-style). */
 export function AppHeader() {
   const pathname = usePathname();
-
-  const link = (item: (typeof NAV)[number]) => {
-    const active = pathname.startsWith(item.href);
-    return (
-      <Link
-        key={item.href}
-        href={item.href}
-        className={cn(
-          "rounded-lg px-3 py-1.5 text-sm whitespace-nowrap transition-colors",
-          active
-            ? "bg-accent text-accent-foreground"
-            : "text-muted-foreground hover:text-foreground",
-        )}
-      >
-        {item.label}
-      </Link>
-    );
-  };
+  const hidden = useHideOnScroll();
 
   return (
-    <header className="glass sticky top-0 z-30 border-b border-white/10">
+    <header
+      className={cn(
+        "glass sticky top-0 z-30 border-b border-white/10 transition-transform duration-300",
+        hidden ? "-translate-y-full" : "translate-y-0",
+      )}
+    >
       <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-5 py-3">
         <div className="flex items-center gap-6">
           <Link href="/dashboard" className="flex items-center gap-2.5">
@@ -49,7 +39,23 @@ export function AppHeader() {
             </span>
           </Link>
           <nav className="hidden items-center gap-1 md:flex">
-            {NAV.map(link)}
+            {NAV.map((item) => {
+              const active = pathname.startsWith(item.href);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "rounded-lg px-3 py-1.5 text-sm whitespace-nowrap transition-colors",
+                    active
+                      ? "bg-accent text-accent-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
           </nav>
         </div>
         <div className="flex items-center gap-1.5">
@@ -57,10 +63,6 @@ export function AppHeader() {
           <ProfileMenu />
         </div>
       </div>
-      {/* Mobile nav (scrollable) */}
-      <nav className="flex items-center gap-1 overflow-x-auto px-5 pb-2 md:hidden">
-        {NAV.map(link)}
-      </nav>
     </header>
   );
 }

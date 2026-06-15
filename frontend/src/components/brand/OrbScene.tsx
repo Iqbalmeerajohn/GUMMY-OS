@@ -104,6 +104,10 @@ const STATE_TARGET: Record<
   thinking: { amp: 0.26, speed: 1.2, intensity: 1.8 },
   listening: { amp: 0.18, speed: 0.7, intensity: 1.45 },
   update: { amp: 0.17, speed: 0.6, intensity: 1.7 },
+  // Future extension points (reserved; not yet triggered by real events).
+  "agent-working": { amp: 0.24, speed: 1.05, intensity: 1.7 },
+  "approval-needed": { amp: 0.2, speed: 0.5, intensity: 1.95 },
+  "workflow-learning": { amp: 0.22, speed: 0.9, intensity: 1.6 },
 };
 
 function OrbMesh({ state }: { state: OrbState }) {
