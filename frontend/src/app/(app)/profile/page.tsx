@@ -6,7 +6,6 @@ import { Pencil } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { LivingOrb } from "@/components/brand/LivingOrb";
 import { Reveal } from "@/components/motion/Reveal";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { buttonVariants } from "@/components/ui/button";
 import { useProfile } from "@/lib/profile/useProfile";
@@ -98,12 +97,6 @@ function ProfileView({ profile }: { profile: UserProfile }) {
             <Row label="Assistant Personality" value={personality} />
             <Row label="Timezone" value={profile.timezone} />
             <Row label="Language" value={language} />
-            <div className="flex items-center justify-between gap-3 py-2.5">
-              <dt className="text-muted-foreground text-sm">Profile Picture</dt>
-              <Badge variant="secondary" className="text-[10px]">
-                Planned
-              </Badge>
-            </div>
           </dl>
         </Card>
       </Reveal>

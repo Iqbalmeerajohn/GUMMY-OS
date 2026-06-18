@@ -19,6 +19,13 @@ import type { MemoryItem } from "@/lib/api/resources";
 
 export type MemoryStatus = "active" | "archived";
 
+/** The editable fields of a memory (create + edit form payload). */
+export interface MemoryDraft {
+  content: string;
+  category: MemoryCategory;
+  importance: MemoryImportance;
+}
+
 /** A single prior revision of a memory's content (version history). */
 export interface MemoryVersion {
   content: string;

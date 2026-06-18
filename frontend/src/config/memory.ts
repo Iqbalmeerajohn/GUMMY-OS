@@ -15,14 +15,16 @@
 
 // ── Categories ────────────────────────────────────────────────────────────────
 
+// Mirrors the backend MemoryCategory enum (app/models/enums.py) exactly — these
+// strings are the wire contract for create/update/list/search.
 export type MemoryCategory =
+  | "profile"
+  | "preference"
   | "career"
-  | "projects"
   | "learning"
-  | "goals"
-  | "preferences"
-  | "business"
-  | "personal";
+  | "project"
+  | "conversation"
+  | "document";
 
 export interface MemoryCategoryMeta {
   id: MemoryCategory;
@@ -37,18 +39,25 @@ export interface MemoryCategoryMeta {
 
 export const MEMORY_CATEGORIES: MemoryCategoryMeta[] = [
   {
+    id: "profile",
+    label: "Profile",
+    icon: "UserCircle",
+    accent: "bg-teal-400/15 text-teal-300 border-teal-400/30",
+    blurb: "Who you are, where you are, and your context.",
+  },
+  {
+    id: "preference",
+    label: "Preferences",
+    icon: "SlidersHorizontal",
+    accent: "bg-primary/15 text-primary border-primary/30",
+    blurb: "How you like GUMMY to work with you.",
+  },
+  {
     id: "career",
     label: "Career",
     icon: "Briefcase",
     accent: "bg-sky-400/15 text-sky-300 border-sky-400/30",
     blurb: "Roles, applications, and professional moves.",
-  },
-  {
-    id: "projects",
-    label: "Projects",
-    icon: "FolderKanban",
-    accent: "bg-violet-400/15 text-violet-300 border-violet-400/30",
-    blurb: "What you're building and shipping.",
   },
   {
     id: "learning",
@@ -58,32 +67,25 @@ export const MEMORY_CATEGORIES: MemoryCategoryMeta[] = [
     blurb: "Skills, topics, and study in progress.",
   },
   {
-    id: "goals",
-    label: "Goals",
-    icon: "Target",
+    id: "project",
+    label: "Projects",
+    icon: "FolderKanban",
+    accent: "bg-violet-400/15 text-violet-300 border-violet-400/30",
+    blurb: "What you're building and shipping.",
+  },
+  {
+    id: "conversation",
+    label: "Conversation",
+    icon: "MessageSquare",
     accent: "bg-amber-400/15 text-amber-300 border-amber-400/30",
-    blurb: "What you're working toward.",
+    blurb: "Notable things learned from past chats.",
   },
   {
-    id: "preferences",
-    label: "Preferences",
-    icon: "SlidersHorizontal",
-    accent: "bg-primary/15 text-primary border-primary/30",
-    blurb: "How you like GUMMY to work with you.",
-  },
-  {
-    id: "business",
-    label: "Business",
-    icon: "Building2",
+    id: "document",
+    label: "Documents",
+    icon: "FileText",
     accent: "bg-rose-400/15 text-rose-300 border-rose-400/30",
-    blurb: "Ventures, operations, and decisions.",
-  },
-  {
-    id: "personal",
-    label: "Personal",
-    icon: "UserCircle",
-    accent: "bg-teal-400/15 text-teal-300 border-teal-400/30",
-    blurb: "About you, your life, and the people in it.",
+    blurb: "Facts drawn from your files and uploads.",
   },
 ];
 
@@ -92,7 +94,7 @@ const CATEGORY_BY_ID = new Map(MEMORY_CATEGORIES.map((c) => [c.id, c]));
 export function getCategoryMeta(id: string): MemoryCategoryMeta {
   return (
     CATEGORY_BY_ID.get(id as MemoryCategory) ?? {
-      id: "personal",
+      id: "profile",
       label: id ? id[0].toUpperCase() + id.slice(1) : "Other",
       icon: "Brain",
       accent: "bg-muted text-muted-foreground border-border",

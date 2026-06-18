@@ -59,6 +59,17 @@ function buildUrl(path: string, query?: ApiRequestOptions["query"]): string {
   return url.toString();
 }
 
+/** Absolute URL for a backend path (used by streaming, which bypasses apiFetch). */
+export function apiUrl(path: string): string {
+  return buildUrl(path);
+}
+
+/** Auth headers (bearer token, when present) for raw fetch / streaming calls. */
+export async function authHeaders(): Promise<Record<string, string>> {
+  const token = await tokenProvider();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export async function apiFetch<T>(
   path: string,
   options: ApiRequestOptions = {},

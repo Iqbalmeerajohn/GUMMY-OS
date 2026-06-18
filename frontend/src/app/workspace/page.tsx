@@ -7,8 +7,6 @@ import { X } from "lucide-react";
 import { ChatPane } from "@/components/workspace/ChatPane";
 import { ContextPanel } from "@/components/workspace/ContextPanel";
 import { HistoryRail } from "@/components/workspace/HistoryRail";
-import { useCreateConversation } from "@/lib/hooks/useChat";
-import { modeToAgentContext } from "@/lib/chat/routing";
 
 /** A slide-over sheet (left = history on mobile, right = the Workspace Hub). */
 function Sheet({
@@ -54,22 +52,26 @@ function Sheet({
 }
 
 function Workspace() {
-  const initialPrompt = useSearchParams().get("prompt") ?? "";
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const params = useSearchParams();
+  const initialPrompt = params.get("prompt") ?? "";
+  // Deep-link target from unified search (`/workspace?c=<id>`).
+  const [activeId, setActiveId] = useState<string | null>(params.get("c"));
   const [agentContext, setAgentContext] = useState("auto");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [hubOpen, setHubOpen] = useState(false);
-  const createConv = useCreateConversation();
 
   function selectConversation(id: string) {
     setActiveId(id);
     setHistoryOpen(false);
   }
 
-  async function newConversation() {
+  // "New" resets to the welcome state — the conversation is created lazily on
+  // the first message (in ChatPane.send). Creating it eagerly produced an empty
+  // conversation with activeId set, which suppressed the welcome screen (the
+  // intermittent "blank workspace" bug).
+  function newConversation() {
+    setActiveId(null);
     setHistoryOpen(false);
-    const conv = await createConv.mutateAsync(modeToAgentContext(agentContext));
-    setActiveId(conv.id);
   }
 
   return (

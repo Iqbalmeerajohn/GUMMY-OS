@@ -4,10 +4,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
+  type ConversationUpdateBody,
   createConversation,
+  deleteConversation,
   listConversations,
   listMessages,
-  postTurn,
+  updateConversation,
 } from "@/lib/api/resources";
 
 export function useConversations() {
@@ -37,19 +39,20 @@ export function useCreateConversation() {
   });
 }
 
-export function useSendTurn() {
+export function useUpdateConversation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      conversationId,
-      message,
-    }: {
-      conversationId: string;
-      message: string;
-    }) => postTurn(conversationId, message),
-    onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ["messages", vars.conversationId] });
-      qc.invalidateQueries({ queryKey: ["conversations"] });
-    },
+    mutationFn: ({ id, body }: { id: string; body: ConversationUpdateBody }) =>
+      updateConversation(id, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["conversations"] }),
   });
 }
+
+export function useDeleteConversation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteConversation(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["conversations"] }),
+  });
+}
+

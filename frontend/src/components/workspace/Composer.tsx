@@ -52,7 +52,8 @@ export function Composer({
         onKeyDown={onKeyDown}
         rows={1}
         placeholder="Message GUMMY…"
-        className="max-h-40 min-h-10 w-full resize-none bg-transparent px-2 py-1.5 text-sm outline-none"
+        // text-base (16px) on mobile prevents iOS Safari from zooming on focus.
+        className="max-h-40 min-h-10 w-full resize-none bg-transparent px-2 py-1.5 text-base outline-none sm:text-sm"
       />
       <div className="flex items-center justify-between gap-2 px-1">
         <div className="flex items-center gap-0.5">
@@ -76,7 +77,10 @@ export function Composer({
           type="submit"
           disabled={!canSend}
           aria-label="Send"
-          className={cn(buttonVariants({ size: "icon" }), "size-9 rounded-xl")}
+          className={cn(
+            buttonVariants({ size: "icon" }),
+            "size-11 rounded-xl sm:size-9",
+          )}
         >
           <SendHorizonal className="size-4" />
         </button>
@@ -99,7 +103,7 @@ function IconButton({
       type="button"
       aria-label={label}
       onClick={onClick}
-      className="text-muted-foreground hover:bg-accent hover:text-foreground grid size-9 place-items-center rounded-xl transition-colors"
+      className="text-muted-foreground hover:bg-accent hover:text-foreground grid size-11 place-items-center rounded-xl transition-colors sm:size-9"
     >
       {children}
     </button>

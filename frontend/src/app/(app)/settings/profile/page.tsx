@@ -1,14 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Clock } from "lucide-react";
+import { Check } from "lucide-react";
 import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Reveal } from "@/components/motion/Reveal";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { buttonVariants } from "@/components/ui/button";
 import { useProfile, useUpdateProfile } from "@/lib/profile/useProfile";
@@ -16,13 +15,6 @@ import { LANGUAGE_OPTIONS, type UserProfile } from "@/lib/profile/types";
 import { cn } from "@/lib/utils";
 
 const FEATURES_ENABLED = ["Memory System", "Goals System", "Agent System"];
-const FUTURE_CAPABILITIES = [
-  "Voice Assistant",
-  "Workflow Learning",
-  "Content Automation",
-  "Image Intelligence",
-  "Video Intelligence",
-];
 
 const selectClass =
   "border-input h-9 w-full rounded-lg border bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
@@ -103,16 +95,6 @@ function SettingsForm({ profile }: { profile: UserProfile }) {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label>Profile Picture</Label>
-              <div className="border-border/60 text-muted-foreground flex items-center justify-between rounded-lg border border-dashed px-3 py-2.5 text-sm">
-                Image uploads
-                <Badge variant="secondary" className="text-[10px]">
-                  Planned
-                </Badge>
-              </div>
-            </div>
-
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="timezone">Timezone</Label>
@@ -143,16 +125,6 @@ function SettingsForm({ profile }: { profile: UserProfile }) {
                     </option>
                   ))}
                 </select>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Theme Preference</Label>
-              <div className="border-border/60 text-muted-foreground flex items-center justify-between rounded-lg border border-dashed px-3 py-2.5 text-sm">
-                Light mode &amp; custom themes
-                <Badge variant="secondary" className="text-[10px]">
-                  Planned
-                </Badge>
               </div>
             </div>
 
@@ -198,27 +170,6 @@ function SettingsForm({ profile }: { profile: UserProfile }) {
                   <Check className="size-3" />
                 </span>
                 <span className="text-sm font-medium">{f}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </Reveal>
-
-      <Reveal delay={0.14}>
-        <Card title="Future Capabilities">
-          <div className="grid gap-2.5 sm:grid-cols-2">
-            {FUTURE_CAPABILITIES.map((f) => (
-              <div
-                key={f}
-                className="border-border/50 flex items-center justify-between gap-2 rounded-xl border p-3"
-              >
-                <span className="flex items-center gap-2 text-sm">
-                  <Clock className="text-muted-foreground size-4" />
-                  {f}
-                </span>
-                <Badge variant="secondary" className="text-[10px]">
-                  Planned
-                </Badge>
               </div>
             ))}
           </div>

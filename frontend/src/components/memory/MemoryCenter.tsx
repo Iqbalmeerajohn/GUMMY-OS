@@ -18,7 +18,7 @@ import {
 } from "@/config/memory";
 import { getIcon } from "@/lib/icons";
 import { cn } from "@/lib/utils";
-import type { MemoryDraft } from "@/lib/memory/store";
+import type { MemoryDraft } from "@/lib/memory/types";
 import type {
   Memory,
   MemorySort,
@@ -139,10 +139,6 @@ export function MemoryCenter() {
             setSearch("");
             setCategory("all");
             setStatus("active");
-          }}
-          onRestoreDemo={() => {
-            actions.reset();
-            toast.success("Demo memories restored.");
           }}
         />
       ) : (
@@ -385,13 +381,11 @@ function EmptyState({
   filtered,
   onAdd,
   onClear,
-  onRestoreDemo,
 }: {
   hasAny: boolean;
   filtered: boolean;
   onAdd: () => void;
   onClear: () => void;
-  onRestoreDemo: () => void;
 }) {
   if (hasAny && filtered) {
     return (
@@ -423,9 +417,6 @@ function EmptyState({
         <Button onClick={onAdd}>
           <Plus className="size-4" />
           Add your first memory
-        </Button>
-        <Button variant="ghost" size="sm" onClick={onRestoreDemo}>
-          Restore demo memories
         </Button>
       </div>
     </div>

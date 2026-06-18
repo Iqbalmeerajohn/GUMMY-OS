@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Search } from "lucide-react";
 
 import { LivingOrb } from "@/components/brand/LivingOrb";
 import { ProfileMenu } from "@/components/app/ProfileMenu";
@@ -60,6 +61,16 @@ export function AppHeader() {
           </nav>
         </div>
         <div className="flex items-center gap-1.5">
+          <Link
+            href="/search"
+            aria-label="Search"
+            className={cn(
+              "text-muted-foreground hover:bg-accent hover:text-foreground grid size-10 place-items-center rounded-lg transition-colors",
+              pathname.startsWith("/search") && "bg-accent text-foreground",
+            )}
+          >
+            <Search className="size-5" />
+          </Link>
           <OrbNotification />
           <ProfileMenu />
         </div>

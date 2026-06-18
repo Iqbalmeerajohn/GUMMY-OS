@@ -20,7 +20,9 @@ export function ProfileMenu() {
   const { user, signOut } = useAuth();
   const { data: profile } = useProfile();
 
-  const name = profile?.display_name ?? user?.email?.split("@")[0] ?? "You";
+  // Name never falls back to the email prefix; the email is shown separately
+  // below, clearly labelled as an email.
+  const name = profile?.display_name?.trim() || "Friend";
   const initial = name.charAt(0).toUpperCase();
 
   async function handleSignOut() {

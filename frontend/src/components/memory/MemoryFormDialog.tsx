@@ -20,8 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { getIcon } from "@/lib/icons";
 import { cn } from "@/lib/utils";
-import type { MemoryDraft } from "@/lib/memory/store";
-import type { Memory } from "@/lib/memory/types";
+import type { Memory, MemoryDraft } from "@/lib/memory/types";
 
 /** Add or edit a memory. Controlled; submits a draft to the caller. */
 export function MemoryFormDialog({
@@ -38,7 +37,7 @@ export function MemoryFormDialog({
   onSubmit: (draft: MemoryDraft) => void;
 }) {
   const [content, setContent] = useState("");
-  const [category, setCategory] = useState<MemoryCategory>("personal");
+  const [category, setCategory] = useState<MemoryCategory>("profile");
   const [importance, setImportance] = useState<MemoryImportance>("medium");
 
   // Seed the form from `initial` on each open transition — the React-recommended
@@ -48,7 +47,7 @@ export function MemoryFormDialog({
     setWasOpen(open);
     if (open) {
       setContent(initial?.content ?? "");
-      setCategory(initial?.category ?? "personal");
+      setCategory(initial?.category ?? "profile");
       setImportance(initial?.importance ?? "medium");
     }
   }
