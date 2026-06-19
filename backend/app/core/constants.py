@@ -125,3 +125,18 @@ DEFAULT_CLAUDE_MODEL_FRONTIER = "claude-opus-4-8"
 DEFAULT_CHAT_MAX_TOKENS = 2048
 DEFAULT_LLM_TIMEOUT_SECONDS = 30.0
 DEFAULT_LLM_MAX_RETRIES = 2
+
+# ── Ollama (local inference) ──────────────────────────────────────────────────
+# Local, self-hosted models served by Ollama (https://ollama.com). No API key
+# and no per-call cost; selected via LLM_PROVIDER=ollama.
+DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
+# A small, fast instruction model is the default chat/general-agent model: qwen3
+# is an 8B reasoning model that emits <think> traces and is slow on CPU, whereas
+# qwen2.5:3b answers directly, follows the JSON extraction prompt well, and is
+# several times faster per turn. Override with OLLAMA_MODEL.
+DEFAULT_OLLAMA_MODEL = "qwen2.5:3b"
+# Local models are far slower than a hosted API: even a small model on CPU can
+# exceed the 30s Claude default for a single non-streaming turn. Because the
+# whole generation arrives in one response body, this is effectively the HTTP
+# read timeout. Generous by default; override with OLLAMA_TIMEOUT_SECONDS.
+DEFAULT_OLLAMA_TIMEOUT_SECONDS = 120.0

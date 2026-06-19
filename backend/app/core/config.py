@@ -27,6 +27,9 @@ from app.core.constants import (
     DEFAULT_EMBEDDING_MODEL,
     DEFAULT_LLM_MAX_RETRIES,
     DEFAULT_LLM_TIMEOUT_SECONDS,
+    DEFAULT_OLLAMA_BASE_URL,
+    DEFAULT_OLLAMA_MODEL,
+    DEFAULT_OLLAMA_TIMEOUT_SECONDS,
     EMBEDDING_DIMENSION,
 )
 
@@ -84,7 +87,10 @@ class Settings(BaseSettings):
     auth_dev_bypass: bool = False  # MUST stay false in production (startup guard)
     auth_dev_user_id: uuid.UUID | None = None
     supabase_jwt_aud: str = "authenticated"
-    supabase_jwt_algorithms: str = "HS256"
+    # Comma-separated allowlist. Supabase's "JWT Signing Keys" migration issues
+    # ES256 (ECC) tokens; HS256 is the legacy shared-secret scheme. Both are
+    # accepted by default so verification works across the migration window.
+    supabase_jwt_algorithms: str = "ES256,HS256"
 
     # ── AI (used from Day 3+) ─────────────────────────────────────────────────
     anthropic_api_key: str | None = None
@@ -96,7 +102,8 @@ class Settings(BaseSettings):
     embedding_dimension: int = EMBEDDING_DIMENSION
 
     # ── LLM gateway (Claude / Anthropic) ──────────────────────────────────────
-    # provider: "claude" (real) | "fake" (dev/tests). Future: openai, gemini.
+    # provider: "claude" (real) | "ollama" (local) | "fake" (dev/tests).
+    # Future: openai, gemini.
     llm_provider: str = "claude"
     claude_model: str = DEFAULT_CHAT_MODEL
     claude_model_fast: str = DEFAULT_CLAUDE_MODEL_FAST
@@ -105,6 +112,14 @@ class Settings(BaseSettings):
     claude_max_tokens: int = DEFAULT_CHAT_MAX_TOKENS
     llm_timeout_seconds: float = DEFAULT_LLM_TIMEOUT_SECONDS
     llm_max_retries: int = DEFAULT_LLM_MAX_RETRIES
+
+    # ── Ollama (local inference; used when LLM_PROVIDER=ollama) ────────────────
+    ollama_base_url: str = DEFAULT_OLLAMA_BASE_URL
+    ollama_model: str = DEFAULT_OLLAMA_MODEL
+    # Separate from llm_timeout_seconds: local inference is much slower than the
+    # hosted Claude API, so Ollama gets its own generous read timeout while
+    # Claude keeps fast failure detection.
+    ollama_timeout_seconds: float = DEFAULT_OLLAMA_TIMEOUT_SECONDS
 
     # ── Context assembly ──────────────────────────────────────────────────────
     context_token_budget: int = DEFAULT_CONTEXT_TOKEN_BUDGET
@@ -146,6 +161,13 @@ class Settings(BaseSettings):
     def jwt_algorithms(self) -> list[str]:
         """Accepted JWT algorithms, parsed from the comma-separated env value."""
         return [a.strip() for a in self.supabase_jwt_algorithms.split(",") if a.strip()]
+
+    @property
+    def supabase_jwks_url(self) -> str | None:
+        """Supabase JWKS endpoint for asymmetric (ES256/RS256) token verification."""
+        if not self.supabase_url:
+            return None
+        return f"{self.supabase_url.rstrip('/')}/auth/v1/.well-known/jwks.json"
 
     @property
     def is_production(self) -> bool:
