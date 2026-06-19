@@ -58,6 +58,12 @@ INITIAL_VERSION_NUMBER = 1
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_DIMENSION = 384
 
+# Default (production) embedding provider model. OpenAI's text-embedding-3-small
+# supports the `dimensions` request param, so we ask for EMBEDDING_DIMENSION (384)
+# to match the existing pgvector column — no schema migration, no torch/CUDA.
+DEFAULT_OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
+DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
+
 # Semantic search result bounds.
 DEFAULT_SEARCH_LIMIT = 10
 MAX_SEARCH_LIMIT = 50

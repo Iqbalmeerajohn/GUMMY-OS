@@ -12,6 +12,7 @@ pgvector>=0.3
 anthropic>=0.40
 httpx>=0.27
 pyjwt[crypto]>=2.8
-sentence-transformers>=3.0
-# Real embedding provider (heavy: torch). Install when using the HF provider:
+# Default embedding provider is OpenAI (hosted API via httpx — no torch/CUDA).
+# The local Hugging Face provider is OPTIONAL and heavy (pulls torch). Install it
+# only when running with EMBEDDING_PROVIDER=hf:
 #   pip install "sentence-transformers>=3.0"

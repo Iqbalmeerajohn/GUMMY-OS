@@ -30,6 +30,8 @@ from app.core.constants import (
     DEFAULT_OLLAMA_BASE_URL,
     DEFAULT_OLLAMA_MODEL,
     DEFAULT_OLLAMA_TIMEOUT_SECONDS,
+    DEFAULT_OPENAI_BASE_URL,
+    DEFAULT_OPENAI_EMBEDDING_MODEL,
     EMBEDDING_DIMENSION,
 )
 
@@ -96,10 +98,20 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
 
     # ── Embeddings / semantic search ──────────────────────────────────────────
-    # provider: "huggingface" (real, local model) | "fake" (deterministic, dev/tests)
-    embeddings_provider: str = "huggingface"
+    # provider:
+    #   "openai" (default, hosted API — no torch/CUDA) |
+    #   "hf"/"huggingface" (local sentence-transformers; requires the optional
+    #       `embeddings` extra) |
+    #   "fake" (deterministic, dev/tests)
+    # HuggingFace (sentence-transformers + torch) is NEVER imported unless the
+    # provider is hf/huggingface.
+    embeddings_provider: str = "openai"
     embeddings_model: str = DEFAULT_EMBEDDING_MODEL
     embedding_dimension: int = EMBEDDING_DIMENSION
+    # OpenAI embeddings (used when EMBEDDING_PROVIDER=openai).
+    openai_api_key: str | None = None
+    openai_embeddings_model: str = DEFAULT_OPENAI_EMBEDDING_MODEL
+    openai_base_url: str = DEFAULT_OPENAI_BASE_URL
 
     # ── LLM gateway (Claude / Anthropic) ──────────────────────────────────────
     # provider: "claude" (real) | "ollama" (local) | "fake" (dev/tests).
