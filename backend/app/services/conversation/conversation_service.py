@@ -185,14 +185,36 @@ async def backfill_title(
     if basis is None:
         return None
 
-    response = await llm.generate(
-        system=_TITLE_SYSTEM,
-        messages=[{"role": "user", "content": basis}],
-    )
-    title = response.text.strip().strip('"').strip()
+    try:
+        response = await llm.generate(
+            system=_TITLE_SYSTEM,
+            messages=[{"role": "user", "content": basis}],
+        )
+        title = response.text.strip().strip('"').strip()
+    except Exception:
+        # LLM unavailable → still title the thread (never leave it "Untitled").
+        title = ""
+
+    # Fallback: a clean snippet of the first user message beats "Untitled".
+    if not title:
+        title = _fallback_title(basis)
     if not title:
         return None
     title = title[:CONVERSATION_TITLE_MAX_LENGTH]
 
     await repo.update_conversation(session, conversation, title=title)
     return title
+
+
+def _fallback_title(first_message: str) -> str:
+    """Deterministic title from the first user message (no LLM).
+
+    Takes the leading words, trims trailing punctuation, and caps the length —
+    e.g. "where do i live?" → "Where do i live". Empty only if there are no
+    word characters at all.
+    """
+    words = first_message.strip().split()
+    snippet = " ".join(words[:8]).rstrip(" .,!?;:").strip()
+    if not snippet:
+        return ""
+    return snippet[0].upper() + snippet[1:]

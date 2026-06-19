@@ -23,6 +23,7 @@ from app.core.constants import (
     EMBEDDING_MAX_RETRIES,
     EMBEDDING_RETRY_BASE_DELAY_SECONDS,
 )
+from app.core.tenant_context import set_current_user_id
 from app.repositories import memory_repository as repo
 from app.services.embeddings.embedding_service import EmbeddingService
 
@@ -89,6 +90,14 @@ class EmbeddingWorker:
             return
         self._queue.put_nowait(EmbeddingJob(memory_id=memory_id, user_id=user_id))
 
+    def status(self) -> dict[str, object]:
+        """Runtime snapshot for the health probe."""
+        return {
+            "running": self.is_running,
+            "configured": self._sessionmaker is not None,
+            "pending_jobs": self._queue.qsize(),
+        }
+
     async def join(self) -> None:
         """Wait until all queued jobs are processed (used by tests)."""
         await self._queue.join()
@@ -121,14 +130,22 @@ class EmbeddingWorker:
     async def _process(self, job: EmbeddingJob) -> None:
         assert self._sessionmaker is not None
         assert self._embedding_service is not None
-        async with self._sessionmaker() as session:
-            memory = await repo.get_memory(
-                session, memory_id=job.memory_id, user_id=job.user_id
-            )
-            if memory is None:
-                return
-            await self._embedding_service.sync_memory_embedding(session, memory=memory)
-            await session.commit()
+        # Publish the tenant so RLS lets this background task read the memory and
+        # write its embedding (no request scope sets it for us). Cleared after.
+        set_current_user_id(job.user_id)
+        try:
+            async with self._sessionmaker() as session:
+                memory = await repo.get_memory(
+                    session, memory_id=job.memory_id, user_id=job.user_id
+                )
+                if memory is None:
+                    return
+                await self._embedding_service.sync_memory_embedding(
+                    session, memory=memory
+                )
+                await session.commit()
+        finally:
+            set_current_user_id(None)
 
 
 # Module-level singleton wired up by the app lifespan.

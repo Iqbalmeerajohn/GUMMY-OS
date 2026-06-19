@@ -150,6 +150,7 @@ async def update_memory(
         session,
         memory,
         content=changes.get("content"),
+        category=changes.get("category"),
         importance_score=changes.get("importance_score"),
         confidence_score=changes.get("confidence_score"),
     )
@@ -191,6 +192,22 @@ async def archive_memory(
         content_snapshot=memory.content,
         change_reason=MemoryChangeReason.ARCHIVED,
     )
+    await session.commit()
+    await session.refresh(memory)
+    return memory
+
+
+async def restore_memory(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    memory_id: uuid.UUID,
+) -> Memory:
+    """Un-archive a memory (back to active). Idempotent if already active."""
+    memory = await get_memory(session, user_id=user_id, memory_id=memory_id)
+    if memory.status == MemoryStatus.ACTIVE:
+        return memory
+    await repo.restore_memory(session, memory)
     await session.commit()
     await session.refresh(memory)
     return memory

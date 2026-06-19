@@ -47,6 +47,7 @@ class MemoryUpdate(BaseModel):
     content: str | None = Field(
         default=None, min_length=MIN_CONTENT_LENGTH, max_length=MAX_CONTENT_LENGTH
     )
+    category: MemoryCategory | None = None
     importance_score: float | None = Field(default=None, ge=MIN_SCORE, le=MAX_SCORE)
     confidence_score: float | None = Field(default=None, ge=MIN_SCORE, le=MAX_SCORE)
 

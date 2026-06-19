@@ -112,7 +112,10 @@ async def test_worker_survives_failing_consumer(
             session, conversation_id=conv_id, user_id=seed_user
         )
         assert conv is not None
-        assert conv.title is None  # nothing was written
+        # Title is resilient to an LLM failure: it falls back to a snippet of
+        # the first message rather than staying "Untitled".
+        assert conv.title == "Discuss the project roadmap"
+        # The summary consumer has no fallback, so its LLM failure writes nothing.
         summary = await sum_repo.latest_summary(
             session, conversation_id=conv_id, user_id=seed_user
         )
@@ -151,6 +154,83 @@ async def test_worker_extracts_memory_in_autonomous_mode(
         )
         assert len(links) == 1
         assert links[0].conversation_id == conv_id
+
+
+async def test_worker_extracts_single_short_exchange(
+    sessionmaker_fixture: async_sessionmaker[AsyncSession],
+    seed_user: uuid.UUID,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Regression (the "favorite football player" bug): a single short exchange
+    # must be extracted per-turn, with no token/message threshold to clear.
+    monkeypatch.setattr(get_settings(), "memory_consent_mode", "autonomous")
+    conv_id = await _seed_conversation(sessionmaker_fixture, seed_user, messages=2)
+
+    candidate = json.dumps(
+        [{"content": "Favorite football player is Cristiano Ronaldo",
+          "category": "preference"}]
+    )
+    worker = EnrichmentWorker()
+    worker.configure(
+        sessionmaker=sessionmaker_fixture,
+        llm=FakeLLMProvider(reply=candidate),
+        embedding_service=_embeddings(),
+    )
+    worker.start()
+    worker.enqueue(conv_id, seed_user)
+    await asyncio.wait_for(worker.join(), timeout=5)
+    await worker.stop()
+
+    async with sessionmaker_fixture() as session:
+        memories, total = await mem_repo.list_memories(
+            session, user_id=seed_user, limit=10, offset=0
+        )
+        assert total == 1
+        assert "Cristiano Ronaldo" in memories[0].content
+        # Watermark advanced so the same fact is not re-extracted next turn.
+        conv = await conv_repo.get_conversation(
+            session, conversation_id=conv_id, user_id=seed_user
+        )
+        assert conv is not None and conv.last_extracted_seq == 2
+
+
+async def test_worker_sets_tenant_context_for_consumers(
+    sessionmaker_fixture: async_sessionmaker[AsyncSession],
+    seed_user: uuid.UUID,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Regression: the worker MUST publish the tenant so the per-transaction GUC
+    # is set and RLS lets consumers read/write on Postgres. (SQLite has no RLS,
+    # so we assert the GUC source — get_current_user_id — directly.) Without the
+    # fix this is None and every consumer silently no-ops in production.
+    from app.core.tenant_context import get_current_user_id
+
+    captured: dict[str, uuid.UUID | None] = {}
+
+    async def _probe(
+        session: AsyncSession,
+        job: object,
+        llm: object,
+        embedding_service: object,
+    ) -> None:
+        captured["user_id"] = get_current_user_id()
+
+    monkeypatch.setattr(
+        "app.workers.enrichment_worker.ENRICHMENT_CONSUMERS", (_probe,)
+    )
+    conv_id = await _seed_conversation(sessionmaker_fixture, seed_user, messages=2)
+    worker = EnrichmentWorker()
+    worker.configure(
+        sessionmaker=sessionmaker_fixture,
+        llm=FakeLLMProvider(reply="x"),
+        embedding_service=_embeddings(),
+    )
+    worker.start()
+    worker.enqueue(conv_id, seed_user)
+    await asyncio.wait_for(worker.join(), timeout=5)
+    await worker.stop()
+
+    assert captured["user_id"] == seed_user
 
 
 async def test_enqueue_is_noop_when_idle() -> None:

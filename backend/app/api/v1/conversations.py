@@ -7,10 +7,13 @@ lifecycle CRUD + message history; the turn endpoint arrives in M4.
 
 from __future__ import annotations
 
+import json
 import uuid
+from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import APIRouter, Query, status
+from fastapi.responses import StreamingResponse
 
 from app.api.deps import (
     CurrentUserId,
@@ -31,6 +34,7 @@ from app.models.enums import (
     ConversationSearchMode,
     ConversationStatus,
 )
+from app.repositories import conversation_search_repository
 from app.schemas.conversation import (
     ConversationCreate,
     ConversationListResponse,
@@ -44,6 +48,10 @@ from app.schemas.message import (
     MessageResponse,
     TurnRequest,
     TurnResponse,
+)
+from app.schemas.search import (
+    MessageSearchResponse,
+    MessageSearchResultItem,
 )
 from app.services.conversation import (
     conversation_search_service,
@@ -150,6 +158,41 @@ async def search_conversations(
             for hit in hits
         ],
     )
+
+
+@router.get(
+    "/message-search",
+    response_model=MessageSearchResponse,
+    summary="Full-text search over messages (unified search)",
+)
+async def search_messages(
+    user_id: CurrentUserId,
+    db: DbSession,
+    q: Annotated[str, Query(min_length=1, max_length=1000)],
+    limit: Annotated[int, Query(ge=1, le=MAX_SEARCH_LIMIT)] = DEFAULT_SEARCH_LIMIT,
+) -> MessageSearchResponse:
+    query = q.strip()
+    if not query:
+        raise AppError(
+            "query must not be empty or whitespace",
+            code="empty_query",
+            status_code=422,
+        )
+    rows = await conversation_search_repository.message_search(
+        db, user_id=user_id, query=query, limit=limit
+    )
+    results = [
+        MessageSearchResultItem(
+            message_id=message_id,
+            conversation_id=conversation_id,
+            conversation_title=title,
+            role=getattr(role, "value", str(role)),
+            content=content,
+            score=score,
+        )
+        for message_id, conversation_id, role, content, title, score in rows
+    ]
+    return MessageSearchResponse(query=q, count=len(results), results=results)
 
 
 @router.get(
@@ -262,4 +305,44 @@ async def create_turn(
         input_tokens=result.input_tokens,
         output_tokens=result.output_tokens,
         message_count=result.message_count,
+    )
+
+
+@router.post(
+    "/{conversation_id}/messages/stream",
+    summary="Run a turn with a streamed (SSE) assistant reply",
+)
+async def create_turn_stream(
+    conversation_id: uuid.UUID,
+    payload: TurnRequest,
+    user_id: CurrentUserId,
+    db: DbSession,
+    embeddings: EmbeddingServiceDep,
+    llm: LLMProviderDep,
+    settings: SettingsDep,
+) -> StreamingResponse:
+    """Stream the grounded reply as Server-Sent Events.
+
+    Emits ``data: {"type":"delta","text":...}`` per chunk and a terminal
+    ``data: {"type":"done",...}``. The full message (user + assistant) is
+    persisted once the stream completes, identical to the non-streaming turn.
+    """
+
+    async def _events() -> AsyncIterator[str]:
+        async for event in conversation_turn_service.stream_turn(
+            db,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            message=payload.message,
+            embedding_service=embeddings,
+            llm=llm,
+            token_budget=settings.context_token_budget,
+            max_memories=settings.context_max_memories,
+        ):
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        _events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

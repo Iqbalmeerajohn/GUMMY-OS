@@ -77,6 +77,38 @@ async def test_turn_returns_201_and_persists(
     assert items[1]["content"] == "You are preparing for Qualcomm."
 
 
+async def test_turn_stream_emits_sse_and_persists(
+    api_client: AsyncClient,
+    seed_user: uuid.UUID,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.repositories.search_repository.search_similar_memories", _fake_search
+    )
+    conv_id = await _new_conversation(api_client, seed_user)
+
+    resp = await api_client.post(
+        f"/api/v1/conversations/{conv_id}/messages/stream",
+        params=_params(seed_user),
+        json={"message": "What am I preparing for?"},
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/event-stream")
+    body = resp.text
+    # Fake LLM has no streaming → fallback emits the full reply as one delta.
+    assert "You are preparing for Qualcomm." in body
+    assert '"type": "delta"' in body
+    assert '"type": "done"' in body
+
+    # Both turns were persisted once the stream finished.
+    history = await api_client.get(
+        f"/api/v1/conversations/{conv_id}/messages", params=_params(seed_user)
+    )
+    items = history.json()["items"]
+    assert [m["role"] for m in items] == ["user", "assistant"]
+    assert items[1]["content"] == "You are preparing for Qualcomm."
+
+
 async def test_turn_bumps_conversation_counter(
     api_client: AsyncClient,
     seed_user: uuid.UUID,

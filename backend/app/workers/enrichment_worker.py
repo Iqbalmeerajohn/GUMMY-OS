@@ -19,6 +19,7 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.tenant_context import set_current_user_id
 from app.services.conversation.enrichment import (
     ENRICHMENT_CONSUMERS,
     EnrichmentJob,
@@ -85,6 +86,14 @@ class EnrichmentWorker:
             EnrichmentJob(conversation_id=conversation_id, user_id=user_id)
         )
 
+    def status(self) -> dict[str, object]:
+        """Runtime snapshot for the health probe."""
+        return {
+            "running": self.is_running,
+            "configured": self._sessionmaker is not None,
+            "pending_jobs": self._queue.qsize(),
+        }
+
     async def join(self) -> None:
         """Wait until all queued jobs are processed (used by tests)."""
         await self._queue.join()
@@ -101,21 +110,30 @@ class EnrichmentWorker:
         assert self._sessionmaker is not None
         assert self._llm is not None
         assert self._embedding_service is not None
-        # Each consumer in its own session/transaction → isolated failures.
-        for consumer in ENRICHMENT_CONSUMERS:
-            try:
-                async with self._sessionmaker() as session:
-                    await consumer(
-                        session, job, self._llm, self._embedding_service
+        # Publish the tenant for this background task so the per-transaction GUC
+        # (app.current_user_id) is set and RLS lets each consumer read/write the
+        # user's rows. The request path does this in get_current_user; a worker
+        # task has no request, so we set it here. Cleared after the job so it
+        # never leaks to the next one.
+        set_current_user_id(job.user_id)
+        try:
+            # Each consumer in its own session/transaction → isolated failures.
+            for consumer in ENRICHMENT_CONSUMERS:
+                try:
+                    async with self._sessionmaker() as session:
+                        await consumer(
+                            session, job, self._llm, self._embedding_service
+                        )
+                        await session.commit()
+                except Exception as exc:
+                    logger.warning(
+                        "enrichment consumer %s failed for conversation %s: %s",
+                        getattr(consumer, "__name__", consumer),
+                        job.conversation_id,
+                        exc,
                     )
-                    await session.commit()
-            except Exception as exc:
-                logger.warning(
-                    "enrichment consumer %s failed for conversation %s: %s",
-                    getattr(consumer, "__name__", consumer),
-                    job.conversation_id,
-                    exc,
-                )
+        finally:
+            set_current_user_id(None)
 
 
 # Module-level singleton wired up by the app lifespan.

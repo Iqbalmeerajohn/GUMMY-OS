@@ -128,6 +128,22 @@ async def archive_memory(
     return MemoryResponse.model_validate(memory)
 
 
+@router.post(
+    "/{memory_id}/restore",
+    response_model=MemoryResponse,
+    summary="Restore (un-archive) a memory",
+)
+async def restore_memory(
+    memory_id: uuid.UUID,
+    user_id: CurrentUserId,
+    db: DbSession,
+) -> MemoryResponse:
+    memory = await memory_service.restore_memory(
+        db, user_id=user_id, memory_id=memory_id
+    )
+    return MemoryResponse.model_validate(memory)
+
+
 @router.delete(
     "/{memory_id}",
     status_code=status.HTTP_204_NO_CONTENT,

@@ -58,6 +58,46 @@ def build_keyword_statement(
     )
 
 
+def build_message_search_statement(
+    *,
+    user_id: uuid.UUID,
+    query: str,
+    limit: int,
+) -> Select[Any]:
+    """Tenant-scoped full-text statement returning the matching *messages*.
+
+    Mirrors ``build_keyword_statement`` (same proven ``to_tsvector @@
+    plainto_tsquery`` + ``ts_rank`` path) but keeps each message row and its
+    content + parent conversation title, so unified search can render and
+    highlight message snippets rather than folding to thread level.
+
+    Returns rows of ``(message_id, conversation_id, role, content, title, rank)``,
+    best first.
+    """
+    ts_vector = func.to_tsvector(_FTS_CONFIG, Message.content)
+    ts_query = func.plainto_tsquery(_FTS_CONFIG, query)
+    rank = func.ts_rank(ts_vector, ts_query).label("rank")
+
+    return (
+        select(
+            Message.id.label("message_id"),
+            Message.conversation_id,
+            Message.role,
+            Message.content,
+            Conversation.title,
+            rank,
+        )
+        .join(Conversation, Conversation.id == Message.conversation_id)
+        .where(
+            Message.user_id == user_id,
+            Conversation.deleted_at.is_(None),
+            ts_vector.op("@@")(ts_query),
+        )
+        .order_by(rank.desc())
+        .limit(limit)
+    )
+
+
 def build_summary_semantic_statement(
     *,
     user_id: uuid.UUID,
@@ -107,6 +147,27 @@ async def keyword_search(
     stmt = build_keyword_statement(user_id=user_id, query=query, limit=limit)
     result = await session.execute(stmt)
     return [(row[0], row[1], float(row[2])) for row in result.all()]
+
+
+async def message_search(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    query: str,
+    limit: int,
+) -> list[tuple[uuid.UUID, uuid.UUID, Any, str, str | None, float]]:
+    """Execute the message statement.
+
+    → ``(message_id, conversation_id, role, content, title, rank)``.
+    """
+    stmt = build_message_search_statement(
+        user_id=user_id, query=query, limit=limit
+    )
+    result = await session.execute(stmt)
+    return [
+        (row[0], row[1], row[2], row[3], row[4], float(row[5]))
+        for row in result.all()
+    ]
 
 
 async def summary_semantic_search(

@@ -5,8 +5,10 @@ from __future__ import annotations
 import uuid
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import AppError
 from app.models.user import User
 
 
@@ -26,27 +28,45 @@ async def upsert_user(
     user_id: uuid.UUID,
     email: str | None,
 ) -> User:
-    """Ensure a local users row keyed by the Supabase auth id (the JWT ``sub``).
+    """Ensure a local users row keyed by the Supabase auth id (JWT ``sub``).
 
-    Creates the row on first authenticated request; refreshes the email if it
-    changed. Email is unique + NOT NULL, so collisions with a *different*
-    (legacy/dev) row fall back to an id-derived placeholder rather than crashing.
+    Resolution order:
+
+    1. By id (the ``sub``) — the normal path; the row already exists.
+    2. Otherwise insert it. Email is globally unique, so if a *different*
+       account already owns this email we surface a clean 409 instead of a
+       raw IntegrityError.
+
+    Note: a by-email lookup cannot help reconcile a foreign-owned row here —
+    the ``users`` RLS policy (``id = current_user_id``) hides any row owned by
+    another id from this tenant-scoped session, so the conflict is only
+    observable as the insert's unique-constraint violation. The fix for that
+    conflict is identity reconciliation at the data layer, not in this path.
     """
     user = await get_user(session, user_id)
-    if user is None:
-        resolved = email or f"{user_id}@no-email.local"
-        if email is not None:
-            clash = await get_user_by_email(session, email)
-            if clash is not None and clash.id != user_id:
-                resolved = f"{user_id}@dup.local"
-        user = User(id=user_id, email=resolved)
-        session.add(user)
-        await session.flush()
+    if user is not None:
+        # Same-tenant email refresh. A foreign owner of the new email is
+        # invisible under RLS, so guard the flush and keep the old email
+        # rather than 500 if the unique index rejects it.
+        if email is not None and user.email != email:
+            user.email = email
+            try:
+                async with session.begin_nested():
+                    await session.flush()
+            except IntegrityError:
+                await session.refresh(user)
         return user
 
-    if email is not None and user.email != email:
-        clash = await get_user_by_email(session, email)
-        if clash is None or clash.id == user_id:
-            user.email = email
+    resolved = email or f"{user_id}@no-email.local"
+    user = User(id=user_id, email=resolved)
+    session.add(user)
+    try:
+        async with session.begin_nested():
             await session.flush()
+    except IntegrityError as exc:
+        raise AppError(
+            "This email is already linked to a different account.",
+            code="email_identity_conflict",
+            status_code=409,
+        ) from exc
     return user

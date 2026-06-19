@@ -211,7 +211,9 @@ async def test_run_turn_injects_rolling_summary_into_prompt(
         db_session, user_id=seed_user, conversation_id=conv_id,
         message="continue", embedding_service=_embeddings(), llm=llm,
     )
-    system = str(llm.calls[-1]["system"])
+    # calls[0] is the reply generation; calls[1] (on this first turn) is the
+    # inline title generation, whose prompt deliberately omits the summary.
+    system = str(llm.calls[0]["system"])
     assert "<conversation_summary>" in system
     assert "PRIOR CONTEXT about the user" in system
 

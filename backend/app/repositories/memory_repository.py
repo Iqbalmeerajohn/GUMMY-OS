@@ -96,12 +96,15 @@ async def update_memory(
     memory: Memory,
     *,
     content: str | None = None,
+    category: MemoryCategory | None = None,
     importance_score: float | None = None,
     confidence_score: float | None = None,
 ) -> Memory:
     """Apply field updates to a loaded memory and flush."""
     if content is not None:
         memory.content = content
+    if category is not None:
+        memory.category = category
     if importance_score is not None:
         memory.importance_score = importance_score
     if confidence_score is not None:
@@ -131,6 +134,13 @@ async def apply_recall(
 async def archive_memory(session: AsyncSession, memory: Memory) -> Memory:
     """Mark a loaded memory as archived."""
     memory.status = MemoryStatus.ARCHIVED
+    await session.flush()
+    return memory
+
+
+async def restore_memory(session: AsyncSession, memory: Memory) -> Memory:
+    """Mark an archived memory active again."""
+    memory.status = MemoryStatus.ACTIVE
     await session.flush()
     return memory
 

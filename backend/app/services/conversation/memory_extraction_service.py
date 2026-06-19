@@ -26,8 +26,6 @@ from app.core.config import get_settings
 from app.core.constants import (
     EXTRACTION_MAX_MEMORIES,
     SUMMARY_MAX_DELTA_MESSAGES,
-    SUMMARY_TRIGGER_MESSAGE_COUNT,
-    SUMMARY_TRIGGER_TOKEN_THRESHOLD,
 )
 from app.models.enums import ConsentMode, MemoryCategory, SourceKind
 from app.models.memory import Memory
@@ -37,7 +35,6 @@ from app.repositories import message_repository as msg_repo
 from app.schemas.memory import MemoryCreate
 from app.services.llm.base import LLMProvider
 from app.services.memory import memory_service
-from app.utils.tokens import estimate_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -48,13 +45,26 @@ _SENSITIVE_CATEGORIES: frozenset[MemoryCategory] = frozenset()
 
 _CATEGORY_VALUES = ", ".join(c.value for c in MemoryCategory)
 _EXTRACTION_SYSTEM = (
-    "You extract durable, long-term facts about the USER from a conversation "
-    "excerpt. Return ONLY a JSON array; each item is "
-    '{"content": "<concise fact>", "category": "<one of: '
-    f"{_CATEGORY_VALUES}>\"}}. "
-    "Include only stable facts worth remembering (identity, goals, preferences, "
-    "projects, skills) — not small talk or transient details. If there is nothing "
-    "worth saving, return []."
+    "You maintain a long-term memory about the USER. From the conversation "
+    "excerpt, extract durable facts worth remembering across future "
+    "conversations. Return ONLY a JSON array; each item is "
+    '{"content": "<fact>", "category": "<one of: '
+    f"{_CATEGORY_VALUES}>\"}}.\n\n"
+    "Write each fact as a concise, standalone statement about the user, in the "
+    "third person, the way it would read on a profile — NOT as a description of "
+    "the conversation.\n"
+    "  GOOD: \"Lives in Vizag\"\n"
+    "  GOOD: \"Favorite football player is Cristiano Ronaldo\"\n"
+    "  GOOD: \"Building GUMMY, a personal AI operating system\"\n"
+    "  BAD:  \"User is asking about Vizag\"  (a one-time question)\n"
+    "  BAD:  \"User wants information\"  (generic assistant observation)\n"
+    "  BAD:  \"The user said hello\"  (small talk / transient)\n\n"
+    "ONLY store: personal facts (profile), preferences, goals, projects, "
+    "career information, skills being learned, and recurring interests.\n"
+    "NEVER store: one-time questions, requests, or tasks; temporary "
+    "conversation summaries; generic observations about what the assistant did "
+    "or what the user is currently asking. When in doubt, leave it out.\n\n"
+    "If there is nothing durable worth saving, return []."
 )
 
 
@@ -65,6 +75,31 @@ def _resolve_consent(consent_mode: ConsentMode | None) -> ConsentMode:
         return ConsentMode(get_settings().memory_consent_mode.lower())
     except ValueError:
         return ConsentMode.ASSISTED  # safe default
+
+
+# Deterministic backstop for the prompt: phrasings that signal a conversation
+# summary / one-time question rather than a durable fact. Dropped even if the
+# model returns them.
+_LOW_QUALITY_MARKERS: tuple[str, ...] = (
+    "user is",
+    "user wants",
+    "user asked",
+    "user is asking",
+    "is asking about",
+    "is seeking",
+    "seeking information",
+    "wants to know",
+    "is looking for",
+    "would like to know",
+    "the assistant",
+    "the conversation",
+)
+
+
+def _is_low_quality(content: str) -> bool:
+    """True for conversation-summary / one-time-question phrasings."""
+    lowered = content.lower()
+    return any(marker in lowered for marker in _LOW_QUALITY_MARKERS)
 
 
 def _parse_candidates(text: str) -> list[tuple[MemoryCategory, str]]:
@@ -90,7 +125,7 @@ def _parse_candidates(text: str) -> list[tuple[MemoryCategory, str]]:
             continue
         content = str(item.get("content", "")).strip()
         category_raw = str(item.get("category", "")).strip().lower()
-        if not content:
+        if not content or _is_low_quality(content):
             continue
         try:
             category = MemoryCategory(category_raw)
@@ -109,8 +144,6 @@ async def extract_and_store(
     conversation_id: uuid.UUID,
     llm: LLMProvider,
     consent_mode: ConsentMode | None = None,
-    trigger_token_threshold: int = SUMMARY_TRIGGER_TOKEN_THRESHOLD,
-    trigger_message_count: int = SUMMARY_TRIGGER_MESSAGE_COUNT,
 ) -> list[Memory]:
     """Extract durable facts from the unsummarized delta and store them.
 
@@ -139,12 +172,11 @@ async def extract_and_store(
     if not delta:
         return []
 
-    delta_tokens = sum(estimate_tokens(m.content) for m in delta)
-    if (
-        delta_tokens < trigger_token_threshold
-        and len(delta) < trigger_message_count
-    ):
-        return []  # not due yet; leave the watermark untouched
+    # Per-turn extraction: process any new messages immediately so a single
+    # short fact ("My favorite player is …") is captured without waiting for
+    # the thread to accumulate. The extraction prompt returns [] when there is
+    # nothing worth saving, so trivial turns cost one cheap call and persist
+    # nothing.
 
     # Advance the watermark first (on the still-fresh instance). memory_service
     # commits below, persisting this too; on an LLM failure the whole unit of work

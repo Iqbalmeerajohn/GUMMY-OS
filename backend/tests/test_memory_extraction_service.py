@@ -120,20 +120,22 @@ async def test_assisted_mode_does_not_auto_save(
     assert total == 0
 
 
-async def test_below_threshold_no_extraction(
+async def test_single_short_exchange_is_extracted_per_turn(
     db_session: AsyncSession, seed_user: uuid.UUID
 ) -> None:
+    # Per-turn extraction: even a single short message is captured immediately
+    # (no token/message threshold), so one-line facts persist on the first turn.
     conv_id = await _conv_with_messages(db_session, seed_user, count=1)
     created = await extract_svc.extract_and_store(
         db_session, user_id=seed_user, conversation_id=conv_id,
-        llm=_llm([{"content": "x", "category": "career"}]),
+        llm=_llm([{"content": "Targeting Qualcomm", "category": "career"}]),
         consent_mode=ConsentMode.AUTONOMOUS,
     )
-    assert created == []
+    assert len(created) == 1
     conv = await conv_repo.get_conversation(
         db_session, conversation_id=conv_id, user_id=seed_user
     )
-    assert conv is not None and conv.last_extracted_seq == 0
+    assert conv is not None and conv.last_extracted_seq == 1
 
 
 async def test_watermark_prevents_reextraction(
@@ -174,6 +176,29 @@ async def test_invalid_category_is_skipped(
         db_session, conversation_id=conv_id, user_id=seed_user
     )
     assert conv is not None and conv.last_extracted_seq == 6
+
+
+async def test_low_quality_candidates_are_dropped(
+    db_session: AsyncSession, seed_user: uuid.UUID
+) -> None:
+    # Issue 8: conversation-summary / one-time-question phrasings are rejected
+    # even if the model returns them, while a real fact is kept.
+    conv_id = await _conv_with_messages(db_session, seed_user, count=6)
+    created = await extract_svc.extract_and_store(
+        db_session, user_id=seed_user, conversation_id=conv_id,
+        llm=_llm(
+            [
+                {"content": "User is seeking information about Vizag",
+                 "category": "profile"},
+                {"content": "User wants to know the weather",
+                 "category": "profile"},
+                {"content": "Lives in Vizag", "category": "profile"},
+            ]
+        ),
+        consent_mode=ConsentMode.AUTONOMOUS,
+    )
+    assert len(created) == 1
+    assert created[0].content == "Lives in Vizag"
 
 
 async def test_unparseable_output_yields_nothing(

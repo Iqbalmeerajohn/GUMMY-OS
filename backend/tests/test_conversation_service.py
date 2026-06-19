@@ -196,6 +196,27 @@ async def test_backfill_title_sets_title_from_first_message(
     assert refreshed.title == "Qualcomm Interview Prep"
 
 
+async def test_backfill_title_falls_back_when_llm_empty(
+    db_session: AsyncSession, seed_user: uuid.UUID
+) -> None:
+    # Issue 6: an empty/failed LLM title must not leave the thread "Untitled" —
+    # it falls back to a clean snippet of the first user message.
+    conv = await svc.create_conversation(
+        db_session, user_id=seed_user, payload=ConversationCreate()
+    )
+    await msg_repo.append_message(
+        db_session, conversation_id=conv.id, user_id=seed_user,
+        role=MessageRole.USER, content="where do i live?",
+    )
+    await db_session.commit()
+
+    title = await svc.backfill_title(
+        db_session, user_id=seed_user, conversation_id=conv.id,
+        llm=FakeLLMProvider(reply="   "),
+    )
+    assert title == "Where do i live"
+
+
 async def test_backfill_title_is_idempotent(
     db_session: AsyncSession, seed_user: uuid.UUID
 ) -> None:

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -33,7 +34,7 @@ from app.repositories import conversation_summary_repository as sum_repo
 from app.repositories import message_repository as msg_repo
 from app.services.conversation import conversation_service
 from app.services.embeddings.embedding_service import EmbeddingService
-from app.services.llm.base import LLMProvider
+from app.services.llm.base import LLMProvider, SupportsStreaming
 from app.services.memory import (
     context_assembly_service,
     memory_retrieval_service,
@@ -160,6 +161,9 @@ async def run_turn(
         for m in prior
         if m.role in _HISTORY_ROLES
     ]
+    # First turn → generate the thread title inline (below), so it lands with
+    # this turn's commit and is visible the instant the client refetches.
+    is_first_turn = not prior
 
     # Rolling summary = compressed older context (None until M5 produces one).
     rolling = await sum_repo.latest_summary(
@@ -304,6 +308,24 @@ async def run_turn(
         message_count=message_count,
     )
 
+    # First turn: title the thread from the opening message inline, so it
+    # commits with this turn and the client sees it on its post-turn refetch
+    # (instead of lagging behind the background enrichment worker). Best-effort
+    # — a title failure must never cost the user their reply; the enrichment
+    # worker's idempotent backfill remains the fallback.
+    if is_first_turn:
+        try:
+            await conversation_service.backfill_title(
+                session,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                llm=llm,
+            )
+        except Exception:
+            logger.exception(
+                "inline title generation failed; worker will retry"
+            )
+
     await session.commit()
     await session.refresh(assistant_message)
 
@@ -341,3 +363,153 @@ async def run_turn(
         output_tokens=reply.output_tokens,
         message_count=message_count,
     )
+
+
+async def stream_turn(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    message: str,
+    embedding_service: EmbeddingService,
+    llm: LLMProvider,
+    token_budget: int = DEFAULT_CONTEXT_TOKEN_BUDGET,
+    max_memories: int = DEFAULT_CONTEXT_MAX_MEMORIES,
+    history_limit: int = DEFAULT_TURN_HISTORY_MESSAGES,
+) -> AsyncIterator[dict]:
+    """Run a memory-grounded turn, streaming the reply as it is generated.
+
+    Yields event dicts: ``{"type": "delta", "text": ...}`` per chunk, then a
+    terminal ``{"type": "done", ...}`` with persisted ids/metadata. Persistence
+    (user + assistant messages, lifecycle, title, enrichment dispatch) happens
+    after the stream completes, mirroring ``run_turn``'s unit of work.
+
+    This is the grounded reply core (no orchestration) so it can stream a single
+    LLM call. Providers without streaming fall back to one ``generate`` call
+    whose full text is emitted as a single delta.
+    """
+    conversation = await conversation_service.get_conversation(
+        session, user_id=user_id, conversation_id=conversation_id
+    )
+
+    prior = await msg_repo.recent_messages(
+        session,
+        conversation_id=conversation_id,
+        user_id=user_id,
+        limit=history_limit,
+    )
+    history = [
+        {"role": m.role.value, "content": m.content}
+        for m in prior
+        if m.role in _HISTORY_ROLES
+    ]
+    is_first_turn = not prior
+
+    rolling = await sum_repo.latest_summary(
+        session,
+        conversation_id=conversation_id,
+        user_id=user_id,
+        summary_type=SummaryType.ROLLING,
+    )
+    summary_text = rolling.content if rolling is not None else None
+
+    user_message = await msg_repo.append_message(
+        session,
+        conversation_id=conversation_id,
+        user_id=user_id,
+        role=MessageRole.USER,
+        content=message,
+        token_count=estimate_tokens(message),
+    )
+
+    # Build the grounded prompt (same pipeline as generate_grounded_reply).
+    ranked = await memory_retrieval_service.retrieve_memories(
+        session,
+        user_id=user_id,
+        query=message,
+        embedding_service=embedding_service,
+        limit=max_memories,
+    )
+    candidates = [
+        ContextMemory(
+            content=item.memory.content,
+            category=item.memory.category.value,
+            score=item.final_score,
+        )
+        for item in ranked
+    ]
+    package = context_assembly_service.assemble_context(
+        candidates, token_budget=token_budget, max_memories=max_memories
+    )
+    payload = prompt_builder.build_prompt(
+        context=package, query=message, history=history, summary=summary_text
+    )
+
+    # Stream the reply, accumulating the full text for persistence.
+    chunks: list[str] = []
+    if isinstance(llm, SupportsStreaming):
+        async for chunk in llm.stream(
+            system=payload.system, messages=payload.messages
+        ):
+            chunks.append(chunk)
+            yield {"type": "delta", "text": chunk}
+        model = getattr(llm, "_default_model", llm.name)
+    else:
+        response = await llm.generate(
+            system=payload.system, messages=payload.messages
+        )
+        chunks.append(response.text)
+        model = response.model
+        yield {"type": "delta", "text": response.text}
+
+    reply_text = "".join(chunks)
+
+    assistant_message = await msg_repo.append_message(
+        session,
+        conversation_id=conversation_id,
+        user_id=user_id,
+        role=MessageRole.ASSISTANT,
+        content=reply_text,
+        token_count=estimate_tokens(reply_text),
+        model=model,
+        input_tokens=estimate_tokens(payload.system),
+        output_tokens=estimate_tokens(reply_text),
+    )
+
+    message_count = await msg_repo.count_messages(
+        session, conversation_id=conversation_id, user_id=user_id
+    )
+    await conv_repo.touch_last_message(
+        session,
+        conversation,
+        last_message_at=datetime.now(UTC),
+        message_count=message_count,
+    )
+
+    if is_first_turn:
+        try:
+            await conversation_service.backfill_title(
+                session,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                llm=llm,
+            )
+        except Exception:
+            logger.exception("inline title generation failed; worker will retry")
+
+    await session.commit()
+
+    enrichment_worker.enqueue(conversation_id, user_id)
+
+    yield {
+        "type": "done",
+        "conversation_id": str(conversation_id),
+        "user_message_id": str(user_message.id),
+        "assistant_message_id": str(assistant_message.id),
+        "model": model,
+        "memories_used": len(package.memories),
+        # Short contents of the grounding memories so the client can show a
+        # "Memory Used" disclosure (never the embeddings/scores — just the fact).
+        "memories": [m.content for m in package.memories],
+        "message_count": message_count,
+    }

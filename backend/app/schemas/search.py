@@ -51,6 +51,25 @@ class MemorySearchResponse(BaseModel):
     results: list[MemorySearchResult]
 
 
+class MessageSearchResultItem(BaseModel):
+    """A single message that matched a full-text query (unified search)."""
+
+    message_id: uuid.UUID
+    conversation_id: uuid.UUID
+    conversation_title: str | None
+    role: str
+    content: str
+    score: float
+
+
+class MessageSearchResponse(BaseModel):
+    """Ranked message matches for a unified-search query."""
+
+    query: str
+    count: int
+    results: list[MessageSearchResultItem]
+
+
 class MemoryEmbeddingResponse(BaseModel):
     """Embedding metadata (the raw vector is intentionally not returned)."""
 

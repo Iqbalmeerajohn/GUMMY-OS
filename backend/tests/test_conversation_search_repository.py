@@ -14,6 +14,7 @@ from sqlalchemy.dialects import postgresql
 from app.core.constants import EMBEDDING_DIMENSION
 from app.repositories.conversation_search_repository import (
     build_keyword_statement,
+    build_message_search_statement,
     build_summary_semantic_statement,
 )
 
@@ -51,6 +52,33 @@ def test_keyword_is_tenant_scoped_and_excludes_deleted() -> None:
     assert "user_id" in sql
     assert "deleted_at" in sql
     # joins messages to conversations
+    assert "join" in sql
+
+
+def _message_sql(**kwargs: object) -> str:
+    stmt = build_message_search_statement(
+        user_id=uuid.uuid4(), query="rtos scheduling", limit=10, **kwargs
+    )  # type: ignore[arg-type]
+    return str(stmt.compile(dialect=postgresql.dialect()))
+
+
+def test_message_search_uses_fulltext_and_returns_content() -> None:
+    sql = _message_sql().lower()
+    assert "to_tsvector" in sql
+    assert "plainto_tsquery" in sql
+    assert "ts_rank" in sql
+    assert "@@" in sql
+    # keeps the message content + parent title for snippeting (not folded away)
+    assert "messages.content" in sql
+    assert "conversations.title" in sql
+    assert "order by" in sql
+    assert "limit" in sql
+
+
+def test_message_search_is_tenant_scoped_and_excludes_deleted() -> None:
+    sql = _message_sql().lower()
+    assert "user_id" in sql
+    assert "deleted_at" in sql
     assert "join" in sql
 
 
