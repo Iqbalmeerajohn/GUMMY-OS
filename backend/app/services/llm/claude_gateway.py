@@ -66,9 +66,11 @@ class ClaudeGateway:
         max_tokens: int | None = None,
     ) -> LLMResponse:
         client = self._get_client()
+        used_model = model or self._default_model
+        logger.info("Using provider=%s model=%s", self.name, used_model)
         try:
             response = await client.messages.create(
-                model=model or self._default_model,
+                model=used_model,
                 max_tokens=max_tokens or self._max_tokens,
                 system=system,
                 messages=cast(list[MessageParam], messages),

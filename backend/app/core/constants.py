@@ -63,6 +63,8 @@ EMBEDDING_DIMENSION = 384
 # to match the existing pgvector column — no schema migration, no torch/CUDA.
 DEFAULT_OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
 DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
+# Default OpenAI chat model (used when LLM_PROVIDER=openai). Cheap + capable.
+DEFAULT_OPENAI_CHAT_MODEL = "gpt-4o-mini"
 
 # Semantic search result bounds.
 DEFAULT_SEARCH_LIMIT = 10

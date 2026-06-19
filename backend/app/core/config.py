@@ -31,6 +31,7 @@ from app.core.constants import (
     DEFAULT_OLLAMA_MODEL,
     DEFAULT_OLLAMA_TIMEOUT_SECONDS,
     DEFAULT_OPENAI_BASE_URL,
+    DEFAULT_OPENAI_CHAT_MODEL,
     DEFAULT_OPENAI_EMBEDDING_MODEL,
     EMBEDDING_DIMENSION,
 )
@@ -113,9 +114,10 @@ class Settings(BaseSettings):
     openai_embeddings_model: str = DEFAULT_OPENAI_EMBEDDING_MODEL
     openai_base_url: str = DEFAULT_OPENAI_BASE_URL
 
-    # ── LLM gateway (Claude / Anthropic) ──────────────────────────────────────
-    # provider: "claude" (real) | "ollama" (local) | "fake" (dev/tests).
-    # Future: openai, gemini.
+    # ── LLM gateway ───────────────────────────────────────────────────────────
+    # provider:
+    #   "claude"/"anthropic" (Claude) | "openai" (OpenAI chat completions) |
+    #   "ollama" (local) | "fake" (dev/tests).
     llm_provider: str = "claude"
     claude_model: str = DEFAULT_CHAT_MODEL
     claude_model_fast: str = DEFAULT_CLAUDE_MODEL_FAST
@@ -124,6 +126,9 @@ class Settings(BaseSettings):
     claude_max_tokens: int = DEFAULT_CHAT_MAX_TOKENS
     llm_timeout_seconds: float = DEFAULT_LLM_TIMEOUT_SECONDS
     llm_max_retries: int = DEFAULT_LLM_MAX_RETRIES
+    # OpenAI chat model (used when LLM_PROVIDER=openai; reuses openai_api_key /
+    # openai_base_url above).
+    openai_chat_model: str = DEFAULT_OPENAI_CHAT_MODEL
 
     # ── Ollama (local inference; used when LLM_PROVIDER=ollama) ────────────────
     ollama_base_url: str = DEFAULT_OLLAMA_BASE_URL

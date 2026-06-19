@@ -6,8 +6,12 @@ received so tests can assert on the assembled system prompt / messages.
 
 from __future__ import annotations
 
+import logging
+
 from app.services.llm.base import LLMResponse
 from app.utils.tokens import estimate_tokens
+
+logger = logging.getLogger(__name__)
 
 
 class FakeLLMProvider:
@@ -27,10 +31,12 @@ class FakeLLMProvider:
         model: str | None = None,
         max_tokens: int | None = None,
     ) -> LLMResponse:
+        used_model = model or "fake-model"
+        logger.info("Using provider=%s model=%s", self.name, used_model)
         self.calls.append({"system": system, "messages": messages, "model": model})
         return LLMResponse(
             text=self._reply,
-            model=model or "fake-model",
+            model=used_model,
             input_tokens=estimate_tokens(system),
             output_tokens=estimate_tokens(self._reply),
             stop_reason="end_turn",

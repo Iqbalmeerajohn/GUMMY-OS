@@ -68,6 +68,7 @@ class OllamaGateway:
         chat_messages.extend(messages)
 
         model_name = model or self._default_model
+        logger.info("Using provider=%s model=%s", self.name, model_name)
         num_predict = max_tokens or self._max_tokens
         payload = {
             "model": model_name,
@@ -171,8 +172,10 @@ class OllamaGateway:
             chat_messages.append({"role": "system", "content": system})
         chat_messages.extend(messages)
 
+        used_model = model or self._default_model
+        logger.info("Using provider=%s model=%s", self.name, used_model)
         payload = {
-            "model": model or self._default_model,
+            "model": used_model,
             "messages": chat_messages,
             "stream": True,
             "options": {"num_predict": max_tokens or self._max_tokens},
