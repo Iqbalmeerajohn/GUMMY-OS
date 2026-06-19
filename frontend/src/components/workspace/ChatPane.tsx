@@ -29,6 +29,20 @@ import { modeToAgentContext, previewRoutedAgents } from "@/lib/chat/routing";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 
+// Diagnostic: flip to true to trace where each message bubble comes from
+// (optimistic = local user echo, stream = live tokens, server = persisted refetch).
+// Off by default so production stays quiet.
+const LOG_MESSAGE_SOURCES = false;
+function logMsg(
+  id: string,
+  role: string,
+  source: "optimistic" | "stream" | "server",
+) {
+  if (LOG_MESSAGE_SOURCES) {
+    console.debug(`[msg] id=${id} role=${role} source=${source}`);
+  }
+}
+
 const AGENT_EMOJI: Record<string, string> = {
   General: "🧠",
   Learning: "🎓",
@@ -190,6 +204,11 @@ export function ChatPane({
     }
   }, [messages.length, streamText, pending, sending]);
 
+  // Diagnostic: log each persisted (server) message when the query resolves.
+  useEffect(() => {
+    for (const m of data?.items ?? []) logMsg(m.id, m.role, "server");
+  }, [data]);
+
   function onScroll() {
     const el = scrollRef.current;
     if (!el) return;
@@ -205,6 +224,7 @@ export function ChatPane({
     setStreamText("");
     setSending(true);
     atBottomRef.current = true;
+    logMsg("(pending)", "user", "optimistic");
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -226,6 +246,7 @@ export function ChatPane({
         if (ev.type === "delta" && ev.text) {
           setStreamText((prev) => prev + ev.text);
         } else if (ev.type === "done" && ev.assistant_message_id) {
+          logMsg(ev.assistant_message_id, "assistant", "stream");
           setMemoriesByMessage((m) => ({
             ...m,
             [ev.assistant_message_id as string]: ev.memories ?? [],
@@ -235,7 +256,10 @@ export function ChatPane({
       // Refetch the persisted messages BEFORE clearing the live bubble so the
       // streamed text is seamlessly replaced (no flicker).
       await qc.invalidateQueries({ queryKey: ["messages", id] });
-      await qc.invalidateQueries({ queryKey: ["conversations"] });
+      // Fire-and-forget: don't block clearing the live bubble on the (slower)
+      // conversations-list refetch, or the streamed bubble overlaps the now-
+      // persisted message for the duration of that request (temporary duplicate).
+      void qc.invalidateQueries({ queryKey: ["conversations"] });
     } catch (err) {
       // Intentional abort (conversation switch / unmount): stay silent — the
       // switch effect or unmount already handled cleanup.
@@ -246,7 +270,10 @@ export function ChatPane({
         if (!id) throw err;
         await postTurn(id, text);
         await qc.invalidateQueries({ queryKey: ["messages", id] });
-        await qc.invalidateQueries({ queryKey: ["conversations"] });
+        // Fire-and-forget: don't block clearing the live bubble on the (slower)
+      // conversations-list refetch, or the streamed bubble overlaps the now-
+      // persisted message for the duration of that request (temporary duplicate).
+      void qc.invalidateQueries({ queryKey: ["conversations"] });
       } catch {
         toast.error("Couldn't reach GUMMY. Is the backend running?");
         if (mountedRef.current) setValue(text);
