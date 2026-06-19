@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from typing import Any
+from uuid import uuid4
 
 from sqlalchemy import event, text
 from sqlalchemy.engine import Connection
@@ -30,6 +31,27 @@ logger = logging.getLogger(__name__)
 
 _engine: AsyncEngine | None = None
 _sessionmaker: async_sessionmaker[AsyncSession] | None = None
+
+# asyncpg + PgBouncer (Supabase transaction pooler, DATABASE_URL on :6543) safety.
+#
+# In transaction pooling, consecutive transactions on one client connection can
+# land on different physical Postgres backends. asyncpg names prepared statements
+# by a sequential counter ("__asyncpg_stmt_a__", ...) and SQLAlchemy/asyncpg cache
+# them by SQL text, so a statement prepared on backend A is later referenced on
+# backend B where it does not exist:
+#   asyncpg.exceptions.InvalidSQLStatementNameError:
+#     prepared statement "__asyncpg_stmt_a__" does not exist
+# This broke the per-transaction RLS call `SELECT set_config('app.current_user_id', …)`.
+#
+# Fix (no Railway/Supabase/RLS changes): disable both prepared-statement caches so
+# each statement is prepared and used within a single transaction (same backend),
+# and give every prepared statement a unique name so names are never reused across
+# backends. This is SQLAlchemy's documented asyncpg-behind-PgBouncer remedy.
+_ASYNCPG_PGBOUNCER_CONNECT_ARGS: dict[str, Any] = {
+    "statement_cache_size": 0,  # asyncpg: no server-side prepared-statement cache
+    "prepared_statement_cache_size": 0,  # SQLAlchemy asyncpg dialect: cache nothing
+    "prepared_statement_name_func": lambda: f"__asyncpg_{uuid4()}__",  # unique names
+}
 
 
 @event.listens_for(Session, "after_begin")
@@ -65,6 +87,7 @@ def get_engine() -> AsyncEngine | None:
             pool_pre_ping=True,
             pool_size=5,
             max_overflow=5,
+            connect_args=_ASYNCPG_PGBOUNCER_CONNECT_ARGS,
         )
         logger.info("database engine initialized")
     return _engine
