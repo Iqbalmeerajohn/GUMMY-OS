@@ -16,6 +16,7 @@ from fastapi import APIRouter, Query, status
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import (
+    CurrentUserDep,
     CurrentUserId,
     DbSession,
     EmbeddingServiceDep,
@@ -29,6 +30,7 @@ from app.core.constants import (
     MAX_SEARCH_LIMIT,
 )
 from app.core.exceptions import AppError
+from app.core.security import CurrentUser
 from app.models.enums import (
     AgentContext,
     ConversationSearchMode,
@@ -59,6 +61,19 @@ from app.services.conversation import (
     conversation_turn_service,
     message_service,
 )
+from app.services.identity.user_context import (
+    UserContext,
+    build_identity_block,
+)
+
+
+def _identity_for(user: CurrentUser) -> str | None:
+    """Safe profile block injected into the turn (name from the verified JWT)."""
+    return build_identity_block(
+        UserContext(
+            user_id=user.id, name=user.display_name, email=user.email
+        )
+    )
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -279,7 +294,7 @@ async def list_messages(
 async def create_turn(
     conversation_id: uuid.UUID,
     payload: TurnRequest,
-    user_id: CurrentUserId,
+    current_user: CurrentUserDep,
     db: DbSession,
     embeddings: EmbeddingServiceDep,
     llm: LLMProviderDep,
@@ -287,13 +302,14 @@ async def create_turn(
 ) -> TurnResponse:
     result = await conversation_turn_service.run_turn(
         db,
-        user_id=user_id,
+        user_id=current_user.id,
         conversation_id=conversation_id,
         message=payload.message,
         embedding_service=embeddings,
         llm=llm,
         token_budget=settings.context_token_budget,
         max_memories=settings.context_max_memories,
+        identity=_identity_for(current_user),
     )
     return TurnResponse(
         conversation_id=result.conversation_id,
@@ -315,7 +331,7 @@ async def create_turn(
 async def create_turn_stream(
     conversation_id: uuid.UUID,
     payload: TurnRequest,
-    user_id: CurrentUserId,
+    current_user: CurrentUserDep,
     db: DbSession,
     embeddings: EmbeddingServiceDep,
     llm: LLMProviderDep,
@@ -328,16 +344,19 @@ async def create_turn_stream(
     persisted once the stream completes, identical to the non-streaming turn.
     """
 
+    identity = _identity_for(current_user)
+
     async def _events() -> AsyncIterator[str]:
         async for event in conversation_turn_service.stream_turn(
             db,
-            user_id=user_id,
+            user_id=current_user.id,
             conversation_id=conversation_id,
             message=payload.message,
             embedding_service=embeddings,
             llm=llm,
             token_budget=settings.context_token_budget,
             max_memories=settings.context_max_memories,
+            identity=identity,
         ):
             yield f"data: {json.dumps(event)}\n\n"
 

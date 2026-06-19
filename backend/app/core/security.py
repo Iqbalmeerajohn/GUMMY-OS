@@ -55,6 +55,25 @@ class TokenClaims:
     sub: uuid.UUID
     email: str | None
     raw: dict[str, object]
+    name: str | None = None
+
+
+def _extract_name(payload: dict[str, object]) -> str | None:
+    """Best-effort display name from Supabase claims (signup user_metadata).
+
+    Supabase embeds ``user_metadata`` in the verified access token, so the name
+    the user provided at signup is available WITHOUT any extra DB/Supabase call.
+    Tries the common keys in order; returns ``None`` when none are present.
+    """
+    candidates: list[object] = []
+    meta = payload.get("user_metadata")
+    if isinstance(meta, dict):
+        candidates += [meta.get("full_name"), meta.get("name"), meta.get("first_name")]
+    candidates += [payload.get("name")]
+    for value in candidates:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
 
 
 @dataclass(frozen=True)
@@ -63,6 +82,7 @@ class CurrentUser:
 
     id: uuid.UUID
     email: str | None
+    display_name: str | None = None
 
 
 def _unauthorized(code: str, message: str) -> AppError:
@@ -156,6 +176,7 @@ def verify_access_token(token: str, settings: Settings) -> TokenClaims:
         sub=user_id,
         email=str(email) if isinstance(email, str) else None,
         raw=payload,
+        name=_extract_name(payload),
     )
 
 

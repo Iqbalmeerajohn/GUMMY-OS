@@ -57,11 +57,13 @@ async def handle(task: AgentTask, *, llm: LLMProvider) -> AgentResult:
     if findings:
         block = "\n\n".join(findings)
         summary = f"{summary}\n\n{block}" if summary else block
+    identity = task.inputs.get("user_identity")
     payload = prompt_builder.build_prompt(
         context=package,
         query=task.intent,
         history=history or None,
         summary=summary,
+        identity=str(identity) if isinstance(identity, str) else None,
     )
     response = await llm.generate(
         system=payload.system, messages=payload.messages

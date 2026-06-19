@@ -87,11 +87,13 @@ async def generate_grounded_reply(
     max_memories: int = DEFAULT_CONTEXT_MAX_MEMORIES,
     history: list[dict[str, str]] | None = None,
     summary: str | None = None,
+    identity: str | None = None,
 ) -> GeneratedReply:
     """Ground a reply in the user's memories (+ optional thread history/summary).
 
     Stateless: retrieves, assembles, prompts, and calls the LLM, but persists
-    nothing and does not commit. Used by ``run_turn``.
+    nothing and does not commit. Used by ``run_turn``. ``identity`` is the
+    authenticated user-profile block, injected ahead of memory.
     """
     ranked = await memory_retrieval_service.retrieve_memories(
         session,
@@ -114,7 +116,11 @@ async def generate_grounded_reply(
         max_memories=max_memories,
     )
     payload = prompt_builder.build_prompt(
-        context=package, query=message, history=history, summary=summary
+        context=package,
+        query=message,
+        history=history,
+        summary=summary,
+        identity=identity,
     )
     response = await llm.generate(system=payload.system, messages=payload.messages)
     return GeneratedReply(
@@ -137,6 +143,7 @@ async def run_turn(
     token_budget: int = DEFAULT_CONTEXT_TOKEN_BUDGET,
     max_memories: int = DEFAULT_CONTEXT_MAX_MEMORIES,
     history_limit: int = DEFAULT_TURN_HISTORY_MESSAGES,
+    identity: str | None = None,
 ) -> TurnResult:
     """Run one persisted, memory-grounded turn in a conversation.
 
@@ -209,6 +216,7 @@ async def run_turn(
                 history=history,
                 summary=summary_text,
                 agent_context=conversation.agent_context,
+                user_identity=identity,
             )
             reply = GeneratedReply(
                 reply=orch.reply,
@@ -232,6 +240,7 @@ async def run_turn(
                 max_memories=max_memories,
                 history=history,
                 summary=summary_text,
+                identity=identity,
             )
     elif settings.agents_run_recording:
         from app.services.agents import run_recorder
@@ -255,6 +264,7 @@ async def run_turn(
                 max_memories=max_memories,
                 history=history,
                 summary=summary_text,
+                identity=identity,
             )
         except Exception as exc:
             # Flush-only; without a commit the trace vanishes with the
@@ -376,6 +386,7 @@ async def stream_turn(
     token_budget: int = DEFAULT_CONTEXT_TOKEN_BUDGET,
     max_memories: int = DEFAULT_CONTEXT_MAX_MEMORIES,
     history_limit: int = DEFAULT_TURN_HISTORY_MESSAGES,
+    identity: str | None = None,
 ) -> AsyncIterator[dict]:
     """Run a memory-grounded turn, streaming the reply as it is generated.
 
@@ -442,7 +453,11 @@ async def stream_turn(
         candidates, token_budget=token_budget, max_memories=max_memories
     )
     payload = prompt_builder.build_prompt(
-        context=package, query=message, history=history, summary=summary_text
+        context=package,
+        query=message,
+        history=history,
+        summary=summary_text,
+        identity=identity,
     )
 
     # Stream the reply, accumulating the full text for persistence.

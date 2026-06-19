@@ -107,6 +107,7 @@ def _make_task(
     scratch: list[dict],
     token_budget: int,
     max_memories: int,
+    user_identity: str | None = None,
 ) -> AgentTask:
     return AgentTask(
         run_id=run_id,
@@ -115,6 +116,8 @@ def _make_task(
         inputs={
             "token_budget": token_budget,
             "max_memories": max_memories,
+            # Authenticated profile block shared with every agent's prompt.
+            "user_identity": user_identity,
         },
         context_pack=base_pack.model_copy(update={"scratch": list(scratch)}),
     )
@@ -182,6 +185,7 @@ async def _run_sequential(
     llm: LLMProvider,
     token_budget: int,
     max_memories: int,
+    user_identity: str | None = None,
 ) -> list[tuple[str, AgentResult]]:
     """Single/pipeline execution: steps in order, scratch handed forward.
 
@@ -213,6 +217,7 @@ async def _run_sequential(
             scratch=scratch,
             token_budget=token_budget,
             max_memories=max_memories,
+            user_identity=user_identity,
         )
         try:
             result = await handlers.dispatch(task, llm=llm)
@@ -254,6 +259,7 @@ async def _run_parallel(
     llm: LLMProvider,
     token_budget: int,
     max_memories: int,
+    user_identity: str | None = None,
 ) -> list[tuple[str, AgentResult]]:
     """Parallel fan-out/gather: branches run concurrently, failures are
     isolated per branch; the run succeeds if at least one branch does.
@@ -292,6 +298,7 @@ async def _run_parallel(
                 scratch=[],
                 token_budget=token_budget,
                 max_memories=max_memories,
+                user_identity=user_identity,
             ),
             llm=llm,
         )
@@ -353,6 +360,7 @@ async def orchestrate(
     history: list[dict] | None = None,
     summary: str | None = None,
     agent_context: AgentContext | None = None,
+    user_identity: str | None = None,
 ) -> OrchestrationResult:
     """Run one orchestrated turn (routed single | pipeline | parallel).
 
@@ -408,6 +416,7 @@ async def orchestrate(
             llm=llm,
             token_budget=token_budget,
             max_memories=max_memories,
+            user_identity=user_identity,
         )
         if not results:  # defensive: an empty route plan is a bug
             raise RuntimeError("router produced an empty route plan")

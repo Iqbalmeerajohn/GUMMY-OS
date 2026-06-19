@@ -70,7 +70,11 @@ async def get_current_user(
                 session, user_id=claims.sub, email=claims.email
             )
             await session.commit()
-        return CurrentUser(id=user.id, email=user.email)
+        # Name comes from the verified JWT (Supabase user_metadata), not the DB,
+        # so identity is available without persisting profile server-side.
+        return CurrentUser(
+            id=user.id, email=user.email, display_name=claims.name
+        )
 
     if settings.auth_dev_bypass:
         if user_id is not None:

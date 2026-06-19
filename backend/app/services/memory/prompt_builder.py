@@ -48,16 +48,21 @@ def build_prompt(
     query: str,
     history: list[dict[str, str]] | None = None,
     summary: str | None = None,
+    identity: str | None = None,
 ) -> PromptPayload:
     """Build the system prompt + chat messages for a memory-grounded turn.
 
     ``history`` is the recent prior turns of THIS conversation (working memory),
     each a ``{"role", "content"}`` dict, prepended before the current ``query``.
-    ``summary`` is the thread's rolling summary (compressed older context). Both
-    default to ``None`` so the legacy stateless chat path is unchanged.
+    ``summary`` is the thread's rolling summary (compressed older context).
+    ``identity`` is the authenticated user-profile block (see the identity
+    service); it precedes memory so every agent knows who the user is. All three
+    default to ``None`` so the legacy path stays byte-identical.
     """
+    identity_block = f"{identity}\n\n" if identity else ""
     system = (
         f"{_PERSONA}\n\n"
+        f"{identity_block}"
         f"{_GROUNDING}\n\n"
         f"Remembered context about the user:\n"
         f"<memory>\n{_render_context(context)}\n</memory>"
