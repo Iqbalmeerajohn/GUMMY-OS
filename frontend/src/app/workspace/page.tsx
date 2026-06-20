@@ -1,12 +1,13 @@
 "use client";
 
-import { Suspense, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { X } from "lucide-react";
 
 import { ChatPane } from "@/components/workspace/ChatPane";
 import { ContextPanel } from "@/components/workspace/ContextPanel";
 import { HistoryRail } from "@/components/workspace/HistoryRail";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 
 /** A slide-over sheet (left = history on mobile, right = the Workspace Hub). */
 function Sheet({
@@ -60,9 +61,26 @@ function Workspace() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [hubOpen, setHubOpen] = useState(false);
 
+  // Workspace entry — fires once per mount (deep-linked or fresh).
+  useEffect(() => {
+    analytics.track(AnalyticsEvent.WorkspaceOpened, {
+      deep_linked: Boolean(params.get("c")),
+    });
+    // Mount-only: a new visit to the workspace is a new mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function selectConversation(id: string) {
+    analytics.track(AnalyticsEvent.ConversationOpened, { conversation_id: id });
     setActiveId(id);
     setHistoryOpen(false);
+  }
+
+  function changeAgentContext(value: string) {
+    if (value !== agentContext) {
+      analytics.track(AnalyticsEvent.AgentSelected, { agent_context: value });
+    }
+    setAgentContext(value);
   }
 
   // "New" resets to the welcome state — the conversation is created lazily on
@@ -90,7 +108,7 @@ function Workspace() {
         <ChatPane
           activeId={activeId}
           agentContext={agentContext}
-          onAgentContextChange={setAgentContext}
+          onAgentContextChange={changeAgentContext}
           onActiveIdChange={setActiveId}
           onOpenHistory={() => setHistoryOpen(true)}
           onOpenHub={() => setHubOpen(true)}

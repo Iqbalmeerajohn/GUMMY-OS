@@ -6,6 +6,7 @@ import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { ThemeProvider } from "next-themes";
 
 import { AuthProvider } from "@/components/auth/AuthProvider";
+import { PostHogProvider } from "@/components/analytics/PostHogProvider";
 import { UpdatesProvider } from "@/components/updates/UpdatesProvider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -36,9 +37,11 @@ export function Providers({ children }: { children: ReactNode }) {
     >
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <TooltipProvider delay={200}>
-            <UpdatesProvider>{children}</UpdatesProvider>
-          </TooltipProvider>
+          <PostHogProvider>
+            <TooltipProvider delay={200}>
+              <UpdatesProvider>{children}</UpdatesProvider>
+            </TooltipProvider>
+          </PostHogProvider>
         </AuthProvider>
         <ReactQueryDevtools initialIsOpen={false} />
       </QueryClientProvider>

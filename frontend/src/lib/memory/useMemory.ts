@@ -1,11 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -18,14 +14,11 @@ import {
   restoreMemory,
   updateMemory,
 } from "@/lib/api/resources";
-import {
-  computeStats,
-  searchMemories,
-  topMemories,
-} from "@/lib/memory/query";
+import { computeStats, searchMemories, topMemories } from "@/lib/memory/query";
 import { buildTransparency } from "@/lib/memory/transparency";
 import { fromApi, type MemoryDraft } from "@/lib/memory/types";
 import type { Memory, MemoryQuery } from "@/lib/memory/types";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 
 const MEMORIES_KEY = ["memories", "all"] as const;
 
@@ -144,14 +137,21 @@ function draftToWrite(draft: MemoryDraft) {
 /** Write actions, backed by the backend API and stable across renders. */
 export function useMemoryActions() {
   const qc = useQueryClient();
-  const invalidate = () =>
-    qc.invalidateQueries({ queryKey: ["memories"] });
-  const onError = (err: unknown) =>
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["memories"] });
+  const onError = (err: unknown) => {
+    analytics.captureException(err, { context: "memory_write_failed" });
     toast.error(err instanceof Error ? err.message : "Something went wrong.");
+  };
 
   const add = useMutation({
     mutationFn: (draft: MemoryDraft) => createMemory(draftToWrite(draft)),
-    onSuccess: invalidate,
+    onSuccess: (created) => {
+      analytics.track(AnalyticsEvent.MemoryCreated, {
+        memory_id: created.id,
+        category: created.category,
+      });
+      invalidate();
+    },
     onError,
   });
   const update = useMutation({
@@ -164,7 +164,13 @@ export function useMemoryActions() {
             ? getImportanceMeta(draft.importance).score
             : undefined,
       }),
-    onSuccess: invalidate,
+    onSuccess: (updated) => {
+      analytics.track(AnalyticsEvent.MemoryUpdated, {
+        memory_id: updated.id,
+        category: updated.category,
+      });
+      invalidate();
+    },
     onError,
   });
   const archive = useMutation({

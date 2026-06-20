@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 
+import { TrackOnce } from "@/components/analytics/TrackOnce";
+import { AnalyticsEvent } from "@/lib/analytics";
 import { Reveal } from "@/components/motion/Reveal";
 import {
   ActiveAgents,
@@ -29,6 +31,7 @@ export const metadata: Metadata = {
 export default function DashboardPage() {
   return (
     <div className="space-y-6">
+      <TrackOnce event={AnalyticsEvent.DashboardViewed} />
       <Reveal>
         <GreetingHeader />
       </Reveal>

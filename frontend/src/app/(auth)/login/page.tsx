@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { buttonVariants } from "@/components/ui/button";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { resolvePostAuthDestination } from "@/lib/auth/post-auth";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 
 function LoginForm() {
@@ -43,6 +44,7 @@ function LoginForm() {
       toast.error(error.message);
       return;
     }
+    analytics.track(AnalyticsEvent.UserLoggedIn, { method: "password" });
     router.replace(resolvePostAuthDestination(next));
   }
 

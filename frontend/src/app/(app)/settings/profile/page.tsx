@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { buttonVariants } from "@/components/ui/button";
 import { useProfile, useUpdateProfile } from "@/lib/profile/useProfile";
 import { LANGUAGE_OPTIONS, type UserProfile } from "@/lib/profile/types";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 
 const FEATURES_ENABLED = ["Memory System", "Goals System", "Agent System"];
@@ -67,6 +68,9 @@ function SettingsForm({ profile }: { profile: UserProfile }) {
       display_name: displayName.trim(),
       timezone,
       preferred_language: language,
+    });
+    analytics.track(AnalyticsEvent.ProfileUpdated, {
+      fields: ["display_name", "timezone", "preferred_language"],
     });
     toast.success("Profile updated.");
   }

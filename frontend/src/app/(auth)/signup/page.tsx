@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { buttonVariants } from "@/components/ui/button";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { resolvePostAuthDestination } from "@/lib/auth/post-auth";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { env } from "@/lib/env";
 import { cn } from "@/lib/utils";
 
@@ -50,6 +51,10 @@ function SignupForm() {
       toast.error(error.message);
       return;
     }
+    analytics.track(AnalyticsEvent.UserSignedUp, {
+      method: "password",
+      requires_email_verification: !data.session,
+    });
     if (data.session) {
       // Auto-confirmed → straight into the onboarding journey.
       router.replace(resolvePostAuthDestination("/onboarding"));

@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useProfile } from "@/lib/profile/useProfile";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 
 /** Top-right identity menu: Profile · Settings · Future Vision · Sign out. */
 export function ProfileMenu() {
@@ -26,6 +27,9 @@ export function ProfileMenu() {
   const initial = name.charAt(0).toUpperCase();
 
   async function handleSignOut() {
+    // Track while the identity is still set; AnalyticsIdentity calls reset()
+    // once the auth session clears.
+    analytics.track(AnalyticsEvent.UserLoggedOut);
     await signOut();
     router.replace("/login");
   }

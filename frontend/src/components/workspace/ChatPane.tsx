@@ -26,6 +26,7 @@ import { greetingName } from "@/lib/profile/displayName";
 import { useProfile } from "@/lib/profile/useProfile";
 import { postTurn, streamTurn } from "@/lib/api/resources";
 import { modeToAgentContext, previewRoutedAgents } from "@/lib/chat/routing";
+import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 
@@ -67,7 +68,11 @@ const QUICK_ACTIONS = [
   { icon: Hammer, label: "Build a project", prompt: "Help me build " },
   { icon: GraduationCap, label: "Learn a topic", prompt: "Teach me about " },
   { icon: FileSearch, label: "Analyze a document", prompt: "Analyze this: " },
-  { icon: Briefcase, label: "Find opportunities", prompt: "Find opportunities for " },
+  {
+    icon: Briefcase,
+    label: "Find opportunities",
+    prompt: "Find opportunities for ",
+  },
 ];
 
 /** A single compact agent chip: "🧠 General Agent". */
@@ -212,8 +217,7 @@ export function ChatPane({
   function onScroll() {
     const el = scrollRef.current;
     if (!el) return;
-    atBottomRef.current =
-      el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
   }
 
   async function send() {
@@ -225,6 +229,17 @@ export function ChatPane({
     setSending(true);
     atBottomRef.current = true;
     logMsg("(pending)", "user", "optimistic");
+
+    // Agent that will (most likely) handle this turn — for analytics only.
+    const routedAgent = previewRoutedAgents(text, agentContext)[0] ?? null;
+    const startedAt = Date.now();
+
+    analytics.track(AnalyticsEvent.MessageSent, {
+      agent_context: agentContext,
+      routed_agent: routedAgent,
+      new_conversation: !activeId,
+      message_length: text.length,
+    });
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -238,6 +253,10 @@ export function ChatPane({
         id = conv.id;
         streamingConvRef.current = id;
         onActiveIdChange(id);
+        analytics.track(AnalyticsEvent.ConversationCreated, {
+          conversation_id: id,
+          agent_context: agentContext,
+        });
       } else {
         streamingConvRef.current = id;
       }
@@ -247,10 +266,29 @@ export function ChatPane({
           setStreamText((prev) => prev + ev.text);
         } else if (ev.type === "done" && ev.assistant_message_id) {
           logMsg(ev.assistant_message_id, "assistant", "stream");
+          const memories = ev.memories ?? [];
           setMemoriesByMessage((m) => ({
             ...m,
-            [ev.assistant_message_id as string]: ev.memories ?? [],
+            [ev.assistant_message_id as string]: memories,
           }));
+          analytics.track(AnalyticsEvent.AssistantResponseCompleted, {
+            conversation_id: id,
+            agent_context: agentContext,
+            routed_agent: routedAgent,
+            memories_used: memories.length,
+            duration_ms: Date.now() - startedAt,
+          });
+          analytics.track(AnalyticsEvent.AgentExecuted, {
+            conversation_id: id,
+            agent: routedAgent,
+            agent_context: agentContext,
+          });
+          if (memories.length > 0) {
+            analytics.track(AnalyticsEvent.MemoryRecalled, {
+              conversation_id: id,
+              count: memories.length,
+            });
+          }
         }
       }
       // Refetch the persisted messages BEFORE clearing the live bubble so the
@@ -271,10 +309,14 @@ export function ChatPane({
         await postTurn(id, text);
         await qc.invalidateQueries({ queryKey: ["messages", id] });
         // Fire-and-forget: don't block clearing the live bubble on the (slower)
-      // conversations-list refetch, or the streamed bubble overlaps the now-
-      // persisted message for the duration of that request (temporary duplicate).
-      void qc.invalidateQueries({ queryKey: ["conversations"] });
-      } catch {
+        // conversations-list refetch, or the streamed bubble overlaps the now-
+        // persisted message for the duration of that request (temporary duplicate).
+        void qc.invalidateQueries({ queryKey: ["conversations"] });
+      } catch (fallbackErr) {
+        analytics.captureException(fallbackErr, {
+          context: "chat_turn_failed",
+          conversation_id: id,
+        });
         toast.error("Couldn't reach GUMMY. Is the backend running?");
         if (mountedRef.current) setValue(text);
       }
@@ -393,10 +435,7 @@ function WelcomeScreen({ onPick }: { onPick: (s: string) => void }) {
   const { data: profile } = useProfile();
   const topMemories = useSnapshotMemories(3);
 
-  const firstName = useMemo(
-    () => greetingName(profile, user),
-    [profile, user],
-  );
+  const firstName = useMemo(() => greetingName(profile, user), [profile, user]);
 
   const greeting = useMemo(() => {
     const h = new Date().getHours();
