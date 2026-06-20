@@ -4,11 +4,14 @@ import Link from "next/link";
 import { toast } from "sonner";
 import {
   Brain,
+  Check,
   Compass,
+  Info,
   ListChecks,
   MessageSquare,
   Sparkles,
   Target,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -17,11 +20,17 @@ import { LivingOrb } from "@/components/brand/LivingOrb";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   useActiveGoals,
   useRecentConversations,
   useRecentMemories,
 } from "@/lib/hooks/useDashboard";
 import { useMemoriesReady, useTopMemories } from "@/lib/memory/useMemory";
+import { useUnderstandingScore } from "@/lib/dashboard/useUnderstandingScore";
 import { ImportanceBadge } from "@/components/memory/MemoryBadges";
 import {
   QUICK_START_SUGGESTIONS,
@@ -342,6 +351,7 @@ export function SystemHealthWidget() {
   const memories = useRecentMemories();
   const goals = useActiveGoals();
   const conversations = useRecentConversations();
+  const understanding = useUnderstandingScore();
 
   const anyError = memories.isError || goals.isError || conversations.isError;
   const loading =
@@ -349,9 +359,6 @@ export function SystemHealthWidget() {
   const online = !anyError;
 
   const memoryCount = memories.data?.total ?? 0;
-  // Learning progress: a gentle 0–100 proxy from captured memories, so the bar
-  // fills as GUMMY gets to know the user (saturates at 20 memories).
-  const learning = Math.min(100, Math.round((memoryCount / 20) * 100));
 
   return (
     <SectionCard title="System Health">
@@ -395,25 +402,63 @@ export function SystemHealthWidget() {
         />
       </div>
 
-      <div className="mt-4">
+      <div className="border-border/50 mt-4 border-t pt-4">
         <div className="text-muted-foreground mb-1.5 flex items-center justify-between text-xs">
           <span className="inline-flex items-center gap-1.5">
             <Sparkles className="text-primary size-3.5" />
-            Learning progress
+            User Understanding Score
+            <Tooltip>
+              <TooltipTrigger
+                aria-label="About the User Understanding Score"
+                className="text-muted-foreground/70 hover:text-foreground inline-grid size-4 place-items-center rounded-full"
+              >
+                <Info className="size-3" />
+              </TooltipTrigger>
+              <TooltipContent>
+                This score reflects how well GUMMY understands and personalizes
+                itself for you.
+              </TooltipContent>
+            </Tooltip>
           </span>
-          <span className="tabular-nums">{learning}%</span>
+          <span className="text-foreground text-sm font-semibold tabular-nums">
+            {understanding.score}%
+          </span>
         </div>
+
         <div className="bg-muted h-2 overflow-hidden rounded-full">
           <div
             className="bg-primary h-full rounded-full transition-[width] duration-700"
-            style={{ width: `${learning}%` }}
+            style={{ width: `${understanding.score}%` }}
           />
         </div>
-        <p className="text-muted-foreground mt-1.5 text-xs">
-          {memoryCount === 0
-            ? "GUMMY learns as you chat — your first memories will appear here."
-            : `GUMMY remembers ${memoryCount} thing${memoryCount === 1 ? "" : "s"} about you.`}
+
+        <p className="text-foreground mt-2 text-sm font-medium">
+          User Understanding Score: {understanding.score}%
         </p>
+
+        <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5">
+          {understanding.criteria.map((c) => (
+            <li
+              key={c.key}
+              className="inline-flex items-center gap-1.5 text-xs"
+            >
+              {c.met ? (
+                <Check className="text-primary size-3.5 shrink-0" />
+              ) : (
+                <X className="text-muted-foreground/50 size-3.5 shrink-0" />
+              )}
+              <span className={c.met ? "" : "text-muted-foreground"}>
+                {c.label}
+              </span>
+            </li>
+          ))}
+        </ul>
+
+        {understanding.needsMoreData ? (
+          <p className="text-muted-foreground mt-2.5 text-xs text-balance">
+            Teach GUMMY more about yourself to improve personalization.
+          </p>
+        ) : null}
       </div>
     </SectionCard>
   );
