@@ -7,6 +7,7 @@ import { Search } from "lucide-react";
 import { LivingOrb } from "@/components/brand/LivingOrb";
 import { ProfileMenu } from "@/components/app/ProfileMenu";
 import { OrbNotification } from "@/components/app/OrbNotification";
+import { IdentitySync } from "@/components/auth/IdentitySync";
 import { useHideOnScroll } from "@/lib/hooks/useScrollDirection";
 import { cn } from "@/lib/utils";
 
@@ -32,6 +33,7 @@ export function AppHeader() {
         hidden ? "-translate-y-full" : "translate-y-0",
       )}
     >
+      <IdentitySync />
       <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-5 py-3">
         <div className="flex items-center gap-6">
           <Link href="/dashboard" className="flex items-center gap-2.5">

@@ -137,11 +137,17 @@ async def retrieve_memories(
     include_archived: bool = False,
     reinforce: bool = True,
     now: datetime | None = None,
+    query_vector: list[float] | None = None,
 ) -> list[RankedMemory]:
-    """Embed the query, rank candidates by the hybrid score, and reinforce."""
+    """Embed the query, rank candidates by the hybrid score, and reinforce.
+
+    ``query_vector`` may be supplied by a caller that already embedded the query
+    (e.g. to time embedding separately); when ``None`` the query is embedded here.
+    """
     now = now or datetime.now(UTC)
 
-    query_vector = await embedding_service.embed_query(query)
+    if query_vector is None:
+        query_vector = await embedding_service.embed_query(query)
     candidates = await search_repo.search_similar_memories(
         session,
         user_id=user_id,

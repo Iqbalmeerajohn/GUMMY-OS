@@ -7,6 +7,7 @@ import {
   Compass,
   ListChecks,
   MessageSquare,
+  Sparkles,
   Target,
   type LucideIcon,
 } from "lucide-react";
@@ -18,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   useActiveGoals,
   useRecentConversations,
+  useRecentMemories,
 } from "@/lib/hooks/useDashboard";
 import { useMemoriesReady, useTopMemories } from "@/lib/memory/useMemory";
 import { ImportanceBadge } from "@/components/memory/MemoryBadges";
@@ -297,6 +299,121 @@ export function QuickStartWidget() {
             {s}
           </Link>
         ))}
+      </div>
+    </SectionCard>
+  );
+}
+
+/** A single live metric tile (count + label) for the System Health strip. */
+function HealthStat({
+  icon: Icon,
+  label,
+  value,
+  loading,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: number;
+  loading: boolean;
+}) {
+  return (
+    <div className="border-border/50 bg-background/40 flex items-center gap-3 rounded-xl border p-3">
+      <span className="bg-primary/10 text-primary grid size-9 shrink-0 place-items-center rounded-lg">
+        <Icon className="size-4" />
+      </span>
+      <div className="min-w-0">
+        <div className="text-lg leading-none font-semibold tabular-nums">
+          {loading ? "—" : value}
+        </div>
+        <div className="text-muted-foreground mt-1 text-xs">{label}</div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * SYSTEM HEALTH — a live at-a-glance status strip: backend connectivity plus
+ * how much GUMMY has learned (memories), is tracking (goals), and has worked on
+ * (conversations). Gives first-time testers confidence the system is wired up,
+ * and returning users a pulse on their footprint. All counts are live; a query
+ * error degrades the connection pill rather than blanking the card.
+ */
+export function SystemHealthWidget() {
+  const memories = useRecentMemories();
+  const goals = useActiveGoals();
+  const conversations = useRecentConversations();
+
+  const anyError = memories.isError || goals.isError || conversations.isError;
+  const loading =
+    memories.isLoading || goals.isLoading || conversations.isLoading;
+  const online = !anyError;
+
+  const memoryCount = memories.data?.total ?? 0;
+  // Learning progress: a gentle 0–100 proxy from captured memories, so the bar
+  // fills as GUMMY gets to know the user (saturates at 20 memories).
+  const learning = Math.min(100, Math.round((memoryCount / 20) * 100));
+
+  return (
+    <SectionCard title="System Health">
+      <div className="mb-4 flex items-center gap-2">
+        <span
+          className={
+            "relative flex size-2.5 items-center justify-center rounded-full " +
+            (online ? "bg-primary" : "bg-amber-500")
+          }
+        >
+          {online ? (
+            <span className="bg-primary absolute inline-flex size-2.5 animate-ping rounded-full opacity-60" />
+          ) : null}
+        </span>
+        <span className="text-sm font-medium">
+          {online ? "All systems operational" : "Reconnecting to GUMMY…"}
+        </span>
+        <Badge variant="secondary" className="ml-auto text-[10px]">
+          {online ? "Online" : "Degraded"}
+        </Badge>
+      </div>
+
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+        <HealthStat
+          icon={Brain}
+          label="Memories"
+          value={memoryCount}
+          loading={loading}
+        />
+        <HealthStat
+          icon={Target}
+          label="Active goals"
+          value={goals.data?.total ?? 0}
+          loading={loading}
+        />
+        <HealthStat
+          icon={MessageSquare}
+          label="Conversations"
+          value={conversations.data?.total ?? 0}
+          loading={loading}
+        />
+      </div>
+
+      <div className="mt-4">
+        <div className="text-muted-foreground mb-1.5 flex items-center justify-between text-xs">
+          <span className="inline-flex items-center gap-1.5">
+            <Sparkles className="text-primary size-3.5" />
+            Learning progress
+          </span>
+          <span className="tabular-nums">{learning}%</span>
+        </div>
+        <div className="bg-muted h-2 overflow-hidden rounded-full">
+          <div
+            className="bg-primary h-full rounded-full transition-[width] duration-700"
+            style={{ width: `${learning}%` }}
+          />
+        </div>
+        <p className="text-muted-foreground mt-1.5 text-xs">
+          {memoryCount === 0
+            ? "GUMMY learns as you chat — your first memories will appear here."
+            : `GUMMY remembers ${memoryCount} thing${memoryCount === 1 ? "" : "s"} about you.`}
+        </p>
       </div>
     </SectionCard>
   );

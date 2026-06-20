@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { syncDisplayNameToAuth } from "./identitySync";
 import { getProfileRepository } from "./repository";
 import type { UserProfile } from "./types";
 
@@ -21,7 +22,15 @@ export function useProfile() {
 export function useUpdateProfile() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (patch: Partial<UserProfile>) => repo.update(patch),
+    mutationFn: async (patch: Partial<UserProfile>) => {
+      const next = await repo.update(patch);
+      // Mirror the name into the Supabase JWT so the backend (and every agent)
+      // knows who the user is. Best-effort; never blocks the profile save.
+      if (typeof patch.display_name === "string") {
+        await syncDisplayNameToAuth(patch.display_name);
+      }
+      return next;
+    },
     onSuccess: (next) => qc.setQueryData(KEY, next),
   });
 }

@@ -14,6 +14,7 @@ import {
   QuickStartWidget,
   RecentMemoriesWidget,
   RecommendedActionsWidget,
+  SystemHealthWidget,
 } from "@/components/dashboard/widgets";
 
 export const metadata: Metadata = {
@@ -34,6 +35,10 @@ export default function DashboardPage() {
 
       <Reveal delay={0.04}>
         <TodaysFocus />
+      </Reveal>
+
+      <Reveal delay={0.06}>
+        <SystemHealthWidget />
       </Reveal>
 
       <div className="grid gap-6 lg:grid-cols-2">

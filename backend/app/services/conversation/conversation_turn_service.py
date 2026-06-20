@@ -15,6 +15,7 @@ entrypoint (the legacy stateless ``/chat`` route was retired in M8).
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -48,6 +49,35 @@ logger = logging.getLogger(__name__)
 
 # Roles that belong in the LLM message history (working memory).
 _HISTORY_ROLES = (MessageRole.USER, MessageRole.ASSISTANT)
+
+
+def _ms(start: float) -> float:
+    """Elapsed milliseconds since a ``perf_counter`` start, rounded for logs."""
+    return round((time.perf_counter() - start) * 1000, 1)
+
+
+def _log_turn_timing(
+    *,
+    phase: str,
+    conversation_id: uuid.UUID,
+    timings: dict[str, float | None],
+    memories_used: int,
+) -> None:
+    """Emit one structured timing line per turn (Railway-queryable fields).
+
+    Surfaces where a turn spends its time — memory retrieval, embedding, prompt
+    assembly, first-token, and full latency — without leaking any user content.
+    """
+    logger.info(
+        "turn_timing",
+        extra={
+            "event": "turn_timing",
+            "phase": phase,
+            "conversation_id": str(conversation_id),
+            "memories_used": memories_used,
+            **{k: v for k, v in timings.items() if v is not None},
+        },
+    )
 
 
 @dataclass(frozen=True)
@@ -88,6 +118,7 @@ async def generate_grounded_reply(
     history: list[dict[str, str]] | None = None,
     summary: str | None = None,
     identity: str | None = None,
+    conversation_id: uuid.UUID | None = None,
 ) -> GeneratedReply:
     """Ground a reply in the user's memories (+ optional thread history/summary).
 
@@ -95,13 +126,24 @@ async def generate_grounded_reply(
     nothing and does not commit. Used by ``run_turn``. ``identity`` is the
     authenticated user-profile block, injected ahead of memory.
     """
+    turn_start = time.perf_counter()
+
+    embed_start = time.perf_counter()
+    query_vector = await embedding_service.embed_query(message)
+    embedding_ms = _ms(embed_start)
+
+    retrieve_start = time.perf_counter()
     ranked = await memory_retrieval_service.retrieve_memories(
         session,
         user_id=user_id,
         query=message,
         embedding_service=embedding_service,
         limit=max_memories,
+        query_vector=query_vector,
     )
+    retrieve_memories_ms = _ms(retrieve_start)
+
+    prompt_start = time.perf_counter()
     candidates = [
         ContextMemory(
             content=item.memory.content,
@@ -122,7 +164,24 @@ async def generate_grounded_reply(
         summary=summary,
         identity=identity,
     )
+    prompt_build_ms = _ms(prompt_start)
+
+    llm_start = time.perf_counter()
     response = await llm.generate(system=payload.system, messages=payload.messages)
+    first_token_ms = _ms(llm_start)
+
+    _log_turn_timing(
+        phase="generate",
+        conversation_id=conversation_id or uuid.UUID(int=0),
+        timings={
+            "embedding_ms": embedding_ms,
+            "retrieve_memories_ms": retrieve_memories_ms,
+            "prompt_build_ms": prompt_build_ms,
+            "first_token_ms": first_token_ms,
+            "total_turn_ms": _ms(turn_start),
+        },
+        memories_used=len(package.memories),
+    )
     return GeneratedReply(
         reply=response.text,
         model=response.model,
@@ -241,6 +300,7 @@ async def run_turn(
                 history=history,
                 summary=summary_text,
                 identity=identity,
+                conversation_id=conversation_id,
             )
     elif settings.agents_run_recording:
         from app.services.agents import run_recorder
@@ -265,6 +325,7 @@ async def run_turn(
                 history=history,
                 summary=summary_text,
                 identity=identity,
+                conversation_id=conversation_id,
             )
         except Exception as exc:
             # Flush-only; without a commit the trace vanishes with the
@@ -294,6 +355,8 @@ async def run_turn(
             max_memories=max_memories,
             history=history,
             summary=summary_text,
+            identity=identity,
+            conversation_id=conversation_id,
         )
 
     assistant_message = await msg_repo.append_message(
@@ -399,6 +462,7 @@ async def stream_turn(
     LLM call. Providers without streaming fall back to one ``generate`` call
     whose full text is emitted as a single delta.
     """
+    turn_start = time.perf_counter()
     conversation = await conversation_service.get_conversation(
         session, user_id=user_id, conversation_id=conversation_id
     )
@@ -434,13 +498,24 @@ async def stream_turn(
     )
 
     # Build the grounded prompt (same pipeline as generate_grounded_reply).
+    # Embedding is timed separately from candidate retrieval/ranking by
+    # pre-embedding the query and handing the vector to the retriever.
+    embed_start = time.perf_counter()
+    query_vector = await embedding_service.embed_query(message)
+    embedding_ms = _ms(embed_start)
+
+    retrieve_start = time.perf_counter()
     ranked = await memory_retrieval_service.retrieve_memories(
         session,
         user_id=user_id,
         query=message,
         embedding_service=embedding_service,
         limit=max_memories,
+        query_vector=query_vector,
     )
+    retrieve_memories_ms = _ms(retrieve_start)
+
+    prompt_start = time.perf_counter()
     candidates = [
         ContextMemory(
             content=item.memory.content,
@@ -459,13 +534,19 @@ async def stream_turn(
         summary=summary_text,
         identity=identity,
     )
+    prompt_build_ms = _ms(prompt_start)
 
-    # Stream the reply, accumulating the full text for persistence.
+    # Stream the reply, accumulating the full text for persistence. Record the
+    # latency to the FIRST emitted token — the metric that drives perceived speed.
     chunks: list[str] = []
+    llm_start = time.perf_counter()
+    first_token_ms: float | None = None
     if isinstance(llm, SupportsStreaming):
         async for chunk in llm.stream(
             system=payload.system, messages=payload.messages
         ):
+            if first_token_ms is None:
+                first_token_ms = _ms(llm_start)
             chunks.append(chunk)
             yield {"type": "delta", "text": chunk}
         model = getattr(llm, "_default_model", llm.name)
@@ -473,9 +554,23 @@ async def stream_turn(
         response = await llm.generate(
             system=payload.system, messages=payload.messages
         )
+        first_token_ms = _ms(llm_start)
         chunks.append(response.text)
         model = response.model
         yield {"type": "delta", "text": response.text}
+
+    _log_turn_timing(
+        phase="stream",
+        conversation_id=conversation_id,
+        timings={
+            "embedding_ms": embedding_ms,
+            "retrieve_memories_ms": retrieve_memories_ms,
+            "prompt_build_ms": prompt_build_ms,
+            "first_token_ms": first_token_ms,
+            "total_turn_ms": _ms(turn_start),
+        },
+        memories_used=len(package.memories),
+    )
 
     reply_text = "".join(chunks)
 

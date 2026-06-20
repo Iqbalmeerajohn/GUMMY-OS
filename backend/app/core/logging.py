@@ -11,9 +11,22 @@ import logging
 import sys
 from datetime import UTC, datetime
 
+# Attributes present on every LogRecord; everything else passed via ``extra=``
+# is a structured field we want to surface in the JSON line (e.g. timing fields).
+_RESERVED_LOG_ATTRS = set(logging.makeLogRecord({}).__dict__) | {
+    "message",
+    "asctime",
+    "taskName",
+}
+
 
 class JsonFormatter(logging.Formatter):
-    """Render log records as compact JSON lines."""
+    """Render log records as compact JSON lines.
+
+    Any structured fields attached via ``logger.info(msg, extra={...})`` are
+    merged into the JSON object, so timing/diagnostic data (e.g.
+    ``total_turn_ms``) is queryable in the log drain, not buried in the message.
+    """
 
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, object] = {
@@ -22,6 +35,9 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
+        for key, value in record.__dict__.items():
+            if key not in _RESERVED_LOG_ATTRS and key not in payload:
+                payload[key] = value
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
         return json.dumps(payload, default=str)

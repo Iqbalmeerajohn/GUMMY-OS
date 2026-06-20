@@ -5,6 +5,7 @@ import { ArrowRight, Target } from "lucide-react";
 
 import { StatusBadge } from "@/components/feature/StatusBadge";
 import { useUpdates } from "@/components/updates/UpdatesProvider";
+import { useActiveGoals } from "@/lib/hooks/useDashboard";
 import {
   agentStatusLabel,
   getActiveAgents,
@@ -35,8 +36,18 @@ function Section({
   );
 }
 
-/** TODAY'S FOCUS — mock data until goals are wired into the agent loop. */
+/** TODAY'S FOCUS — leads with the user's real top active goal when one exists,
+ *  falling back to onboarding guidance for brand-new accounts. */
 export function TodaysFocus() {
+  const { data, isLoading } = useActiveGoals();
+  const goals = data?.items ?? [];
+  const topGoal = goals[0] ?? null;
+  const goalTitle = topGoal?.title ?? "Set your first goal";
+
+  const nextStep = topGoal
+    ? "Open the workspace and ask GUMMY to help you make progress."
+    : "Tell GUMMY what you're working toward — it'll track it for you.";
+
   return (
     <Section title="Today's Focus">
       <div className="grid gap-4 sm:grid-cols-3">
@@ -45,22 +56,24 @@ export function TodaysFocus() {
             <Target className="size-4" />
             Current Goal
           </div>
-          <p className="mt-2 text-sm">Ship the GUMMY Web MVP</p>
+          <p className="mt-2 line-clamp-2 text-sm">
+            {isLoading ? "Loading…" : goalTitle}
+          </p>
         </div>
         <div className="border-border/50 bg-background/40 rounded-xl border p-4">
-          <span className="text-muted-foreground text-xs">Progress</span>
-          <div className="bg-muted mt-2 h-2 rounded-full">
-            <div className="bg-primary h-full w-[65%] rounded-full" />
-          </div>
-          <p className="text-muted-foreground mt-1.5 text-xs">65% complete</p>
+          <span className="text-muted-foreground text-xs">Active goals</span>
+          <p className="mt-2 text-2xl leading-none font-semibold tabular-nums">
+            {isLoading ? "—" : goals.length}
+          </p>
+          <p className="text-muted-foreground mt-1.5 text-xs">
+            {goals.length === 0 ? "None tracked yet" : "Being tracked by GUMMY"}
+          </p>
         </div>
         <div className="border-border/50 bg-background/40 rounded-xl border p-4">
           <span className="text-muted-foreground text-xs">
             Suggested Next Step
           </span>
-          <p className="mt-2 text-sm">
-            Review the foundation, then start Chat (M3).
-          </p>
+          <p className="mt-2 text-sm">{nextStep}</p>
         </div>
       </div>
     </Section>
