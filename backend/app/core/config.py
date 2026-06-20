@@ -159,10 +159,14 @@ class Settings(BaseSettings):
     agents_router_llm_fallback: bool = False
 
     # ── Memory extraction consent (Phase 2 / memory-system §2) ────────────────
-    # Gates the automatic conversation→memory extraction consumer. Safe default:
-    # "assisted" persists nothing automatically (proposal surface is future work);
-    # "autonomous" auto-saves; "explicit" disables automatic extraction entirely.
-    memory_consent_mode: str = "assisted"
+    # Gates the automatic conversation→memory extraction consumer:
+    #   "autonomous" — auto-saves clearly-durable facts (the default: a personal
+    #     AI OS must remember facts like a birthday across conversations);
+    #   "assisted"   — proposes but persists nothing automatically (the proposal
+    #     surface is future work, so it currently saves nothing — durable facts
+    #     are silently lost, which is why this is NOT the default);
+    #   "explicit"   — disables automatic extraction entirely.
+    memory_consent_mode: str = "autonomous"
 
     @field_validator("log_level")
     @classmethod

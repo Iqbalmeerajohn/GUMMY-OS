@@ -33,7 +33,10 @@ from app.models.enums import MessageRole, SummaryType
 from app.repositories import conversation_repository as conv_repo
 from app.repositories import conversation_summary_repository as sum_repo
 from app.repositories import message_repository as msg_repo
-from app.services.conversation import conversation_service
+from app.services.conversation import (
+    conversation_continuity_service,
+    conversation_service,
+)
 from app.services.embeddings.embedding_service import EmbeddingService
 from app.services.llm.base import LLMProvider, SupportsStreaming
 from app.services.memory import (
@@ -157,12 +160,20 @@ async def generate_grounded_reply(
         token_budget=token_budget,
         max_memories=max_memories,
     )
+    prior_context = await conversation_continuity_service.gather_prior_context(
+        session,
+        user_id=user_id,
+        message=message,
+        embedding_service=embedding_service,
+        current_conversation_id=conversation_id,
+    )
     payload = prompt_builder.build_prompt(
         context=package,
         query=message,
         history=history,
         summary=summary,
         identity=identity,
+        prior_context=prior_context,
     )
     prompt_build_ms = _ms(prompt_start)
 
@@ -527,12 +538,22 @@ async def stream_turn(
     package = context_assembly_service.assemble_context(
         candidates, token_budget=token_budget, max_memories=max_memories
     )
+    # Continuity: when the user refers back to a past discussion, fold in the
+    # most relevant *other* conversations (best-effort; never blocks the reply).
+    prior_context = await conversation_continuity_service.gather_prior_context(
+        session,
+        user_id=user_id,
+        message=message,
+        embedding_service=embedding_service,
+        current_conversation_id=conversation_id,
+    )
     payload = prompt_builder.build_prompt(
         context=package,
         query=message,
         history=history,
         summary=summary_text,
         identity=identity,
+        prior_context=prior_context,
     )
     prompt_build_ms = _ms(prompt_start)
 

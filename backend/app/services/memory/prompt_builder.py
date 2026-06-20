@@ -49,6 +49,7 @@ def build_prompt(
     history: list[dict[str, str]] | None = None,
     summary: str | None = None,
     identity: str | None = None,
+    prior_context: str | None = None,
 ) -> PromptPayload:
     """Build the system prompt + chat messages for a memory-grounded turn.
 
@@ -56,7 +57,9 @@ def build_prompt(
     each a ``{"role", "content"}`` dict, prepended before the current ``query``.
     ``summary`` is the thread's rolling summary (compressed older context).
     ``identity`` is the authenticated user-profile block (see the identity
-    service); it precedes memory so every agent knows who the user is. All three
+    service); it precedes memory so every agent knows who the user is.
+    ``prior_context`` is relevant context pulled from *other* conversations when
+    the user references a past discussion (conversation continuity). All four
     default to ``None`` so the legacy path stays byte-identical.
     """
     identity_block = f"{identity}\n\n" if identity else ""
@@ -67,6 +70,12 @@ def build_prompt(
         f"Remembered context about the user:\n"
         f"<memory>\n{_render_context(context)}\n</memory>"
     )
+    if prior_context:
+        system += (
+            "\n\nRelevant context from the user's earlier conversations "
+            "(use it when they refer back to a past discussion):\n"
+            f"<prior_conversations>\n{prior_context}\n</prior_conversations>"
+        )
     if summary:
         system += (
             "\n\nSummary of earlier in this conversation:\n"

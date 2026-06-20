@@ -11,10 +11,17 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 
-from app.api.deps import CurrentUserId, DbSession, EmbeddingServiceDep
+from app.api.deps import (
+    CurrentUserId,
+    DbSession,
+    EmbeddingServiceDep,
+    SettingsDep,
+)
 from app.core.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
+from app.core.exceptions import AppError
 from app.models.enums import MemoryCategory, MemoryStatus
 from app.repositories import search_repository as search_repo
+from app.schemas.diagnostics import DiagnosticMemory, MemoryDiagnosticsResponse
 from app.schemas.memory import (
     MemoryCreate,
     MemoryListResponse,
@@ -32,7 +39,15 @@ from app.schemas.search import (
     MemorySearchResponse,
     MemorySearchResult,
 )
-from app.services.memory import memory_retrieval_service, memory_service
+from app.services.memory import (
+    context_assembly_service,
+    memory_retrieval_service,
+    memory_service,
+)
+from app.services.memory.context_assembly_service import (
+    ContextMemory,
+    render_memory_line,
+)
 
 router = APIRouter(prefix="/memories", tags=["memories"])
 
@@ -78,6 +93,89 @@ async def list_memories(
         total=total,
         limit=limit,
         offset=offset,
+    )
+
+
+@router.get(
+    "/diagnostics",
+    response_model=MemoryDiagnosticsResponse,
+    summary="Memory-confidence diagnostics: trace a fact through the pipeline",
+)
+async def memory_diagnostics(
+    user_id: CurrentUserId,
+    db: DbSession,
+    embeddings: EmbeddingServiceDep,
+    settings: SettingsDep,
+    q: Annotated[str, Query(min_length=1, max_length=1000)],
+    limit: Annotated[int, Query(ge=1, le=50)] = 10,
+) -> MemoryDiagnosticsResponse:
+    """Trace a query through retrieval → ranking → prompt selection.
+
+    Surfaces the four things that decide whether a remembered fact reaches the
+    model: whether extraction is even on (``consent_mode``), what is stored,
+    each candidate's retrieval scores, and which candidates survive token-budget
+    selection into the prompt's ``<memory>`` block. Read-only (no reinforcement).
+    """
+    query = q.strip()
+    if not query:
+        raise AppError(
+            "query must not be empty or whitespace",
+            code="empty_query",
+            status_code=422,
+        )
+
+    consent = settings.memory_consent_mode.lower()
+    _, total = await memory_service.list_memories(
+        db, user_id=user_id, category=None, status=None, limit=1, offset=0
+    )
+
+    ranked = await memory_retrieval_service.retrieve_memories(
+        db,
+        user_id=user_id,
+        query=query,
+        embedding_service=embeddings,
+        limit=limit,
+        reinforce=False,
+    )
+    candidates = [
+        ContextMemory(
+            content=item.memory.content,
+            category=item.memory.category.value,
+            score=item.final_score,
+        )
+        for item in ranked
+    ]
+    package = context_assembly_service.assemble_context(candidates)
+    included = {m.content.strip().lower() for m in package.memories}
+
+    results = [
+        DiagnosticMemory(
+            id=item.memory.id,
+            category=item.memory.category,
+            content=item.memory.content,
+            importance_score=item.memory.importance_score,
+            confidence_score=item.memory.confidence_score,
+            semantic_similarity=item.semantic_similarity,
+            recency_score=item.recency_score,
+            final_score=item.final_score,
+            included_in_prompt=item.memory.content.strip().lower() in included,
+        )
+        for item in ranked
+    ]
+    prompt_block = (
+        "\n".join(render_memory_line(m) for m in package.memories)
+        or "(no memories selected)"
+    )
+
+    return MemoryDiagnosticsResponse(
+        query=query,
+        consent_mode=consent,
+        extraction_enabled=consent == "autonomous",
+        total_memories=total,
+        retrieved_count=len(results),
+        included_count=len(package.memories),
+        results=results,
+        prompt_memory_block=prompt_block,
     )
 
 
