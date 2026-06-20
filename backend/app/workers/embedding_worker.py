@@ -23,6 +23,7 @@ from app.core.constants import (
     EMBEDDING_MAX_RETRIES,
     EMBEDDING_RETRY_BASE_DELAY_SECONDS,
 )
+from app.core.observability import capture_exception
 from app.core.tenant_context import set_current_user_id
 from app.repositories import memory_repository as repo
 from app.services.embeddings.embedding_service import EmbeddingService
@@ -111,11 +112,13 @@ class EmbeddingWorker:
                 self._queue.task_done()
 
     async def _process_with_retries(self, job: EmbeddingJob) -> None:
+        last_exc: Exception | None = None
         for attempt in range(1, self._max_retries + 1):
             try:
                 await self._process(job)
                 return
             except Exception as exc:
+                last_exc = exc
                 logger.warning(
                     "embedding job failed (attempt %d/%d) for memory %s: %s",
                     attempt,
@@ -126,6 +129,14 @@ class EmbeddingWorker:
                 if attempt < self._max_retries:
                     await asyncio.sleep(self._retry_base_delay * (2 ** (attempt - 1)))
         logger.error("embedding job permanently failed for memory %s", job.memory_id)
+        # Retries exhausted and the job is dropped — report so the permanent
+        # failure is visible. No-op when monitoring is disabled.
+        if last_exc is not None:
+            capture_exception(
+                last_exc,
+                component="embedding_worker",
+                memory_id=str(job.memory_id),
+            )
 
     async def _process(self, job: EmbeddingJob) -> None:
         assert self._sessionmaker is not None

@@ -29,6 +29,7 @@ from app.core.constants import (
     DEFAULT_CONTEXT_TOKEN_BUDGET,
     DEFAULT_TURN_HISTORY_MESSAGES,
 )
+from app.core.observability import capture_exception
 from app.models.enums import MessageRole, SummaryType
 from app.repositories import conversation_repository as conv_repo
 from app.repositories import conversation_summary_repository as sum_repo
@@ -296,9 +297,16 @@ async def run_turn(
                 output_tokens=orch.output_tokens,
             )
             proposed_memories = orch.proposed_memories
-        except Exception:
+        except Exception as exc:
             logger.exception(
                 "orchestrator failed; falling back to the legacy reply core"
+            )
+            # The user still gets a reply via the fallback below, so this is
+            # swallowed — report it so orchestration regressions are visible.
+            capture_exception(
+                exc,
+                component="agent_orchestration",
+                conversation_id=str(conversation_id),
             )
             reply = await generate_grounded_reply(
                 session,

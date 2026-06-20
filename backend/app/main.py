@@ -20,6 +20,7 @@ from app.api.v1 import health
 from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging
+from app.core.observability import init_sentry
 from app.core.security import assert_auth_safe
 from app.database.session import dispose_engine, get_sessionmaker
 from app.services.agents.registry import get_registry
@@ -80,6 +81,9 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     """Construct and configure the FastAPI application."""
     settings = get_settings()
+    # Initialize monitoring as early as possible (no-op without SENTRY_DSN) so
+    # boot-time and request errors are captured from the first request.
+    init_sentry(settings)
     assert_auth_safe(settings)  # fail fast if dev auth bypass reaches production
 
     app = FastAPI(

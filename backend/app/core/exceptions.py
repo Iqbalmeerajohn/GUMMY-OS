@@ -11,6 +11,8 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from app.core.observability import capture_exception
+
 logger = logging.getLogger(__name__)
 
 
@@ -43,6 +45,10 @@ async def app_error_handler(_: Request, exc: Exception) -> JSONResponse:
 
 
 async def unhandled_error_handler(_: Request, exc: Exception) -> JSONResponse:
+    # Report to Sentry explicitly: registering an ``Exception`` handler means
+    # Starlette catches the error before the integration would, so the request
+    # would otherwise never be reported. No-op when monitoring is disabled.
+    capture_exception(exc, component="api")
     logger.exception("unhandled error: %s", exc)
     return JSONResponse(
         status_code=500,

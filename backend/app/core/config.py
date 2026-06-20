@@ -168,6 +168,15 @@ class Settings(BaseSettings):
     #   "explicit"   — disables automatic extraction entirely.
     memory_consent_mode: str = "autonomous"
 
+    # ── Observability (Sentry) ────────────────────────────────────────────────
+    # Error monitoring + performance traces. Fully disabled when sentry_dsn is
+    # unset (the DSN is not a secret, but keep it per-environment). environment
+    # defaults to app_env; sample rates are 0–1.
+    sentry_dsn: str | None = None
+    sentry_environment: str | None = None
+    sentry_traces_sample_rate: float = 0.1
+    sentry_profiles_sample_rate: float = 0.0
+
     @field_validator("log_level")
     @classmethod
     def _normalize_log_level(cls, value: str) -> str:

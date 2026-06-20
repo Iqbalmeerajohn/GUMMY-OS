@@ -19,6 +19,7 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.observability import capture_exception
 from app.core.tenant_context import set_current_user_id
 from app.services.conversation.enrichment import (
     ENRICHMENT_CONSUMERS,
@@ -126,11 +127,22 @@ class EnrichmentWorker:
                         )
                         await session.commit()
                 except Exception as exc:
+                    consumer_name = getattr(consumer, "__name__", str(consumer))
                     logger.warning(
                         "enrichment consumer %s failed for conversation %s: %s",
-                        getattr(consumer, "__name__", consumer),
+                        consumer_name,
                         job.conversation_id,
                         exc,
+                    )
+                    # Swallowed by design so one consumer's failure never blocks
+                    # the others — report it to Sentry so it isn't invisible.
+                    # Covers memory-extraction failures (the extract_memories
+                    # consumer) and every other background enrichment failure.
+                    capture_exception(
+                        exc,
+                        component="enrichment_worker",
+                        consumer=consumer_name,
+                        conversation_id=str(job.conversation_id),
                     )
         finally:
             set_current_user_id(None)
