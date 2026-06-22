@@ -16,6 +16,7 @@ from anthropic import AsyncAnthropic
 from anthropic.types import MessageParam, TextBlock
 
 from app.core.exceptions import AppError
+from app.observability.langfuse import observe_generation
 from app.services.llm.base import LLMResponse
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,7 @@ class ClaudeGateway:
             )
         return self._client
 
+    @observe_generation
     async def generate(
         self,
         *,

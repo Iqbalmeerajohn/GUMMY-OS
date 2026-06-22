@@ -177,6 +177,18 @@ class Settings(BaseSettings):
     sentry_traces_sample_rate: float = 0.1
     sentry_profiles_sample_rate: float = 0.0
 
+    # ── Observability (Langfuse — LLM/agent tracing) ──────────────────────────
+    # Tracks every LLM call, token usage, latency, cost, and agent/retrieval
+    # metadata. Fully disabled (a no-op) unless BOTH the public and secret keys
+    # are set — the secret key is a real secret, so keep it out of the repo and
+    # set it per-environment (on Railway, the service's Variables). host points
+    # at Langfuse Cloud by default; sample_rate is 0–1.
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: str | None = None
+    langfuse_host: str = "https://cloud.langfuse.com"
+    langfuse_environment: str | None = None
+    langfuse_sample_rate: float = 1.0
+
     @field_validator("log_level")
     @classmethod
     def _normalize_log_level(cls, value: str) -> str:
@@ -198,6 +210,11 @@ class Settings(BaseSettings):
         if not self.supabase_url:
             return None
         return f"{self.supabase_url.rstrip('/')}/auth/v1/.well-known/jwks.json"
+
+    @property
+    def langfuse_enabled(self) -> bool:
+        """True only when both Langfuse keys are present (tracing active)."""
+        return bool(self.langfuse_public_key and self.langfuse_secret_key)
 
     @property
     def is_production(self) -> bool:

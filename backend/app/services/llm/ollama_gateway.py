@@ -24,6 +24,7 @@ from collections.abc import AsyncIterator
 import httpx
 
 from app.core.exceptions import AppError
+from app.observability.langfuse import observe_generation
 from app.services.llm.base import LLMResponse
 
 logger = logging.getLogger(__name__)
@@ -54,6 +55,7 @@ class OllamaGateway:
         self._max_tokens = max_tokens
         self._timeout = timeout
 
+    @observe_generation
     async def generate(
         self,
         *,

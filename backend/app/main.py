@@ -23,6 +23,7 @@ from app.core.logging import configure_logging
 from app.core.observability import init_sentry
 from app.core.security import assert_auth_safe
 from app.database.session import dispose_engine, get_sessionmaker
+from app.observability import langfuse as langfuse_obs
 from app.services.agents.registry import get_registry
 from app.services.embeddings.factory import get_embedding_service
 from app.services.llm.factory import get_llm_provider
@@ -75,6 +76,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await enrichment_worker.stop()
     await embedding_worker.stop()
     await dispose_engine()
+    langfuse_obs.shutdown()  # flush buffered LLM traces (no-op when disabled)
     logger.info("shutdown complete")
 
 
@@ -84,6 +86,8 @@ def create_app() -> FastAPI:
     # Initialize monitoring as early as possible (no-op without SENTRY_DSN) so
     # boot-time and request errors are captured from the first request.
     init_sentry(settings)
+    # LLM/agent tracing (no-op without Langfuse keys).
+    langfuse_obs.init_langfuse(settings)
     assert_auth_safe(settings)  # fail fast if dev auth bypass reaches production
 
     app = FastAPI(

@@ -29,6 +29,7 @@ from app.core.constants import (
 )
 from app.models.enums import MemoryCategory
 from app.models.memory import Memory
+from app.observability import langfuse as langfuse_obs
 from app.repositories import memory_repository as repo
 from app.repositories import search_repository as search_repo
 from app.services.embeddings.embedding_service import EmbeddingService
@@ -146,48 +147,68 @@ async def retrieve_memories(
     """
     now = now or datetime.now(UTC)
 
-    if query_vector is None:
-        query_vector = await embedding_service.embed_query(query)
-    candidates = await search_repo.search_similar_memories(
-        session,
-        user_id=user_id,
-        query_vector=query_vector,
-        embedding_model=embedding_service.model_name,
-        limit=limit * RETRIEVAL_CANDIDATE_MULTIPLIER,
-        include_archived=include_archived,
-        category=category,
-    )
+    with langfuse_obs.observe_retrieval(
+        input=query,
+        metadata={
+            "limit": limit,
+            "category": category.value if category else None,
+            "include_archived": include_archived,
+            "reinforce": reinforce,
+        },
+    ) as span:
+        if query_vector is None:
+            query_vector = await embedding_service.embed_query(query)
+        candidates = await search_repo.search_similar_memories(
+            session,
+            user_id=user_id,
+            query_vector=query_vector,
+            embedding_model=embedding_service.model_name,
+            limit=limit * RETRIEVAL_CANDIDATE_MULTIPLIER,
+            include_archived=include_archived,
+            category=category,
+        )
 
-    ranked: list[RankedMemory] = []
-    for memory, distance in candidates:
-        similarity = _clamp01(1.0 - distance)
-        recency = compute_recency_score(
-            memory.last_recalled_at or memory.created_at, now=now
-        )
-        score = compute_hybrid_score(
-            semantic_similarity=similarity,
-            importance_score=memory.importance_score,
-            confidence_score=memory.confidence_score,
-            recency_score=recency,
-        )
-        ranked.append(
-            RankedMemory(
-                memory=memory,
-                semantic_similarity=similarity,
-                recency_score=recency,
-                final_score=score,
+        ranked: list[RankedMemory] = []
+        for memory, distance in candidates:
+            similarity = _clamp01(1.0 - distance)
+            recency = compute_recency_score(
+                memory.last_recalled_at or memory.created_at, now=now
             )
+            score = compute_hybrid_score(
+                semantic_similarity=similarity,
+                importance_score=memory.importance_score,
+                confidence_score=memory.confidence_score,
+                recency_score=recency,
+            )
+            ranked.append(
+                RankedMemory(
+                    memory=memory,
+                    semantic_similarity=similarity,
+                    recency_score=recency,
+                    final_score=score,
+                )
+            )
+
+        ranked.sort(key=lambda item: item.final_score, reverse=True)
+        top = ranked[:limit]
+
+        span.update(
+            output={
+                "candidates": len(candidates),
+                "returned": len(top),
+                "top_score": round(top[0].final_score, 4) if top else None,
+                "embedding_model": embedding_service.model_name,
+            }
         )
 
-    ranked.sort(key=lambda item: item.final_score, reverse=True)
-    top = ranked[:limit]
+        if reinforce and top:
+            await reinforce_memories(
+                session, [item.memory for item in top], now=now
+            )
+            await session.commit()
+            # `updated_at` is expired by the server-side onupdate; reload eagerly
+            # so callers never trigger a lazy load outside the async session.
+            for item in top:
+                await session.refresh(item.memory)
 
-    if reinforce and top:
-        await reinforce_memories(session, [item.memory for item in top], now=now)
-        await session.commit()
-        # `updated_at` is expired by the server-side onupdate; reload eagerly so
-        # callers never trigger a lazy load outside the async session context.
-        for item in top:
-            await session.refresh(item.memory)
-
-    return top
+        return top

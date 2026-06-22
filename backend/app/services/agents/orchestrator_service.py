@@ -39,6 +39,7 @@ from app.core.constants import (
 from app.models.agent_run import AgentRun
 from app.models.agent_step import AgentStep
 from app.models.enums import AgentContext, AgentMessageRole, PlanShape
+from app.observability import langfuse as langfuse_obs
 from app.repositories import agent_message_repository as a2a_repo
 from app.schemas.agents import (
     AgentResult,
@@ -369,112 +370,131 @@ async def orchestrate(
     caller falls back to the legacy reply core.
     """
     settings = get_settings()
-    decision: RoutingDecision = await router.route(
-        intent=message,
-        registry=get_registry(),
-        agent_context=agent_context,
-        # The LLM classifier is opt-in (cost): rules are deterministic and
-        # free, and the general agent is a safe catch-all.
-        llm=llm if settings.agents_router_llm_fallback else None,
-        fast_model=settings.claude_model_fast,
-    )
-    route_plan = {
-        "shape": decision.plan_shape.value,
-        "steps": [s.agent_key for s in decision.steps],
-        "rationale": decision.rationale,
-        "confidence": decision.confidence,
-    }
-    run = await run_recorder.open_run(
-        session,
-        user_id=user_id,
-        conversation_id=conversation_id,
-        route_plan=route_plan,
-    )
-    guard = _RunGuard()
-    try:
-        base_pack = await context_builder.build(
+    with langfuse_obs.observe_agent_run(
+        "orchestrate",
+        input={"message": message[:AGENT_TRACE_PREVIEW_CHARS]},
+        metadata={"conversation_id": str(conversation_id)},
+    ) as span:
+        decision: RoutingDecision = await router.route(
+            intent=message,
+            registry=get_registry(),
+            agent_context=agent_context,
+            # The LLM classifier is opt-in (cost): rules are deterministic and
+            # free, and the general agent is a safe catch-all.
+            llm=llm if settings.agents_router_llm_fallback else None,
+            fast_model=settings.claude_model_fast,
+        )
+        route_plan = {
+            "shape": decision.plan_shape.value,
+            "steps": [s.agent_key for s in decision.steps],
+            "rationale": decision.rationale,
+            "confidence": decision.confidence,
+        }
+        span.update(metadata={"route_plan": route_plan})
+        run = await run_recorder.open_run(
             session,
             user_id=user_id,
-            query=message,
-            embedding_service=embedding_service,
-            max_memories=max_memories,
-            history=history,
-            summary=summary,
+            conversation_id=conversation_id,
+            route_plan=route_plan,
         )
-        runner = (
-            _run_parallel
-            if decision.plan_shape == PlanShape.PARALLEL
-            else _run_sequential
-        )
-        results = await runner(
-            session,
-            run=run,
-            decision=decision,
-            base_pack=base_pack,
-            guard=guard,
-            message=message,
-            llm=llm,
-            token_budget=token_budget,
-            max_memories=max_memories,
-            user_identity=user_identity,
-        )
-        if not results:  # defensive: an empty route plan is a bug
-            raise RuntimeError("router produced an empty route plan")
-    except Exception as exc:
-        await run_recorder.close_run_failure(session, run, error=str(exc))
-        raise
+        guard = _RunGuard()
+        try:
+            base_pack = await context_builder.build(
+                session,
+                user_id=user_id,
+                query=message,
+                embedding_service=embedding_service,
+                max_memories=max_memories,
+                history=history,
+                summary=summary,
+            )
+            runner = (
+                _run_parallel
+                if decision.plan_shape == PlanShape.PARALLEL
+                else _run_sequential
+            )
+            results = await runner(
+                session,
+                run=run,
+                decision=decision,
+                base_pack=base_pack,
+                guard=guard,
+                message=message,
+                llm=llm,
+                token_budget=token_budget,
+                max_memories=max_memories,
+                user_identity=user_identity,
+            )
+            if not results:  # defensive: an empty route plan is a bug
+                raise RuntimeError("router produced an empty route plan")
+        except Exception as exc:
+            await run_recorder.close_run_failure(session, run, error=str(exc))
+            raise
 
-    await run_recorder.close_run_success(session, run)
+        await run_recorder.close_run_success(session, run)
 
-    reply = compose.compose_reply(decision.plan_shape, results)
-    last_result = results[-1][1]
-    total_cost = CostInfo(
-        tokens=sum(r.cost.tokens for _, r in results),
-        usd=sum(r.cost.usd for _, r in results),
-    )
-    if decision.plan_shape == PlanShape.PARALLEL:
-        input_tokens = sum(
-            int(r.output.get("input_tokens", 0)) for _, r in results
+        reply = compose.compose_reply(decision.plan_shape, results)
+        last_result = results[-1][1]
+        total_cost = CostInfo(
+            tokens=sum(r.cost.tokens for _, r in results),
+            usd=sum(r.cost.usd for _, r in results),
         )
-        output_tokens = sum(
-            int(r.output.get("output_tokens", 0)) for _, r in results
-        )
-        model = next(
-            (
-                str(r.output["model"])
-                for _, r in results
-                if r.output.get("model")
-            ),
-            "",
-        )
-        memories_used = max(
-            (int(r.output.get("memories_used", 0)) for _, r in results),
-            default=0,
-        )
-    else:
-        input_tokens = int(last_result.output.get("input_tokens", 0))
-        output_tokens = int(last_result.output.get("output_tokens", 0))
-        model = str(last_result.output.get("model", ""))
-        memories_used = int(last_result.output.get("memories_used", 0))
+        if decision.plan_shape == PlanShape.PARALLEL:
+            input_tokens = sum(
+                int(r.output.get("input_tokens", 0)) for _, r in results
+            )
+            output_tokens = sum(
+                int(r.output.get("output_tokens", 0)) for _, r in results
+            )
+            model = next(
+                (
+                    str(r.output["model"])
+                    for _, r in results
+                    if r.output.get("model")
+                ),
+                "",
+            )
+            memories_used = max(
+                (int(r.output.get("memories_used", 0)) for _, r in results),
+                default=0,
+            )
+        else:
+            input_tokens = int(last_result.output.get("input_tokens", 0))
+            output_tokens = int(last_result.output.get("output_tokens", 0))
+            model = str(last_result.output.get("model", ""))
+            memories_used = int(last_result.output.get("memories_used", 0))
 
-    return OrchestrationResult(
-        reply=reply,
-        run_id=run.id,
-        proposed_actions=[
-            action for _, r in results for action in r.proposed_actions
-        ],
-        proposed_memories=[
-            memory for _, r in results for memory in r.proposed_memories
-        ],
-        citations=[c for _, r in results for c in r.citations],
-        cost=total_cost,
-        message_metadata={
-            "agent_key": results[-1][0],
-            "run_id": str(run.id),
-            "route_shape": decision.plan_shape.value,
-        },
-        model=model,
-        memories_used=memories_used,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-    )
+        span.update(
+            output={"reply": reply[:AGENT_TRACE_PREVIEW_CHARS]},
+            metadata={
+                "model": model,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cost_tokens": total_cost.tokens,
+                "cost_usd": float(total_cost.usd),
+                "memories_used": memories_used,
+                "agent_key": results[-1][0],
+                "run_id": str(run.id),
+            },
+        )
+        return OrchestrationResult(
+            reply=reply,
+            run_id=run.id,
+            proposed_actions=[
+                action for _, r in results for action in r.proposed_actions
+            ],
+            proposed_memories=[
+                memory for _, r in results for memory in r.proposed_memories
+            ],
+            citations=[c for _, r in results for c in r.citations],
+            cost=total_cost,
+            message_metadata={
+                "agent_key": results[-1][0],
+                "run_id": str(run.id),
+                "route_shape": decision.plan_shape.value,
+            },
+            model=model,
+            memories_used=memories_used,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
