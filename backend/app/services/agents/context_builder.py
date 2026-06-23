@@ -11,20 +11,24 @@ the Phase 2 ordering preserved exactly). Token budgeting/dedupe stay in
 
 from __future__ import annotations
 
+import logging
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.constants import (
+    CONTEXT_MAX_FILES,
     CONTEXT_MAX_GOALS,
     CONTEXT_MAX_TASKS,
     DEFAULT_CONTEXT_MAX_MEMORIES,
 )
 from app.observability import langfuse as langfuse_obs
-from app.repositories import goal_repository, task_repository
+from app.repositories import file_repository, goal_repository, task_repository
 from app.schemas.agents import ContextPack
 from app.services.embeddings.embedding_service import EmbeddingService
 from app.services.memory import memory_retrieval_service
+
+logger = logging.getLogger(__name__)
 
 
 async def build(
@@ -63,14 +67,42 @@ async def build(
     ]
     # Read access only (M5): exclusively *active* goals reach the agent —
     # completed and archived goals are intentionally never injected.
+    #
+    # Wrapped in a SAVEPOINT (``begin_nested``) + degrade-to-empty so a goal
+    # outage (e.g. a DB schema behind the code) can never poison the turn's
+    # transaction and take chat down. On PostgreSQL a failed statement aborts
+    # the whole transaction; the savepoint confines the rollback to this lookup
+    # so the agent still runs (without goals) and later writes still succeed.
+    active_goals: list = []
     with langfuse_obs.observe_operation("goal.retrieve_active") as span:
-        active_goals = await goal_repository.list_active(
-            session, user_id=user_id, limit=CONTEXT_MAX_GOALS
-        )
+        try:
+            async with session.begin_nested():
+                active_goals = await goal_repository.list_active(
+                    session, user_id=user_id, limit=CONTEXT_MAX_GOALS
+                )
+        except Exception:
+            logger.exception(
+                "active-goals lookup failed; agent runs without goals"
+            )
         span.update(metadata={"active_goals": len(active_goals)})
     open_tasks = await task_repository.list_open(
         session, user_id=user_id, limit=CONTEXT_MAX_TASKS
     )
+    # Files awareness (M6): metadata only — the agent sees *what* the user has
+    # uploaded, never the bytes. Same SAVEPOINT degrade-to-empty guard as goals
+    # so a files-table outage can never take a turn down.
+    recent_files: list = []
+    with langfuse_obs.observe_operation("file.retrieve_recent") as span:
+        try:
+            async with session.begin_nested():
+                recent_files = await file_repository.list_recent(
+                    session, user_id=user_id, limit=CONTEXT_MAX_FILES
+                )
+        except Exception:
+            logger.exception(
+                "recent-files lookup failed; agent runs without files"
+            )
+        span.update(metadata={"recent_files": len(recent_files)})
     return ContextPack(
         memories=memories,
         history=list(history or []),
@@ -103,6 +135,16 @@ async def build(
                 "goal_id": str(t.goal_id) if t.goal_id else None,
             }
             for t in open_tasks
+        ],
+        files=[
+            {
+                "id": str(f.id),
+                "filename": f.original_filename,
+                "mime_type": f.mime_type,
+                "processing_status": f.processing_status.value,
+                "chunk_count": f.chunk_count,
+            }
+            for f in recent_files
         ],
         scratch=list(scratch or []),
     )

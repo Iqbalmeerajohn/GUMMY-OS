@@ -28,6 +28,7 @@ from app.models.enums import (
     MessageRole,
     PermissionTier,
     PlanShape,
+    ProcessingStatus,
     RunStatus,
     RunTrigger,
     SourceKind,
@@ -36,7 +37,10 @@ from app.models.enums import (
     TaskStatus,
     ToolDecision,
     ToolRunStatus,
+    UploadStatus,
 )
+from app.models.file import File
+from app.models.file_chunk import FileChunk
 from app.models.goal import Goal
 from app.models.goal_milestone import GoalMilestone
 from app.models.memory import Memory
@@ -90,4 +94,9 @@ __all__ = [
     "TaskStatus",
     "ActionApproval",
     "ApprovalStatus",
+    # M6 — Files System
+    "File",
+    "FileChunk",
+    "UploadStatus",
+    "ProcessingStatus",
 ]

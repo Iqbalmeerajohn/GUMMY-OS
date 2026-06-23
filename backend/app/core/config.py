@@ -168,6 +168,16 @@ class Settings(BaseSettings):
     #   "explicit"   — disables automatic extraction entirely.
     memory_consent_mode: str = "autonomous"
 
+    # ── Files System (M6) ─────────────────────────────────────────────────────
+    # Storage backend for uploaded file bytes. "local" writes to the filesystem
+    # under ``files_storage_dir`` (dev / single-node). The abstraction is
+    # provider-agnostic by design — "supabase" / "r2" / "s3" plug in here later
+    # without touching the service or API layers.
+    files_storage_provider: str = "local"
+    # Base directory for the local provider. Relative paths resolve against the
+    # backend working directory; override per-environment.
+    files_storage_dir: str = "var/files"
+
     # ── Observability (Sentry) ────────────────────────────────────────────────
     # Error monitoring + performance traces. Fully disabled when sentry_dsn is
     # unset (the DSN is not a secret, but keep it per-environment). environment

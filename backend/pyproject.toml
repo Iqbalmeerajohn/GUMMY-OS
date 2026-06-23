@@ -24,6 +24,11 @@ dependencies = [
     "pyjwt[crypto]>=2.8",
     "sentry-sdk[fastapi]>=2.0",
     "langfuse>=4.0,<5.0",
+    # M6 Files System: multipart uploads + lazy-imported text extractors.
+    "python-multipart>=0.0.9",
+    "pypdf>=5.0",
+    "python-docx>=1.1",
+    "openpyxl>=3.1",
 ]
 
 [project.optional-dependencies]

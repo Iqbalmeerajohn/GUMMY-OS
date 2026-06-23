@@ -15,6 +15,7 @@ from fastapi import APIRouter
 from app.api.v1 import (
     actions,
     conversations,
+    files,
     goals,
     memories,
     milestones,
@@ -28,3 +29,4 @@ api_router.include_router(goals.router)
 api_router.include_router(milestones.router)
 api_router.include_router(tasks.router)
 api_router.include_router(actions.router)
+api_router.include_router(files.router)

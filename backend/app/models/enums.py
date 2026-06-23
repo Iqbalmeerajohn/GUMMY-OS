@@ -251,6 +251,37 @@ class ToolRunStatus(StrEnum):
     NOT_EXECUTED = "not_executed"
 
 
+# ── M6: Files System ──────────────────────────────────────────────────────────
+
+
+class UploadStatus(StrEnum):
+    """Lifecycle of the *bytes* of a file (M6 Files System).
+
+    ``pending`` — a row exists but the content has not landed in storage yet.
+    ``uploaded`` — the bytes are persisted in the storage backend.
+    ``failed`` — the upload to storage failed; the row is a tombstone.
+    """
+
+    PENDING = "pending"
+    UPLOADED = "uploaded"
+    FAILED = "failed"
+
+
+class ProcessingStatus(StrEnum):
+    """Lifecycle of the *knowledge extraction* for a file (M6 Files System).
+
+    ``pending`` — uploaded but not yet processed.
+    ``processing`` — text extraction / chunking is in flight.
+    ``completed`` — chunks are stored and the file is queryable.
+    ``failed`` — extraction or chunking failed (captured to Sentry).
+    """
+
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 def enum_type(enum_cls: type[Enum], name: str) -> SAEnum:
     """Build a consistent string-backed SQLAlchemy Enum column type.
 

@@ -45,6 +45,10 @@ class ContextPack(BaseModel):
     summary: str | None = None
     goals: list[dict] = Field(default_factory=list)
     tasks: list[dict] = Field(default_factory=list)
+    # Uploaded-file *metadata* the agent can see (M6) — filename / type /
+    # processing status only, never file content. Agent file-selection logic
+    # builds on this seam in a later phase.
+    files: list[dict] = Field(default_factory=list)
     # Prior agent outputs within this run (pipeline hand-off scratchpad).
     scratch: list[dict] = Field(default_factory=list)
 

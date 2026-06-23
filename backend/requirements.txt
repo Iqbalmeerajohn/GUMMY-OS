@@ -2,6 +2,13 @@
 # Install:  pip install -r requirements.txt
 fastapi>=0.115
 uvicorn[standard]>=0.32
+# Multipart form parsing — required by FastAPI for file uploads (M6 Files).
+python-multipart>=0.0.9
+# File text extraction (M6 Files): PDF + DOCX + XLSX. Pure-Python, lightweight;
+# imported lazily so they are only needed when that format is uploaded.
+pypdf>=5.0
+python-docx>=1.1
+openpyxl>=3.1
 pydantic>=2.9
 pydantic-settings>=2.6
 sqlalchemy[asyncio]>=2.0

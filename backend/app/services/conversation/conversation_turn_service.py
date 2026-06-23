@@ -66,11 +66,19 @@ async def _active_goals_for_prompt(
 
     Best-effort: a goals lookup must never cost the user a reply, so any failure
     degrades to no goals rather than raising.
+
+    The query runs inside a SAVEPOINT (``begin_nested``). A bare ``try/except``
+    is *not* enough: on PostgreSQL a failed statement (e.g. a schema that is
+    behind the code) aborts the whole transaction, so catching the Python
+    exception still leaves the turn's transaction poisoned and the next write
+    raises ``InFailedSQLTransactionError``. The savepoint rolls back only this
+    lookup, leaving the outer transaction usable so the reply still persists.
     """
     try:
-        goals = await goal_repository.list_active(
-            session, user_id=user_id, limit=CONTEXT_MAX_GOALS
-        )
+        async with session.begin_nested():
+            goals = await goal_repository.list_active(
+                session, user_id=user_id, limit=CONTEXT_MAX_GOALS
+            )
     except Exception:
         logger.exception("active-goals lookup failed; replying without goals")
         return []

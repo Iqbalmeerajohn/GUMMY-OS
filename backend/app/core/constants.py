@@ -134,6 +134,37 @@ DEFAULT_CHAT_MAX_TOKENS = 2048
 DEFAULT_LLM_TIMEOUT_SECONDS = 30.0
 DEFAULT_LLM_MAX_RETRIES = 2
 
+# ── Files System (M6) ─────────────────────────────────────────────────────────
+# Upload size ceiling (bytes). 25 MiB covers resumes, notes, and typical PDFs
+# while bounding storage and processing cost. Enforced at the API edge.
+MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
+# Deterministic chunking: target chunk size and overlap in characters. Character
+# windows keep chunking dependency-free and reproducible; embeddings are derived
+# later by the RAG layer, so we do not tokenize here. Overlap preserves context
+# across chunk boundaries for future retrieval quality.
+FILE_CHUNK_SIZE_CHARS = 1200
+FILE_CHUNK_OVERLAP_CHARS = 150
+# Rough chars→tokens divisor (shared heuristic, see APPROX_CHARS_PER_TOKEN) used
+# to record an approximate token_count per chunk without a tokenizer call.
+FILE_CHUNK_TOKEN_DIVISOR = 4
+# Supported upload MIME types (MVP). CSV/XLSX are included as cheap extras.
+# Maps canonical MIME → human label, used for validation and listing.
+SUPPORTED_FILE_MIME_TYPES: dict[str, str] = {
+    "application/pdf": "PDF",
+    "text/plain": "Text",
+    "text/markdown": "Markdown",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": (
+        "Word"
+    ),
+    "text/csv": "CSV",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": (
+        "Excel"
+    ),
+}
+# How many recently-uploaded files surface in agent context (metadata only —
+# never file content; see context_builder).
+CONTEXT_MAX_FILES = 10
+
 # ── Ollama (local inference) ──────────────────────────────────────────────────
 # Local, self-hosted models served by Ollama (https://ollama.com). No API key
 # and no per-call cost; selected via LLM_PROVIDER=ollama.
