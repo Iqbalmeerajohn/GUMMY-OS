@@ -6,6 +6,7 @@ import {
   Brain,
   Check,
   Compass,
+  FileText,
   Info,
   ListChecks,
   MessageSquare,
@@ -26,6 +27,7 @@ import {
 } from "@/components/ui/tooltip";
 import {
   useActiveGoals,
+  useFilesStats,
   useRecentConversations,
   useRecentMemories,
 } from "@/lib/hooks/useDashboard";
@@ -233,7 +235,10 @@ export function GoalsWidget() {
                     </span>
                   ) : null}
                 </div>
-                <GoalProgressBar value={g.progress_percentage} showLabel={false} />
+                <GoalProgressBar
+                  value={g.progress_percentage}
+                  showLabel={false}
+                />
               </li>
             ))}
           </ul>
@@ -252,6 +257,64 @@ export function GoalsWidget() {
               className="text-primary text-xs font-medium hover:underline"
             >
               View all goals →
+            </Link>
+          </div>
+        </>
+      )}
+    </SectionCard>
+  );
+}
+
+export function FilesWidget() {
+  const { data, isLoading, isError } = useFilesStats();
+  const [expanded, setExpanded] = useState(false);
+  const items = data?.recent ?? [];
+  const shown = expanded ? items : items.slice(0, 3);
+  return (
+    <SectionCard title="Files">
+      {isLoading ? (
+        <LoadingRows />
+      ) : isError || items.length === 0 ? (
+        <EmptyState
+          icon={FileText}
+          text="No files yet. Upload a document to grow GUMMY's knowledge."
+        />
+      ) : (
+        <>
+          <div className="text-muted-foreground mb-3 text-xs">
+            {data?.total ?? items.length} total
+          </div>
+          <ul className="space-y-2.5">
+            {shown.map((f) => (
+              <li
+                key={f.id}
+                className="border-border/50 bg-background/40 flex items-center gap-2 rounded-lg border p-2.5"
+              >
+                <FileText className="text-primary size-4 shrink-0" />
+                <span className="line-clamp-1 flex-1 text-sm">
+                  {f.original_filename}
+                </span>
+                <span className="text-muted-foreground shrink-0 text-[11px]">
+                  {formatRelativeTime(f.created_at)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-2.5 flex items-center justify-between">
+            {items.length > 3 ? (
+              <ShowMore
+                expanded={expanded}
+                onToggle={() => setExpanded((v) => !v)}
+                count={items.length}
+              />
+            ) : (
+              <span />
+            )}
+            <Link
+              href="/files"
+              className="text-primary text-xs font-medium hover:underline"
+            >
+              View all files →
             </Link>
           </div>
         </>

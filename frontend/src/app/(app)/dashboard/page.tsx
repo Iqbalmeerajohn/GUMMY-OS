@@ -11,6 +11,7 @@ import {
 } from "@/components/dashboard/command-center";
 import {
   ActivityWidget,
+  FilesWidget,
   GoalsWidget,
   GreetingHeader,
   QuickStartWidget,
@@ -70,6 +71,9 @@ export default function DashboardPage() {
         </Reveal>
         <Reveal delay={0.18}>
           <ActivityWidget />
+        </Reveal>
+        <Reveal delay={0.22}>
+          <FilesWidget />
         </Reveal>
       </div>
 

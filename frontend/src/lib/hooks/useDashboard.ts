@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
+  fetchFileStats,
   listGoals,
   listMemories,
   listRecentConversations,
@@ -39,6 +40,16 @@ export function useRecentConversations() {
   return useQuery({
     queryKey: ["conversations", "recent"],
     queryFn: () => listRecentConversations(5),
+    enabled: !!user,
+    retry: false,
+  });
+}
+
+export function useFilesStats() {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ["files", "stats"],
+    queryFn: fetchFileStats,
     enabled: !!user,
     retry: false,
   });

@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Brain, Home, MessageSquare, Target, Users } from "lucide-react";
+import {
+  Brain,
+  FileText,
+  Home,
+  MessageSquare,
+  Target,
+  Users,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -14,6 +21,7 @@ const TABS: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/workspace", label: "Chat", icon: MessageSquare },
   { href: "/memories", label: "Memory", icon: Brain },
   { href: "/goals", label: "Goals", icon: Target },
+  { href: "/files", label: "Files", icon: FileText },
   { href: "/agents", label: "Agents", icon: Users },
 ];
 

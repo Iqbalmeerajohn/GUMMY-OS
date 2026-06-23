@@ -39,6 +39,11 @@ export const AnalyticsEvent = {
   GoalDismissed: "goal_dismissed",
   GoalCreatedFromConversation: "goal_created_from_conversation",
 
+  // ── Files (M6 Files System) ───────────────────────────────────────────────
+  FileUploaded: "file_uploaded",
+  FileProcessed: "file_processed",
+  FileDeleted: "file_deleted",
+
   // ── Dashboard ───────────────────────────────────────────────────────────────
   DashboardViewed: "dashboard_viewed",
 

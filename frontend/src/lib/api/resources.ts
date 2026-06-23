@@ -306,6 +306,103 @@ export function deleteMilestone(id: string) {
   return apiFetch<void>(`/api/v1/milestones/${id}`, { method: "DELETE" });
 }
 
+// ── Files (M6 Files System) ───────────────────────────────────────────────────
+
+export type FileUploadStatus = "pending" | "uploaded" | "failed";
+export type FileProcessingStatus =
+  | "pending"
+  | "processing"
+  | "completed"
+  | "failed";
+
+export interface FileItem {
+  id: string;
+  user_id: string;
+  filename: string;
+  original_filename: string;
+  mime_type: string;
+  size_bytes: number;
+  upload_status: FileUploadStatus;
+  processing_status: FileProcessingStatus;
+  chunk_count: number;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FileChunkItem {
+  id: string;
+  file_id: string;
+  chunk_index: number;
+  content: string;
+  token_count: number;
+  metadata_json: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface FileStats {
+  total: number;
+  recent: FileItem[];
+}
+
+export interface FileListParams {
+  limit?: number;
+  offset?: number;
+}
+
+/** Full file list (Files page). Newest first. */
+export function fetchFiles(params: FileListParams = {}) {
+  const { limit = 100, offset = 0 } = params;
+  return apiFetch<Paginated<FileItem>>("/api/v1/files", {
+    query: { limit, offset },
+  });
+}
+
+/** Recent files + total count (dashboard widget). */
+export function fetchFileStats() {
+  return apiFetch<FileStats>("/api/v1/files/stats");
+}
+
+export function fetchFile(id: string) {
+  return apiFetch<FileItem>(`/api/v1/files/${id}`);
+}
+
+export function fetchFileChunks(id: string, limit = 50, offset = 0) {
+  return apiFetch<Paginated<FileChunkItem>>(`/api/v1/files/${id}/chunks`, {
+    query: { limit, offset },
+  });
+}
+
+/**
+ * Upload a file as multipart/form-data. Bypasses `apiFetch` (which is JSON-only)
+ * and uses raw fetch with the bearer token, mirroring `streamTurn`.
+ */
+export async function uploadFile(file: File): Promise<FileItem> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(apiUrl("/api/v1/files/upload"), {
+    method: "POST",
+    headers: { ...(await authHeaders()) },
+    body: form,
+  });
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : undefined;
+  if (!res.ok) {
+    const code = data?.code ?? data?.error?.code ?? "upload_error";
+    const message =
+      data?.error?.message ??
+      data?.message ??
+      res.statusText ??
+      "Upload failed";
+    throw new ApiError(res.status, code, message, data);
+  }
+  return data as FileItem;
+}
+
+export function deleteFile(id: string) {
+  return apiFetch<void>(`/api/v1/files/${id}`, { method: "DELETE" });
+}
+
 // ── Conversations / messages / turns (workspace) ──────────────────────────────
 
 export function listConversations(limit = 30) {
