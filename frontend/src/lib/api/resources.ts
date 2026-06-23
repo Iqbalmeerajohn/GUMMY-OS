@@ -444,10 +444,22 @@ export function listMessages(conversationId: string, limit = 100) {
   );
 }
 
-export function postTurn(conversationId: string, message: string) {
+export function postTurn(
+  conversationId: string,
+  message: string,
+  attachmentFileIds?: string[],
+) {
   return apiFetch<TurnResult>(
     `/api/v1/conversations/${conversationId}/messages`,
-    { method: "POST", json: { message } },
+    {
+      method: "POST",
+      json: {
+        message,
+        ...(attachmentFileIds?.length
+          ? { attachment_file_ids: attachmentFileIds }
+          : {}),
+      },
+    },
   );
 }
 
@@ -527,6 +539,7 @@ export async function* streamTurn(
   conversationId: string,
   message: string,
   signal?: AbortSignal,
+  attachmentFileIds?: string[],
 ): AsyncGenerator<StreamEvent> {
   const res = await fetch(
     apiUrl(`/api/v1/conversations/${conversationId}/messages/stream`),
@@ -537,7 +550,12 @@ export async function* streamTurn(
         Accept: "text/event-stream",
         ...(await authHeaders()),
       },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({
+        message,
+        ...(attachmentFileIds?.length
+          ? { attachment_file_ids: attachmentFileIds }
+          : {}),
+      }),
       signal,
     },
   );

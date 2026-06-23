@@ -25,7 +25,12 @@ import { useCreateConversation, useMessages } from "@/lib/hooks/useChat";
 import { useSnapshotMemories } from "@/lib/memory/useMemory";
 import { greetingName } from "@/lib/profile/displayName";
 import { useProfile } from "@/lib/profile/useProfile";
-import { postTurn, streamTurn, type GoalCandidate } from "@/lib/api/resources";
+import {
+  postTurn,
+  streamTurn,
+  uploadFile,
+  type GoalCandidate,
+} from "@/lib/api/resources";
 import { modeToAgentContext, previewRoutedAgents } from "@/lib/chat/routing";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { useQueryClient } from "@tanstack/react-query";
@@ -155,6 +160,13 @@ export function ChatPane({
   const [pending, setPending] = useState<string | null>(null);
   const [streamText, setStreamText] = useState("");
   const [sending, setSending] = useState(false);
+  // File Intelligence (M6.5): files attached to the next message. Each is
+  // uploaded immediately (reusing the M6 pipeline) and its id is sent with the
+  // turn so the reply is grounded only in these documents.
+  const [attachments, setAttachments] = useState<
+    { id: string; name: string }[]
+  >([]);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [memoriesByMessage, setMemoriesByMessage] = useState<
     Record<string, string[]>
   >({});
@@ -230,7 +242,9 @@ export function ChatPane({
   async function send() {
     const text = value.trim();
     if (!text || sending) return;
+    const attachmentIds = attachments.map((a) => a.id);
     setValue("");
+    setAttachments([]);
     setPending(text);
     setStreamText("");
     setSending(true);
@@ -268,7 +282,12 @@ export function ChatPane({
         streamingConvRef.current = id;
       }
 
-      for await (const ev of streamTurn(id, text, controller.signal)) {
+      for await (const ev of streamTurn(
+        id,
+        text,
+        controller.signal,
+        attachmentIds,
+      )) {
         if (ev.type === "delta" && ev.text) {
           setStreamText((prev) => prev + ev.text);
         } else if (ev.type === "done" && ev.assistant_message_id) {
@@ -325,7 +344,7 @@ export function ChatPane({
       // so the user still gets a persisted reply instead of a dead end.
       try {
         if (!id) throw err;
-        const result = await postTurn(id, text);
+        const result = await postTurn(id, text, attachmentIds);
         if (result.goal_candidate) {
           const candidate = result.goal_candidate;
           setGoalCandidateByMessage((g) => ({
@@ -362,6 +381,36 @@ export function ChatPane({
         setSending(false);
       }
     }
+  }
+
+  async function handleAttach(file: File) {
+    setUploadingAttachment(true);
+    try {
+      const uploaded = await uploadFile(file);
+      setAttachments((prev) => [
+        ...prev,
+        { id: uploaded.id, name: uploaded.original_filename },
+      ]);
+      analytics.track(AnalyticsEvent.FileUploaded, {
+        file_id: uploaded.id,
+        mime_type: uploaded.mime_type,
+        source: "chat_attachment",
+      });
+      if (uploaded.processing_status === "failed") {
+        toast.error(`Couldn't process "${uploaded.original_filename}".`);
+      }
+    } catch (err) {
+      analytics.captureException(err, { context: "chat_attachment_failed" });
+      toast.error(
+        err instanceof Error ? err.message : "Attachment upload failed.",
+      );
+    } finally {
+      if (mountedRef.current) setUploadingAttachment(false);
+    }
+  }
+
+  function removeAttachment(id: string) {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
   }
 
   const isEmpty = !activeId && !pending && messages.length === 0;
@@ -467,6 +516,10 @@ export function ChatPane({
             onChange={setValue}
             onSend={send}
             disabled={sending}
+            attachments={attachments}
+            onAttach={handleAttach}
+            onRemoveAttachment={removeAttachment}
+            uploadingAttachment={uploadingAttachment}
           />
         </div>
       </div>
