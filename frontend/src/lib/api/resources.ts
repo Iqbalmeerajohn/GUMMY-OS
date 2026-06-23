@@ -25,15 +25,43 @@ export interface MemoryItem {
   updated_at: string;
 }
 
-export interface GoalItem {
+export type GoalStatus = "active" | "completed" | "archived";
+export type GoalPriority = "low" | "medium" | "high";
+
+export interface MilestoneItem {
   id: string;
+  goal_id: string;
   title: string;
-  description: string | null;
-  status: string;
-  priority: number;
-  target_date: string | null;
+  completed: boolean;
+  completed_at: string | null;
+  order_index: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface GoalItem {
+  id: string;
+  user_id: string;
+  title: string;
+  description: string | null;
+  category: string | null;
+  status: GoalStatus;
+  priority: GoalPriority;
+  agent_context: string;
+  progress_percentage: number;
+  target_date: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  milestones: MilestoneItem[];
+}
+
+export interface GoalStats {
+  active: number;
+  completed: number;
+  archived: number;
+  total: number;
+  completion_rate: number;
 }
 
 export interface ConversationItem {
@@ -142,6 +170,93 @@ export function listGoals(limit = 5) {
   return apiFetch<Paginated<GoalItem>>("/api/v1/goals", {
     query: { limit, status: "active" },
   });
+}
+
+export interface GoalListParams {
+  limit?: number;
+  offset?: number;
+  status?: GoalStatus;
+}
+
+/** Full goal list with optional status filter (Goals page). */
+export function fetchGoals(params: GoalListParams = {}) {
+  const { limit = 100, offset = 0, status } = params;
+  return apiFetch<Paginated<GoalItem>>("/api/v1/goals", {
+    query: { limit, offset, status },
+  });
+}
+
+export function fetchGoalStats() {
+  return apiFetch<GoalStats>("/api/v1/goals/stats");
+}
+
+export interface GoalCreateBody {
+  title: string;
+  description?: string | null;
+  category?: string | null;
+  priority?: GoalPriority;
+  target_date?: string | null;
+}
+
+export interface GoalUpdateBody {
+  title?: string;
+  description?: string | null;
+  category?: string | null;
+  status?: GoalStatus;
+  priority?: GoalPriority;
+  progress_percentage?: number;
+  target_date?: string | null;
+}
+
+export function createGoal(body: GoalCreateBody) {
+  return apiFetch<GoalItem>("/api/v1/goals", { method: "POST", json: body });
+}
+
+export function updateGoal(id: string, body: GoalUpdateBody) {
+  return apiFetch<GoalItem>(`/api/v1/goals/${id}`, {
+    method: "PATCH",
+    json: body,
+  });
+}
+
+export function completeGoal(id: string) {
+  return apiFetch<GoalItem>(`/api/v1/goals/${id}/complete`, {
+    method: "POST",
+  });
+}
+
+export function archiveGoal(id: string) {
+  return apiFetch<GoalItem>(`/api/v1/goals/${id}/archive`, { method: "POST" });
+}
+
+export function deleteGoal(id: string) {
+  return apiFetch<void>(`/api/v1/goals/${id}`, { method: "DELETE" });
+}
+
+// ── Milestones ────────────────────────────────────────────────────────────────
+
+export function createMilestone(goalId: string, title: string) {
+  return apiFetch<MilestoneItem>(`/api/v1/goals/${goalId}/milestones`, {
+    method: "POST",
+    json: { title },
+  });
+}
+
+export interface MilestoneUpdateBody {
+  title?: string;
+  completed?: boolean;
+  order_index?: number;
+}
+
+export function updateMilestone(id: string, body: MilestoneUpdateBody) {
+  return apiFetch<MilestoneItem>(`/api/v1/milestones/${id}`, {
+    method: "PATCH",
+    json: body,
+  });
+}
+
+export function deleteMilestone(id: string) {
+  return apiFetch<void>(`/api/v1/milestones/${id}`, { method: "DELETE" });
 }
 
 // ── Conversations / messages / turns (workspace) ──────────────────────────────

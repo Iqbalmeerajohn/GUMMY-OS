@@ -176,12 +176,36 @@ class PlanShape(StrEnum):
 
 
 class GoalStatus(StrEnum):
-    """Lifecycle of a durable goal (PHASE3_PLAN.md §11)."""
+    """Lifecycle of a durable, user-facing goal (M5 Goals System).
+
+    ``active`` — being pursued (the only state injected into agent context).
+    ``completed`` — achieved; carries a ``completed_at`` timestamp.
+    ``archived`` — set aside / no longer pursued (hidden from agents).
+    """
 
     ACTIVE = "active"
-    PAUSED = "paused"
-    DONE = "done"
-    ABANDONED = "abandoned"
+    COMPLETED = "completed"
+    ARCHIVED = "archived"
+
+
+class GoalPriority(StrEnum):
+    """User-assigned importance of a goal (M5 Goals System).
+
+    Ordered for ranking via :data:`GOAL_PRIORITY_RANK` (high surfaces first).
+    """
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+# Numeric rank for ordering goals by priority (higher = surfaced first). Kept
+# beside the enum so the repository ordering and any UI sort agree on one source.
+GOAL_PRIORITY_RANK: dict[GoalPriority, int] = {
+    GoalPriority.HIGH: 3,
+    GoalPriority.MEDIUM: 2,
+    GoalPriority.LOW: 1,
+}
 
 
 class TaskStatus(StrEnum):

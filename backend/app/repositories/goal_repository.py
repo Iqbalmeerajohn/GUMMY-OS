@@ -1,15 +1,34 @@
-"""Data-access layer for goals (persistence only, no commit)."""
+"""Data-access layer for goals (persistence only, no commit).
+
+Ordering is by priority (high → low) then newest first. Because priority is a
+string enum, the rank lives in :data:`app.models.enums.GOAL_PRIORITY_RANK` and
+is projected into a ``CASE`` expression so the DB does the sort.
+"""
 
 from __future__ import annotations
 
 import uuid
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import Case, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.enums import AgentContext, GoalStatus
+from app.models.enums import (
+    GOAL_PRIORITY_RANK,
+    AgentContext,
+    GoalPriority,
+    GoalStatus,
+)
 from app.models.goal import Goal
+
+
+def _priority_rank_order() -> Case:
+    """A CASE mapping the priority enum to its numeric rank (desc-sortable)."""
+    return case(
+        {p.value: rank for p, rank in GOAL_PRIORITY_RANK.items()},
+        value=Goal.priority,
+        else_=0,
+    )
 
 
 async def create_goal(
@@ -18,8 +37,10 @@ async def create_goal(
     user_id: uuid.UUID,
     title: str,
     description: str | None = None,
+    category: str | None = None,
     agent_context: AgentContext = AgentContext.GENERAL,
-    priority: int = 0,
+    priority: GoalPriority = GoalPriority.MEDIUM,
+    progress_percentage: int = 0,
     target_date: datetime | None = None,
 ) -> Goal:
     """Insert a new active goal and flush to populate id."""
@@ -27,8 +48,10 @@ async def create_goal(
         user_id=user_id,
         title=title,
         description=description,
+        category=category,
         agent_context=agent_context,
         priority=priority,
+        progress_percentage=progress_percentage,
         target_date=target_date,
     )
     session.add(goal)
@@ -65,7 +88,7 @@ async def list_goals(
     stmt = (
         select(Goal)
         .where(*filters)
-        .order_by(Goal.priority.desc(), Goal.created_at.desc())
+        .order_by(_priority_rank_order().desc(), Goal.created_at.desc())
         .limit(limit)
         .offset(offset)
     )
@@ -83,7 +106,20 @@ async def list_active(
     stmt = (
         select(Goal)
         .where(Goal.user_id == user_id, Goal.status == GoalStatus.ACTIVE)
-        .order_by(Goal.priority.desc(), Goal.created_at.desc())
+        .order_by(_priority_rank_order().desc(), Goal.created_at.desc())
         .limit(limit)
     )
     return list((await session.execute(stmt)).scalars().all())
+
+
+async def count_by_status(
+    session: AsyncSession, *, user_id: uuid.UUID
+) -> dict[GoalStatus, int]:
+    """Per-status goal counts for the dashboard (completion rate, etc.)."""
+    stmt = (
+        select(Goal.status, func.count())
+        .where(Goal.user_id == user_id)
+        .group_by(Goal.status)
+    )
+    rows = (await session.execute(stmt)).all()
+    return {status: int(count) for status, count in rows}

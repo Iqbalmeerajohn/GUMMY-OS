@@ -30,13 +30,19 @@ import {
   useRecentMemories,
 } from "@/lib/hooks/useDashboard";
 import { useMemoriesReady, useTopMemories } from "@/lib/memory/useMemory";
+import { useGoalStats } from "@/lib/goals/useGoals";
 import { useUnderstandingScore } from "@/lib/dashboard/useUnderstandingScore";
 import { ImportanceBadge } from "@/components/memory/MemoryBadges";
+import { GoalProgressBar } from "@/components/goals/GoalProgressBar";
 import {
   QUICK_START_SUGGESTIONS,
   RECOMMENDED_ACTIONS,
 } from "@/config/dashboard";
-import { formatRelativeTime, timeOfDayGreeting } from "@/lib/format";
+import {
+  formatFullDate,
+  formatRelativeTime,
+  timeOfDayGreeting,
+} from "@/lib/format";
 import { useProfile } from "@/lib/profile/useProfile";
 
 const ICONS: Record<string, LucideIcon> = {
@@ -185,9 +191,11 @@ export function RecentMemoriesWidget() {
 
 export function GoalsWidget() {
   const { data, isLoading, isError } = useActiveGoals();
+  const { data: stats } = useGoalStats();
   const [expanded, setExpanded] = useState(false);
   const items = data?.items ?? [];
   const shown = expanded ? items : items.slice(0, 3);
+  const completionPct = stats ? Math.round(stats.completion_rate * 100) : 0;
   return (
     <SectionCard title="Goals">
       {isLoading ? (
@@ -199,28 +207,53 @@ export function GoalsWidget() {
         />
       ) : (
         <>
+          {stats ? (
+            <div className="text-muted-foreground mb-3 flex items-center justify-between text-xs">
+              <span>
+                {stats.completed} completed · {stats.active} active
+              </span>
+              <span className="text-foreground font-medium tabular-nums">
+                {completionPct}% completion
+              </span>
+            </div>
+          ) : null}
           <ul className="space-y-2.5">
             {shown.map((g) => (
               <li
                 key={g.id}
-                className="border-border/50 bg-background/40 flex items-center justify-between gap-2 rounded-lg border p-2.5"
+                className="border-border/50 bg-background/40 space-y-2 rounded-lg border p-2.5"
               >
-                <span className="line-clamp-1 text-sm font-medium">
-                  {g.title}
-                </span>
-                <Badge variant="secondary" className="shrink-0 text-[10px]">
-                  {g.status}
-                </Badge>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="line-clamp-1 text-sm font-medium">
+                    {g.title}
+                  </span>
+                  {g.target_date ? (
+                    <span className="text-muted-foreground shrink-0 text-[11px]">
+                      {formatFullDate(g.target_date)}
+                    </span>
+                  ) : null}
+                </div>
+                <GoalProgressBar value={g.progress_percentage} showLabel={false} />
               </li>
             ))}
           </ul>
-          {items.length > 3 ? (
-            <ShowMore
-              expanded={expanded}
-              onToggle={() => setExpanded((v) => !v)}
-              count={items.length}
-            />
-          ) : null}
+          <div className="mt-2.5 flex items-center justify-between">
+            {items.length > 3 ? (
+              <ShowMore
+                expanded={expanded}
+                onToggle={() => setExpanded((v) => !v)}
+                count={items.length}
+              />
+            ) : (
+              <span />
+            )}
+            <Link
+              href="/goals"
+              className="text-primary text-xs font-medium hover:underline"
+            >
+              View all goals →
+            </Link>
+          </div>
         </>
       )}
     </SectionCard>

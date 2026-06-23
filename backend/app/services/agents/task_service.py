@@ -16,7 +16,7 @@ from app.models.enums import TaskStatus
 from app.models.task import Task
 from app.repositories import task_repository as repo
 from app.schemas.task import TaskCreate, TaskUpdate
-from app.services.agents.goal_service import EmptyUpdateError, get_goal
+from app.services.goals.goal_service import EmptyUpdateError, get_goal
 
 # Terminal states: no transition out.
 _TERMINAL = (TaskStatus.DONE, TaskStatus.CANCELLED)

@@ -1,4 +1,9 @@
-"""Goal endpoints (``/api/v1/goals``) — thin HTTP over goal_service (M8)."""
+"""Goal endpoints (``/api/v1/goals``) — thin HTTP over the goals services (M5).
+
+Covers goal CRUD, the status actions (complete / archive), dashboard stats,
+and milestone creation under a goal. Milestone-scoped mutations
+(``/api/v1/milestones/{id}``) live in :mod:`app.api.v1.milestones`.
+"""
 
 from __future__ import annotations
 
@@ -10,13 +15,17 @@ from fastapi import APIRouter, Query, status
 from app.api.deps import CurrentUserId, DbSession
 from app.core.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from app.models.enums import GoalStatus
+from app.repositories import goal_repository
 from app.schemas.goal import (
     GoalCreate,
     GoalListResponse,
     GoalResponse,
+    GoalStatsResponse,
     GoalUpdate,
+    MilestoneCreate,
+    MilestoneResponse,
 )
-from app.services.agents import goal_service
+from app.services.goals import goal_service, milestone_service
 
 router = APIRouter(prefix="/goals", tags=["goals"])
 
@@ -56,6 +65,33 @@ async def list_goals(
 
 
 @router.get(
+    "/stats",
+    response_model=GoalStatsResponse,
+    summary="Aggregate goal counts for the dashboard",
+)
+async def goal_stats(
+    user_id: CurrentUserId,
+    db: DbSession,
+) -> GoalStatsResponse:
+    counts = await goal_repository.count_by_status(db, user_id=user_id)
+    active = counts.get(GoalStatus.ACTIVE, 0)
+    completed = counts.get(GoalStatus.COMPLETED, 0)
+    archived = counts.get(GoalStatus.ARCHIVED, 0)
+    total = active + completed + archived
+    # Completion rate over the goals being worked on or finished (archived,
+    # i.e. set-aside, goals are excluded so abandoning work doesn't skew it).
+    denominator = active + completed
+    completion_rate = (completed / denominator) if denominator else 0.0
+    return GoalStatsResponse(
+        active=active,
+        completed=completed,
+        archived=archived,
+        total=total,
+        completion_rate=round(completion_rate, 4),
+    )
+
+
+@router.get(
     "/{goal_id}", response_model=GoalResponse, summary="Get a goal by id"
 )
 async def get_goal(
@@ -70,7 +106,7 @@ async def get_goal(
 @router.patch(
     "/{goal_id}",
     response_model=GoalResponse,
-    summary="Update a goal (status / priority / retitle / re-tag)",
+    summary="Update a goal (title / category / status / priority / progress)",
 )
 async def update_goal(
     goal_id: uuid.UUID,
@@ -82,3 +118,66 @@ async def update_goal(
         db, user_id=user_id, goal_id=goal_id, payload=payload
     )
     return GoalResponse.model_validate(goal)
+
+
+@router.delete(
+    "/{goal_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a goal and its milestones",
+)
+async def delete_goal(
+    goal_id: uuid.UUID,
+    user_id: CurrentUserId,
+    db: DbSession,
+) -> None:
+    await goal_service.delete_goal(db, user_id=user_id, goal_id=goal_id)
+
+
+@router.post(
+    "/{goal_id}/complete",
+    response_model=GoalResponse,
+    summary="Mark a goal completed",
+)
+async def complete_goal(
+    goal_id: uuid.UUID,
+    user_id: CurrentUserId,
+    db: DbSession,
+) -> GoalResponse:
+    goal = await goal_service.complete_goal(
+        db, user_id=user_id, goal_id=goal_id
+    )
+    return GoalResponse.model_validate(goal)
+
+
+@router.post(
+    "/{goal_id}/archive",
+    response_model=GoalResponse,
+    summary="Archive a goal",
+)
+async def archive_goal(
+    goal_id: uuid.UUID,
+    user_id: CurrentUserId,
+    db: DbSession,
+) -> GoalResponse:
+    goal = await goal_service.archive_goal(
+        db, user_id=user_id, goal_id=goal_id
+    )
+    return GoalResponse.model_validate(goal)
+
+
+@router.post(
+    "/{goal_id}/milestones",
+    response_model=MilestoneResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add a milestone to a goal",
+)
+async def add_milestone(
+    goal_id: uuid.UUID,
+    payload: MilestoneCreate,
+    user_id: CurrentUserId,
+    db: DbSession,
+) -> MilestoneResponse:
+    milestone = await milestone_service.add_milestone(
+        db, user_id=user_id, goal_id=goal_id, payload=payload
+    )
+    return MilestoneResponse.model_validate(milestone)

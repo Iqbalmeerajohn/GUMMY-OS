@@ -105,9 +105,11 @@ async def test_pack_surfaces_active_goals_and_open_tasks(
     seed_user: uuid.UUID,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from app.models.enums import GoalPriority
     from app.schemas.goal import GoalCreate
     from app.schemas.task import TaskCreate
-    from app.services.agents import goal_service, task_service
+    from app.services.agents import task_service
+    from app.services.goals import goal_service
 
     monkeypatch.setattr(
         "app.repositories.search_repository.search_similar_memories",
@@ -116,7 +118,7 @@ async def test_pack_surfaces_active_goals_and_open_tasks(
     goal = await goal_service.create_goal(
         db_session,
         user_id=seed_user,
-        payload=GoalCreate(title="Ship Phase 3", priority=9),
+        payload=GoalCreate(title="Ship Phase 3", priority=GoalPriority.HIGH),
     )
     done_goal = await goal_service.create_goal(
         db_session, user_id=seed_user, payload=GoalCreate(title="old")

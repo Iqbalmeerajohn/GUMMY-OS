@@ -25,11 +25,13 @@ export const AnalyticsEvent = {
   MemoryUpdated: "memory_updated",
   MemoryRecalled: "memory_recalled",
 
-  // ── Goals ───────────────────────────────────────────────────────────────────
-  // Defined for the taxonomy; wired once goal create/complete UI ships (goals
-  // are read-only today). Kept here so the event names are agreed in advance.
+  // ── Goals (M5 Goals System) ───────────────────────────────────────────────
   GoalCreated: "goal_created",
+  GoalUpdated: "goal_updated",
   GoalCompleted: "goal_completed",
+  GoalArchived: "goal_archived",
+  MilestoneCreated: "milestone_created",
+  MilestoneCompleted: "milestone_completed",
 
   // ── Dashboard ───────────────────────────────────────────────────────────────
   DashboardViewed: "dashboard_viewed",

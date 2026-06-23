@@ -2,17 +2,19 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Brain, Home, MessageSquare, User, Users } from "lucide-react";
+import { Brain, Home, MessageSquare, Target, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
+// Profile is reachable on mobile via the header avatar menu, so the bottom bar
+// leads with the primary work surfaces (Goals is the M5 headline feature).
 const TABS: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/dashboard", label: "Home", icon: Home },
   { href: "/workspace", label: "Chat", icon: MessageSquare },
   { href: "/memories", label: "Memory", icon: Brain },
+  { href: "/goals", label: "Goals", icon: Target },
   { href: "/agents", label: "Agents", icon: Users },
-  { href: "/profile", label: "Profile", icon: User },
 ];
 
 /** Mobile-only bottom tab bar — thumb-reachable primary navigation. */

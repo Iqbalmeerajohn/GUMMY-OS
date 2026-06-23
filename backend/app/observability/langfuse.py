@@ -269,6 +269,21 @@ def observe_agent_run(
     return _observe("agent", name, input=input, metadata=metadata)
 
 
+def observe_operation(
+    name: str,
+    *,
+    input: Any | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> Any:
+    """Trace a non-LLM domain operation as a Langfuse ``span``.
+
+    For traced business operations that are neither memory retrieval nor agent
+    runs — e.g. goal retrieval/completion and milestone updates (M5). Returns a
+    context manager yielding a :class:`_Span`; ``update`` records output/metadata.
+    """
+    return _observe("span", name, input=input, metadata=metadata)
+
+
 # ── LLM generation decorator ──────────────────────────────────────────────────
 
 

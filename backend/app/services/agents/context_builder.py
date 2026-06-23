@@ -20,6 +20,7 @@ from app.core.constants import (
     CONTEXT_MAX_TASKS,
     DEFAULT_CONTEXT_MAX_MEMORIES,
 )
+from app.observability import langfuse as langfuse_obs
 from app.repositories import goal_repository, task_repository
 from app.schemas.agents import ContextPack
 from app.services.embeddings.embedding_service import EmbeddingService
@@ -60,9 +61,13 @@ async def build(
         }
         for item in ranked
     ]
-    active_goals = await goal_repository.list_active(
-        session, user_id=user_id, limit=CONTEXT_MAX_GOALS
-    )
+    # Read access only (M5): exclusively *active* goals reach the agent —
+    # completed and archived goals are intentionally never injected.
+    with langfuse_obs.observe_operation("goal.retrieve_active") as span:
+        active_goals = await goal_repository.list_active(
+            session, user_id=user_id, limit=CONTEXT_MAX_GOALS
+        )
+        span.update(metadata={"active_goals": len(active_goals)})
     open_tasks = await task_repository.list_open(
         session, user_id=user_id, limit=CONTEXT_MAX_TASKS
     )
@@ -75,7 +80,16 @@ async def build(
                 "id": str(g.id),
                 "title": g.title,
                 "status": g.status.value,
-                "priority": g.priority,
+                "priority": g.priority.value,
+                "category": g.category,
+                "progress_percentage": g.progress_percentage,
+                "target_date": (
+                    g.target_date.isoformat() if g.target_date else None
+                ),
+                "milestones_total": len(g.milestones),
+                "milestones_completed": sum(
+                    1 for m in g.milestones if m.completed
+                ),
                 "agent_context": g.agent_context.value,
             }
             for g in active_goals

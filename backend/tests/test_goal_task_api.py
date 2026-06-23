@@ -18,12 +18,19 @@ async def test_goal_crud_roundtrip(api_client: AsyncClient) -> None:
     created = await api_client.post(
         "/api/v1/goals",
         params=_q(),
-        json={"title": "Ship Phase 3", "priority": 7},
+        json={
+            "title": "Ship Phase 3",
+            "priority": "high",
+            "category": "work",
+        },
     )
     assert created.status_code == 201
     goal = created.json()
     assert goal["status"] == "active"
-    assert goal["priority"] == 7
+    assert goal["priority"] == "high"
+    assert goal["category"] == "work"
+    assert goal["progress_percentage"] == 0
+    assert goal["milestones"] == []
 
     listed = await api_client.get("/api/v1/goals", params=_q())
     assert listed.status_code == 200
@@ -37,10 +44,20 @@ async def test_goal_crud_roundtrip(api_client: AsyncClient) -> None:
     patched = await api_client.patch(
         f"/api/v1/goals/{goal['id']}",
         params=_q(),
-        json={"status": "paused"},
+        json={"priority": "low", "progress_percentage": 25},
     )
     assert patched.status_code == 200
-    assert patched.json()["status"] == "paused"
+    assert patched.json()["priority"] == "low"
+    assert patched.json()["progress_percentage"] == 25
+
+
+async def test_goal_invalid_priority_422(api_client: AsyncClient) -> None:
+    response = await api_client.post(
+        "/api/v1/goals",
+        params=_q(),
+        json={"title": "g", "priority": "urgent"},
+    )
+    assert response.status_code == 422
 
 
 async def test_goal_empty_update_400(api_client: AsyncClient) -> None:

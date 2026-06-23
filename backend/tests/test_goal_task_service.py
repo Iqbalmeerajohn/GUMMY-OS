@@ -7,19 +7,25 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.enums import AgentContext, GoalStatus, TaskStatus
+from app.models.enums import (
+    AgentContext,
+    GoalPriority,
+    GoalStatus,
+    TaskStatus,
+)
 from app.models.user import User
 from app.repositories import goal_repository, task_repository
 from app.schemas.goal import GoalCreate, GoalUpdate
 from app.schemas.task import TaskCreate, TaskUpdate
-from app.services.agents import goal_service, task_service
-from app.services.agents.goal_service import (
-    EmptyUpdateError,
-    GoalNotFoundError,
-)
+from app.services.agents import task_service
 from app.services.agents.task_service import (
     InvalidTaskTransitionError,
     TaskNotFoundError,
+)
+from app.services.goals import goal_service
+from app.services.goals.goal_service import (
+    EmptyUpdateError,
+    GoalNotFoundError,
 )
 
 
@@ -42,26 +48,37 @@ async def test_goal_crud_lifecycle(
         payload=GoalCreate(
             title="Land a Qualcomm offer",
             description="systems role",
+            category="career",
             agent_context=AgentContext.CAREER,
-            priority=10,
+            priority=GoalPriority.HIGH,
         ),
     )
     assert goal.status == GoalStatus.ACTIVE
     assert goal.agent_context == AgentContext.CAREER
+    assert goal.priority == GoalPriority.HIGH
+    assert goal.category == "career"
 
     updated = await goal_service.update_goal(
         db_session,
         user_id=seed_user,
         goal_id=goal.id,
-        payload=GoalUpdate(status=GoalStatus.PAUSED, priority=5),
+        payload=GoalUpdate(priority=GoalPriority.LOW, progress_percentage=30),
     )
-    assert updated.status == GoalStatus.PAUSED
-    assert updated.priority == 5
+    assert updated.priority == GoalPriority.LOW
+    assert updated.progress_percentage == 30
 
     done = await goal_service.complete_goal(
         db_session, user_id=seed_user, goal_id=goal.id
     )
-    assert done.status == GoalStatus.DONE
+    assert done.status == GoalStatus.COMPLETED
+    assert done.completed_at is not None
+
+    archived = await goal_service.archive_goal(
+        db_session, user_id=seed_user, goal_id=goal.id
+    )
+    assert archived.status == GoalStatus.ARCHIVED
+    # Leaving the completed state clears the completion timestamp.
+    assert archived.completed_at is None
 
 
 async def test_goal_empty_update_rejected(
@@ -102,18 +119,18 @@ async def test_goal_list_filters_and_ordering(
     low = await goal_service.create_goal(
         db_session,
         user_id=seed_user,
-        payload=GoalCreate(title="low", priority=1),
+        payload=GoalCreate(title="low", priority=GoalPriority.LOW),
     )
     high = await goal_service.create_goal(
         db_session,
         user_id=seed_user,
-        payload=GoalCreate(title="high", priority=9),
+        payload=GoalCreate(title="high", priority=GoalPriority.HIGH),
     )
     await goal_service.update_goal(
         db_session,
         user_id=seed_user,
         goal_id=low.id,
-        payload=GoalUpdate(status=GoalStatus.ABANDONED),
+        payload=GoalUpdate(status=GoalStatus.ARCHIVED),
     )
     active, total = await goal_service.list_goals(
         db_session,

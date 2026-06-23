@@ -20,6 +20,7 @@ from app.models.enums import (
     AgentMessageRole,
     ApprovalStatus,
     ConversationStatus,
+    GoalPriority,
     GoalStatus,
     MemoryCategory,
     MemoryChangeReason,
@@ -37,6 +38,7 @@ from app.models.enums import (
     ToolRunStatus,
 )
 from app.models.goal import Goal
+from app.models.goal_milestone import GoalMilestone
 from app.models.memory import Memory
 from app.models.memory_embedding import MemoryEmbedding
 from app.models.memory_source import MemorySource
@@ -81,8 +83,10 @@ __all__ = [
     "ToolDecision",
     "ToolRunStatus",
     "Goal",
+    "GoalMilestone",
     "Task",
     "GoalStatus",
+    "GoalPriority",
     "TaskStatus",
     "ActionApproval",
     "ApprovalStatus",
