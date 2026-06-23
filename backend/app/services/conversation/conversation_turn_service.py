@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.constants import (
+    CONTEXT_MAX_GOALS,
     DEFAULT_CONTEXT_MAX_MEMORIES,
     DEFAULT_CONTEXT_TOKEN_BUDGET,
     DEFAULT_TURN_HISTORY_MESSAGES,
@@ -33,12 +34,15 @@ from app.core.observability import capture_exception
 from app.models.enums import MessageRole, SummaryType
 from app.repositories import conversation_repository as conv_repo
 from app.repositories import conversation_summary_repository as sum_repo
+from app.repositories import goal_repository
 from app.repositories import message_repository as msg_repo
+from app.schemas.goal import GoalCandidate
 from app.services.conversation import (
     conversation_continuity_service,
     conversation_service,
 )
 from app.services.embeddings.embedding_service import EmbeddingService
+from app.services.goals import goal_extraction_service
 from app.services.llm.base import LLMProvider, SupportsStreaming
 from app.services.memory import (
     context_assembly_service,
@@ -53,6 +57,47 @@ logger = logging.getLogger(__name__)
 
 # Roles that belong in the LLM message history (working memory).
 _HISTORY_ROLES = (MessageRole.USER, MessageRole.ASSISTANT)
+
+
+async def _active_goals_for_prompt(
+    session: AsyncSession, *, user_id: uuid.UUID
+) -> list[dict[str, object]]:
+    """Active goals shaped for prompt rendering (M5.5 goal awareness).
+
+    Best-effort: a goals lookup must never cost the user a reply, so any failure
+    degrades to no goals rather than raising.
+    """
+    try:
+        goals = await goal_repository.list_active(
+            session, user_id=user_id, limit=CONTEXT_MAX_GOALS
+        )
+    except Exception:
+        logger.exception("active-goals lookup failed; replying without goals")
+        return []
+    return [
+        {
+            "title": g.title,
+            "priority": g.priority.value,
+            "target_date": (
+                g.target_date.date().isoformat() if g.target_date else None
+            ),
+            "progress_percentage": g.progress_percentage,
+        }
+        for g in goals
+    ]
+
+
+def _detect_goal_candidate(message: str) -> GoalCandidate | None:
+    """Detect a goal candidate in the user message (M5.5), defensively.
+
+    Deterministic and cheap (no LLM), so it runs inline on the turn. Detection
+    only *proposes* a goal — creation requires explicit user confirmation. Any
+    failure is swallowed so it can never break a turn."""
+    try:
+        return goal_extraction_service.detect_goal(message)
+    except Exception:
+        logger.exception("goal detection failed; turn unaffected")
+        return None
 
 
 def _ms(start: float) -> float:
@@ -108,6 +153,9 @@ class TurnResult:
     input_tokens: int
     output_tokens: int
     message_count: int
+    # A goal-like statement detected in the user's message (M5.5), surfaced for
+    # explicit confirmation. ``None`` when the message isn't goal-shaped.
+    goal_candidate: GoalCandidate | None = None
 
 
 async def generate_grounded_reply(
@@ -168,6 +216,7 @@ async def generate_grounded_reply(
         embedding_service=embedding_service,
         current_conversation_id=conversation_id,
     )
+    goals = await _active_goals_for_prompt(session, user_id=user_id)
     payload = prompt_builder.build_prompt(
         context=package,
         query=message,
@@ -175,6 +224,7 @@ async def generate_grounded_reply(
         summary=summary,
         identity=identity,
         prior_context=prior_context,
+        goals=goals or None,
     )
     prompt_build_ms = _ms(prompt_start)
 
@@ -454,6 +504,9 @@ async def run_turn(
         input_tokens=reply.input_tokens,
         output_tokens=reply.output_tokens,
         message_count=message_count,
+        # Goal Intelligence (M5.5): surface a detected goal candidate (if any)
+        # for the client to offer creation. Never auto-created.
+        goal_candidate=_detect_goal_candidate(message),
     )
 
 
@@ -555,6 +608,7 @@ async def stream_turn(
         embedding_service=embedding_service,
         current_conversation_id=conversation_id,
     )
+    goals = await _active_goals_for_prompt(session, user_id=user_id)
     payload = prompt_builder.build_prompt(
         context=package,
         query=message,
@@ -562,6 +616,7 @@ async def stream_turn(
         summary=summary_text,
         identity=identity,
         prior_context=prior_context,
+        goals=goals or None,
     )
     prompt_build_ms = _ms(prompt_start)
 
@@ -640,6 +695,11 @@ async def stream_turn(
 
     enrichment_worker.enqueue(conversation_id, user_id)
 
+    # Goal Intelligence (M5.5): a goal-like statement in the user's message is
+    # surfaced as a candidate for the client to render a "Goal Detected" prompt.
+    # It is never auto-created — confirmation is an explicit user action.
+    goal_candidate = _detect_goal_candidate(message)
+
     yield {
         "type": "done",
         "conversation_id": str(conversation_id),
@@ -651,4 +711,7 @@ async def stream_turn(
         # "Memory Used" disclosure (never the embeddings/scores — just the fact).
         "memories": [m.content for m in package.memories],
         "message_count": message_count,
+        "goal_candidate": (
+            goal_candidate.model_dump(mode="json") if goal_candidate else None
+        ),
     }

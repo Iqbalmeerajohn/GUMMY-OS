@@ -12,6 +12,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.enums import MessageRole
+from app.schemas.goal import GoalCandidate
 
 
 class MessageResponse(BaseModel):
@@ -70,3 +71,6 @@ class TurnResponse(BaseModel):
     input_tokens: int
     output_tokens: int
     message_count: int
+    # A goal-like statement detected in the user's message (M5.5), offered for
+    # explicit confirmation. ``None`` when the message isn't goal-shaped.
+    goal_candidate: GoalCandidate | None = None

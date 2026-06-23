@@ -147,6 +147,48 @@ class GoalListResponse(BaseModel):
     offset: int
 
 
+# ── Goal Intelligence (M5.5): conversation-detected candidates ────────────────
+
+
+class GoalCandidate(BaseModel):
+    """A goal-like statement detected in a user message (M5.5).
+
+    Produced by the deterministic :mod:`app.services.goals.goal_extraction_service`
+    and surfaced to the client for **explicit confirmation** — it is never
+    auto-created, mirroring the memory-consent philosophy (consent before
+    persistence). The client renders it as a "Goal Detected" prompt.
+    """
+
+    title: str
+    description: str | None = None
+    priority: GoalPriority = GoalPriority.MEDIUM
+    target_date: datetime | None = None
+
+
+class GoalFromConversationCreate(GoalCreate):
+    """Accept payload: a confirmed candidate the user chose to turn into a goal.
+
+    Extends :class:`GoalCreate` with the originating conversation so the
+    creation can be traced back to where the goal was detected (``goal_source =
+    conversation``).
+    """
+
+    conversation_id: uuid.UUID | None = None
+
+
+class GoalCandidateDismiss(BaseModel):
+    """Reject payload: the user dismissed a detected candidate.
+
+    Carries just enough to record the rejection on the ``goal.confirm`` trace
+    (no goal is created).
+    """
+
+    title: str = Field(min_length=1, max_length=GOAL_TITLE_MAX_LENGTH)
+    priority: GoalPriority = GoalPriority.MEDIUM
+    target_date: datetime | None = None
+    conversation_id: uuid.UUID | None = None
+
+
 class GoalStatsResponse(BaseModel):
     """Aggregate goal counts for the dashboard."""
 

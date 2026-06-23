@@ -58,12 +58,25 @@ async def handle(task: AgentTask, *, llm: LLMProvider) -> AgentResult:
         block = "\n\n".join(findings)
         summary = f"{summary}\n\n{block}" if summary else block
     identity = task.inputs.get("user_identity")
+    # Goal awareness (M5.5): surface the user's active goals (already packed by
+    # the context builder) so the agent can reference them when relevant. Empty
+    # goals leave the prompt byte-identical to the legacy core.
+    goals = [
+        {
+            "title": g.get("title", ""),
+            "priority": g.get("priority", "medium"),
+            "target_date": g.get("target_date"),
+            "progress_percentage": g.get("progress_percentage", 0),
+        }
+        for g in pack.goals
+    ]
     payload = prompt_builder.build_prompt(
         context=package,
         query=task.intent,
         history=history or None,
         summary=summary,
         identity=str(identity) if isinstance(identity, str) else None,
+        goals=goals or None,
     )
     response = await llm.generate(
         system=payload.system, messages=payload.messages

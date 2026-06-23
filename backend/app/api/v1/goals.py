@@ -17,7 +17,9 @@ from app.core.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from app.models.enums import GoalStatus
 from app.repositories import goal_repository
 from app.schemas.goal import (
+    GoalCandidateDismiss,
     GoalCreate,
+    GoalFromConversationCreate,
     GoalListResponse,
     GoalResponse,
     GoalStatsResponse,
@@ -43,6 +45,49 @@ async def create_goal(
 ) -> GoalResponse:
     goal = await goal_service.create_goal(db, user_id=user_id, payload=payload)
     return GoalResponse.model_validate(goal)
+
+
+@router.post(
+    "/from-conversation",
+    response_model=GoalResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a goal from a confirmed conversation candidate",
+)
+async def create_goal_from_conversation(
+    payload: GoalFromConversationCreate,
+    user_id: CurrentUserId,
+    db: DbSession,
+) -> GoalResponse:
+    """Accept path: the user clicked *Create Goal* on a detected candidate.
+
+    Creates the goal (traced as ``goal.confirm`` → ``goal.create_from_
+    conversation``). Goals are never created without this explicit action.
+    """
+    goal = await goal_service.accept_goal_candidate(
+        db,
+        user_id=user_id,
+        payload=payload,
+        conversation_id=payload.conversation_id,
+    )
+    return GoalResponse.model_validate(goal)
+
+
+@router.post(
+    "/from-conversation/dismiss",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Dismiss a detected goal candidate (records the rejection)",
+)
+async def dismiss_goal_candidate(
+    payload: GoalCandidateDismiss,
+    user_id: CurrentUserId,
+) -> None:
+    """Reject path: the user clicked *Dismiss*. Records ``goal.confirm``
+    (``accepted=false``) for observability; creates nothing."""
+    goal_service.reject_goal_candidate(
+        title=payload.title,
+        priority=payload.priority,
+        target_date=payload.target_date,
+    )
 
 
 @router.get("", response_model=GoalListResponse, summary="List goals")

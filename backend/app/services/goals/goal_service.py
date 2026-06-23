@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
-from app.models.enums import GoalStatus
+from app.models.enums import GoalPriority, GoalStatus
 from app.models.goal import Goal
 from app.observability import langfuse as langfuse_obs
 from app.repositories import goal_repository as repo
@@ -66,6 +66,89 @@ async def create_goal(
     await session.commit()
     await session.refresh(goal)
     return goal
+
+
+async def create_goal_from_conversation(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    payload: GoalCreate,
+    conversation_id: uuid.UUID | None = None,
+) -> Goal:
+    """Create a goal the user confirmed from a detected conversation candidate.
+
+    Identical to :func:`create_goal` (so all goal surfaces stay consistent),
+    but traced as ``goal.create_from_conversation`` with ``goal_source =
+    conversation`` so conversation-originated goals are attributable. Commits.
+    """
+    with langfuse_obs.observe_operation(
+        "goal.create_from_conversation",
+        metadata={
+            "goal_source": "conversation",
+            "conversation_id": (
+                str(conversation_id) if conversation_id else None
+            ),
+            "title": payload.title,
+            "priority": payload.priority.value,
+            "target_date": (
+                payload.target_date.isoformat() if payload.target_date else None
+            ),
+        },
+    ):
+        return await create_goal(session, user_id=user_id, payload=payload)
+
+
+async def accept_goal_candidate(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    payload: GoalCreate,
+    conversation_id: uuid.UUID | None = None,
+) -> Goal:
+    """Record an *accepted* goal candidate and create the goal. Commits.
+
+    Wraps creation in a ``goal.confirm`` span (``accepted=true``) so the
+    confirmation decision and the resulting creation form one trace tree.
+    """
+    with langfuse_obs.observe_operation(
+        "goal.confirm",
+        metadata={
+            "accepted": True,
+            "title": payload.title,
+            "priority": payload.priority.value,
+            "target_date": (
+                payload.target_date.isoformat() if payload.target_date else None
+            ),
+        },
+    ):
+        return await create_goal_from_conversation(
+            session,
+            user_id=user_id,
+            payload=payload,
+            conversation_id=conversation_id,
+        )
+
+
+def reject_goal_candidate(
+    *,
+    title: str,
+    priority: GoalPriority,
+    target_date: datetime | None = None,
+) -> None:
+    """Record a *rejected* goal candidate as a ``goal.confirm`` (``accepted=
+    false``) span. No goal is created — the user dismissed it."""
+    with langfuse_obs.observe_operation(
+        "goal.confirm",
+        metadata={
+            "accepted": False,
+            "title": title,
+            "priority": priority.value,
+            "target_date": (
+                target_date.isoformat() if target_date else None
+            ),
+        },
+    ):
+        pass
 
 
 async def get_goal(

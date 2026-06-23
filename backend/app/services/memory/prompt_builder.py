@@ -42,6 +42,19 @@ def _render_context(package: ContextPackage) -> str:
     return "\n".join(render_memory_line(m) for m in package.memories)
 
 
+def _render_goals(goals: list[dict[str, object]]) -> str:
+    """Render active goals as compact, one-per-line context for the prompt."""
+    lines: list[str] = []
+    for goal in goals:
+        parts = [f"priority: {goal.get('priority', 'medium')}"]
+        target = goal.get("target_date")
+        if target:
+            parts.append(f"target: {target}")
+        parts.append(f"progress: {goal.get('progress_percentage', 0)}%")
+        lines.append(f"- {goal.get('title', '')} ({', '.join(parts)})")
+    return "\n".join(lines)
+
+
 def build_prompt(
     *,
     context: ContextPackage,
@@ -50,6 +63,7 @@ def build_prompt(
     summary: str | None = None,
     identity: str | None = None,
     prior_context: str | None = None,
+    goals: list[dict[str, object]] | None = None,
 ) -> PromptPayload:
     """Build the system prompt + chat messages for a memory-grounded turn.
 
@@ -59,8 +73,10 @@ def build_prompt(
     ``identity`` is the authenticated user-profile block (see the identity
     service); it precedes memory so every agent knows who the user is.
     ``prior_context`` is relevant context pulled from *other* conversations when
-    the user references a past discussion (conversation continuity). All four
-    default to ``None`` so the legacy path stays byte-identical.
+    the user references a past discussion (conversation continuity). ``goals``
+    are the user's active goals (M5.5 goal awareness): referenced naturally only
+    when relevant, never volunteered. All default to ``None`` so the legacy path
+    (no goals) stays byte-identical.
     """
     identity_block = f"{identity}\n\n" if identity else ""
     system = (
@@ -70,6 +86,13 @@ def build_prompt(
         f"Remembered context about the user:\n"
         f"<memory>\n{_render_context(context)}\n</memory>"
     )
+    if goals:
+        system += (
+            "\n\nThe user's active goals. Reference them naturally ONLY when "
+            "relevant to the user's request (e.g. when planning, prioritizing, "
+            "or deciding what to do); do not bring them up otherwise:\n"
+            f"<goals>\n{_render_goals(goals)}\n</goals>"
+        )
     if prior_context:
         system += (
             "\n\nRelevant context from the user's earlier conversations "

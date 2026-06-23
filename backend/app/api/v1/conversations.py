@@ -321,6 +321,7 @@ async def create_turn(
         input_tokens=result.input_tokens,
         output_tokens=result.output_tokens,
         message_count=result.message_count,
+        goal_candidate=result.goal_candidate,
     )
 
 
