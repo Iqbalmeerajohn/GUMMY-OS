@@ -89,6 +89,17 @@ export interface MessageItem {
   created_at: string;
 }
 
+/**
+ * A goal-like statement detected in a user message (M5.5 Goal Intelligence).
+ * Surfaced for explicit confirmation — never auto-created.
+ */
+export interface GoalCandidate {
+  title: string;
+  description: string | null;
+  priority: GoalPriority;
+  target_date: string | null;
+}
+
 export interface TurnResult {
   conversation_id: string;
   user_message_id: string;
@@ -99,6 +110,8 @@ export interface TurnResult {
   input_tokens: number;
   output_tokens: number;
   message_count: number;
+  /** A detected goal candidate (M5.5), or null when the message isn't a goal. */
+  goal_candidate: GoalCandidate | null;
 }
 
 // ── Memories / goals (dashboard + sidebars) ───────────────────────────────────
@@ -231,6 +244,40 @@ export function archiveGoal(id: string) {
 
 export function deleteGoal(id: string) {
   return apiFetch<void>(`/api/v1/goals/${id}`, { method: "DELETE" });
+}
+
+// ── Goal Intelligence (M5.5): create / dismiss from a conversation ────────────
+
+export interface GoalFromConversationBody {
+  title: string;
+  description?: string | null;
+  priority?: GoalPriority;
+  target_date?: string | null;
+  category?: string | null;
+  conversation_id?: string | null;
+}
+
+export interface GoalCandidateDismissBody {
+  title: string;
+  priority?: GoalPriority;
+  target_date?: string | null;
+  conversation_id?: string | null;
+}
+
+/** Accept a detected candidate: create the goal (traced as goal_source=conversation). */
+export function createGoalFromConversation(body: GoalFromConversationBody) {
+  return apiFetch<GoalItem>("/api/v1/goals/from-conversation", {
+    method: "POST",
+    json: body,
+  });
+}
+
+/** Dismiss a detected candidate: records the rejection, creates nothing. */
+export function dismissGoalCandidate(body: GoalCandidateDismissBody) {
+  return apiFetch<void>("/api/v1/goals/from-conversation/dismiss", {
+    method: "POST",
+    json: body,
+  });
 }
 
 // ── Milestones ────────────────────────────────────────────────────────────────
@@ -371,6 +418,8 @@ export interface StreamEvent {
   /** Short contents of the memories used to ground the reply (Memory Used UI). */
   memories?: string[];
   message_count?: number;
+  /** A goal-like statement detected in the user's message (M5.5), or null. */
+  goal_candidate?: GoalCandidate | null;
 }
 
 /**

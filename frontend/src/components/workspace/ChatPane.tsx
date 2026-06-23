@@ -20,11 +20,12 @@ import { LivingOrb } from "@/components/brand/LivingOrb";
 import { AgentSelect } from "@/components/workspace/AgentSelect";
 import { Composer } from "@/components/workspace/Composer";
 import { MessageBubble } from "@/components/workspace/MessageBubble";
+import { GoalConfirmation } from "@/components/goals/GoalConfirmation";
 import { useCreateConversation, useMessages } from "@/lib/hooks/useChat";
 import { useSnapshotMemories } from "@/lib/memory/useMemory";
 import { greetingName } from "@/lib/profile/displayName";
 import { useProfile } from "@/lib/profile/useProfile";
-import { postTurn, streamTurn } from "@/lib/api/resources";
+import { postTurn, streamTurn, type GoalCandidate } from "@/lib/api/resources";
 import { modeToAgentContext, previewRoutedAgents } from "@/lib/chat/routing";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { useQueryClient } from "@tanstack/react-query";
@@ -156,6 +157,12 @@ export function ChatPane({
   const [sending, setSending] = useState(false);
   const [memoriesByMessage, setMemoriesByMessage] = useState<
     Record<string, string[]>
+  >({});
+  // Goal Intelligence (M5.5): detected candidates keyed by the assistant message
+  // they accompany, so the "Goal Detected" prompt renders under that reply until
+  // the user creates or dismisses it.
+  const [goalCandidateByMessage, setGoalCandidateByMessage] = useState<
+    Record<string, GoalCandidate>
   >({});
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -289,6 +296,18 @@ export function ChatPane({
               count: memories.length,
             });
           }
+          if (ev.goal_candidate) {
+            const candidate = ev.goal_candidate;
+            setGoalCandidateByMessage((g) => ({
+              ...g,
+              [ev.assistant_message_id as string]: candidate,
+            }));
+            analytics.track(AnalyticsEvent.GoalDetected, {
+              conversation_id: id,
+              priority: candidate.priority,
+              has_target_date: candidate.target_date != null,
+            });
+          }
         }
       }
       // Refetch the persisted messages BEFORE clearing the live bubble so the
@@ -306,7 +325,19 @@ export function ChatPane({
       // so the user still gets a persisted reply instead of a dead end.
       try {
         if (!id) throw err;
-        await postTurn(id, text);
+        const result = await postTurn(id, text);
+        if (result.goal_candidate) {
+          const candidate = result.goal_candidate;
+          setGoalCandidateByMessage((g) => ({
+            ...g,
+            [result.assistant_message_id]: candidate,
+          }));
+          analytics.track(AnalyticsEvent.GoalDetected, {
+            conversation_id: id,
+            priority: candidate.priority,
+            has_target_date: candidate.target_date != null,
+          });
+        }
         await qc.invalidateQueries({ queryKey: ["messages", id] });
         // Fire-and-forget: don't block clearing the live bubble on the (slower)
         // conversations-list refetch, or the streamed bubble overlaps the now-
@@ -394,6 +425,19 @@ export function ChatPane({
                       <div className="mt-1.5 space-y-0.5">
                         {agent ? <AgentChip label={agent} /> : null}
                         <MemoryUsed memories={memoriesByMessage[m.id] ?? []} />
+                        {goalCandidateByMessage[m.id] ? (
+                          <GoalConfirmation
+                            candidate={goalCandidateByMessage[m.id]}
+                            conversationId={activeId}
+                            onResolved={() =>
+                              setGoalCandidateByMessage((prev) => {
+                                const next = { ...prev };
+                                delete next[m.id];
+                                return next;
+                              })
+                            }
+                          />
+                        ) : null}
                       </div>
                     ) : null
                   }

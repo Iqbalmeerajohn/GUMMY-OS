@@ -9,14 +9,18 @@ import {
   archiveGoal,
   completeGoal,
   createGoal,
+  createGoalFromConversation,
   createMilestone,
   deleteGoal,
   deleteMilestone,
+  dismissGoalCandidate,
   fetchGoalStats,
   fetchGoals,
   updateGoal,
   updateMilestone,
+  type GoalCandidateDismissBody,
   type GoalCreateBody,
+  type GoalFromConversationBody,
   type GoalItem,
   type GoalUpdateBody,
   type MilestoneUpdateBody,
@@ -162,8 +166,7 @@ export function useGoalActions() {
   return useMemo(
     () => ({
       create: (body: GoalCreateBody) => create.mutate(body),
-      update: (id: string, body: GoalUpdateBody) =>
-        update.mutate({ id, body }),
+      update: (id: string, body: GoalUpdateBody) => update.mutate({ id, body }),
       complete: (id: string) => complete.mutate(id),
       archive: (id: string) => archive.mutate(id),
       remove: (id: string) => remove.mutate(id),
@@ -174,6 +177,75 @@ export function useGoalActions() {
       removeMilestone: (id: string) => removeMilestone.mutate(id),
       isCreating: create.isPending,
     }),
-    [create, update, complete, archive, remove, addMilestone, editMilestone, removeMilestone],
+    [
+      create,
+      update,
+      complete,
+      archive,
+      remove,
+      addMilestone,
+      editMilestone,
+      removeMilestone,
+    ],
+  );
+}
+
+/**
+ * Accept / dismiss actions for a conversation-detected goal candidate (M5.5).
+ *
+ * Accepting creates the goal via the conversation endpoint, fires the matching
+ * PostHog events, and invalidates the goals queries so the dashboard and Goals
+ * page update automatically (no refresh). Dismissing records the rejection.
+ */
+export function useGoalFromConversation() {
+  const qc = useQueryClient();
+  // Invalidating the `goals` root covers the list, stats, and dashboard
+  // ("goals","active") queries — every goal surface refetches.
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["goals"] });
+  };
+  const onError = (err: unknown) => {
+    analytics.captureException(err, {
+      context: "goal_from_conversation_failed",
+    });
+    toast.error(err instanceof Error ? err.message : "Something went wrong.");
+  };
+
+  const accept = useMutation({
+    mutationFn: (body: GoalFromConversationBody) =>
+      createGoalFromConversation(body),
+    onSuccess: (goal) => {
+      analytics.track(AnalyticsEvent.GoalAccepted, {
+        goal_id: goal.id,
+        priority: goal.priority,
+      });
+      analytics.track(AnalyticsEvent.GoalCreatedFromConversation, {
+        goal_id: goal.id,
+        priority: goal.priority,
+      });
+      invalidate();
+      toast.success("Goal created.");
+    },
+    onError,
+  });
+
+  const dismiss = useMutation({
+    mutationFn: (body: GoalCandidateDismissBody) => dismissGoalCandidate(body),
+    onSuccess: (_void, body) => {
+      analytics.track(AnalyticsEvent.GoalDismissed, {
+        priority: body.priority,
+      });
+    },
+    onError,
+  });
+
+  return useMemo(
+    () => ({
+      accept: (body: GoalFromConversationBody) => accept.mutateAsync(body),
+      dismiss: (body: GoalCandidateDismissBody) => dismiss.mutateAsync(body),
+      isAccepting: accept.isPending,
+      isDismissing: dismiss.isPending,
+    }),
+    [accept, dismiss],
   );
 }

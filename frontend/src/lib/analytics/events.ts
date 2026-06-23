@@ -33,6 +33,12 @@ export const AnalyticsEvent = {
   MilestoneCreated: "milestone_created",
   MilestoneCompleted: "milestone_completed",
 
+  // ── Goal Intelligence (M5.5): conversation-detected goals ─────────────────
+  GoalDetected: "goal_detected",
+  GoalAccepted: "goal_accepted",
+  GoalDismissed: "goal_dismissed",
+  GoalCreatedFromConversation: "goal_created_from_conversation",
+
   // ── Dashboard ───────────────────────────────────────────────────────────────
   DashboardViewed: "dashboard_viewed",
 
