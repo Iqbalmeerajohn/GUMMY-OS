@@ -86,9 +86,7 @@ class _RunGuard:
 
     def check_before_dispatch(self, branch_count: int = 1) -> None:
         if self.steps + branch_count > self.max_steps:
-            raise RunBudgetExceededError(
-                f"run step cap reached ({self.max_steps})"
-            )
+            raise RunBudgetExceededError(f"run step cap reached ({self.max_steps})")
         if self.cost_tokens >= self.max_cost_tokens:
             raise RunBudgetExceededError(
                 f"run cost cap reached ({self.max_cost_tokens} tokens)"
@@ -223,9 +221,7 @@ async def _run_sequential(
         try:
             result = await handlers.dispatch(task, llm=llm)
         except Exception as exc:
-            await run_recorder.close_step_failure(
-                session, step, error=str(exc)
-            )
+            await run_recorder.close_step_failure(session, step, error=str(exc))
             await _record_error_hop(
                 session, run, agent_key=route_step.agent_key, error=str(exc)
             )
@@ -242,9 +238,7 @@ async def _run_sequential(
         await _record_result_hop(
             session, run, agent_key=route_step.agent_key, result=result
         )
-        scratch.append(
-            {"agent_key": route_step.agent_key, "output": result.output}
-        )
+        scratch.append({"agent_key": route_step.agent_key, "output": result.output})
         results.append((route_step.agent_key, result))
     return results
 
@@ -309,15 +303,11 @@ async def _run_parallel(
 
     results: list[tuple[str, AgentResult]] = []
     errors: list[str] = []
-    for (agent_key, _intent, step), outcome in zip(
-        branches, outcomes, strict=True
-    ):
+    for (agent_key, _intent, step), outcome in zip(branches, outcomes, strict=True):
         if isinstance(outcome, BaseException):
             error = str(outcome)
             await run_recorder.close_step_failure(session, step, error=error)
-            await _record_error_hop(
-                session, run, agent_key=agent_key, error=error
-            )
+            await _record_error_hop(session, run, agent_key=agent_key, error=error)
             errors.append(f"{agent_key}: {error}")
             continue
         guard.record(outcome)
@@ -329,15 +319,11 @@ async def _run_parallel(
             cost_tokens=outcome.cost.tokens,
             cost_usd=outcome.cost.usd,
         )
-        await _record_result_hop(
-            session, run, agent_key=agent_key, result=outcome
-        )
+        await _record_result_hop(session, run, agent_key=agent_key, result=outcome)
         results.append((agent_key, outcome))
 
     if not results:
-        raise RuntimeError(
-            f"all parallel branches failed: {'; '.join(errors)}"
-        )
+        raise RuntimeError(f"all parallel branches failed: {'; '.join(errors)}")
     if errors:
         logger.warning(
             "parallel run %s: %d branch(es) failed, composing from %d",
@@ -362,6 +348,7 @@ async def orchestrate(
     summary: str | None = None,
     agent_context: AgentContext | None = None,
     user_identity: str | None = None,
+    attachment_file_ids: list[uuid.UUID] | None = None,
 ) -> OrchestrationResult:
     """Run one orchestrated turn (routed single | pipeline | parallel).
 
@@ -407,6 +394,7 @@ async def orchestrate(
                 max_memories=max_memories,
                 history=history,
                 summary=summary,
+                attachment_file_ids=attachment_file_ids,
             )
             runner = (
                 _run_parallel
@@ -440,18 +428,12 @@ async def orchestrate(
             usd=sum(r.cost.usd for _, r in results),
         )
         if decision.plan_shape == PlanShape.PARALLEL:
-            input_tokens = sum(
-                int(r.output.get("input_tokens", 0)) for _, r in results
-            )
+            input_tokens = sum(int(r.output.get("input_tokens", 0)) for _, r in results)
             output_tokens = sum(
                 int(r.output.get("output_tokens", 0)) for _, r in results
             )
             model = next(
-                (
-                    str(r.output["model"])
-                    for _, r in results
-                    if r.output.get("model")
-                ),
+                (str(r.output["model"]) for _, r in results if r.output.get("model")),
                 "",
             )
             memories_used = max(

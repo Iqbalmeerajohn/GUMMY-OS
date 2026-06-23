@@ -70,10 +70,9 @@ from app.services.identity.user_context import (
 def _identity_for(user: CurrentUser) -> str | None:
     """Safe profile block injected into the turn (name from the verified JWT)."""
     return build_identity_block(
-        UserContext(
-            user_id=user.id, name=user.display_name, email=user.email
-        )
+        UserContext(user_id=user.id, name=user.display_name, email=user.email)
     )
+
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -310,6 +309,7 @@ async def create_turn(
         token_budget=settings.context_token_budget,
         max_memories=settings.context_max_memories,
         identity=_identity_for(current_user),
+        attachment_file_ids=payload.attachment_file_ids,
     )
     return TurnResponse(
         conversation_id=result.conversation_id,
@@ -358,6 +358,7 @@ async def create_turn_stream(
             token_budget=settings.context_token_budget,
             max_memories=settings.context_max_memories,
             identity=identity,
+            attachment_file_ids=payload.attachment_file_ids,
         ):
             yield f"data: {json.dumps(event)}\n\n"
 

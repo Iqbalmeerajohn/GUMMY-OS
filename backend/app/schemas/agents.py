@@ -49,6 +49,11 @@ class ContextPack(BaseModel):
     # processing status only, never file content. Agent file-selection logic
     # builds on this seam in a later phase.
     files: list[dict] = Field(default_factory=list)
+    # File Intelligence (M6.5): retrieved file *content* for grounding — an
+    # ``{inventory, excerpts}`` dict (or ``None``). Populated when a file is
+    # attached or the query matches uploaded documents; rendered into the
+    # prompt's ``<files>`` block by the handler.
+    file_context: dict | None = None
     # Prior agent outputs within this run (pipeline hand-off scratchpad).
     scratch: list[dict] = Field(default_factory=list)
 

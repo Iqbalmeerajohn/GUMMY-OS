@@ -42,6 +42,7 @@ from app.services.conversation import (
     conversation_service,
 )
 from app.services.embeddings.embedding_service import EmbeddingService
+from app.services.files import file_context_service
 from app.services.goals import goal_extraction_service
 from app.services.llm.base import LLMProvider, SupportsStreaming
 from app.services.memory import (
@@ -93,6 +94,39 @@ async def _active_goals_for_prompt(
         }
         for g in goals
     ]
+
+
+async def _file_context_for_prompt(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    message: str,
+    attachment_file_ids: list[uuid.UUID] | None,
+) -> dict | None:
+    """Retrieve file grounding (attachments-first, else keyword search) for the
+    prompt (M6.5 File Intelligence).
+
+    Best-effort for the search path — a file-retrieval hiccup must never cost a
+    reply, so any failure degrades to no file context. The attachment path lets
+    a 404 (foreign/missing id) propagate: the user explicitly referenced that
+    file, so a silent miss would be wrong (and is a tenancy signal).
+    """
+    if not attachment_file_ids:
+        try:
+            ctx = await file_context_service.retrieve_file_context(
+                session, user_id=user_id, query=message
+            )
+        except Exception:
+            logger.exception("file context failed; replying without files")
+            return None
+        return file_context_service.render_file_context(ctx)
+    ctx = await file_context_service.retrieve_file_context(
+        session,
+        user_id=user_id,
+        query=message,
+        attached_file_ids=attachment_file_ids,
+    )
+    return file_context_service.render_file_context(ctx)
 
 
 def _detect_goal_candidate(message: str) -> GoalCandidate | None:
@@ -179,12 +213,15 @@ async def generate_grounded_reply(
     summary: str | None = None,
     identity: str | None = None,
     conversation_id: uuid.UUID | None = None,
+    attachment_file_ids: list[uuid.UUID] | None = None,
 ) -> GeneratedReply:
     """Ground a reply in the user's memories (+ optional thread history/summary).
 
     Stateless: retrieves, assembles, prompts, and calls the LLM, but persists
     nothing and does not commit. Used by ``run_turn``. ``identity`` is the
     authenticated user-profile block, injected ahead of memory.
+    ``attachment_file_ids`` (M6.5) scopes file grounding to attached files;
+    otherwise relevant file chunks are keyword-retrieved across the user's files.
     """
     turn_start = time.perf_counter()
 
@@ -225,6 +262,12 @@ async def generate_grounded_reply(
         current_conversation_id=conversation_id,
     )
     goals = await _active_goals_for_prompt(session, user_id=user_id)
+    files = await _file_context_for_prompt(
+        session,
+        user_id=user_id,
+        message=message,
+        attachment_file_ids=attachment_file_ids,
+    )
     payload = prompt_builder.build_prompt(
         context=package,
         query=message,
@@ -233,6 +276,7 @@ async def generate_grounded_reply(
         identity=identity,
         prior_context=prior_context,
         goals=goals or None,
+        files=files,
     )
     prompt_build_ms = _ms(prompt_start)
 
@@ -273,6 +317,7 @@ async def run_turn(
     max_memories: int = DEFAULT_CONTEXT_MAX_MEMORIES,
     history_limit: int = DEFAULT_TURN_HISTORY_MESSAGES,
     identity: str | None = None,
+    attachment_file_ids: list[uuid.UUID] | None = None,
 ) -> TurnResult:
     """Run one persisted, memory-grounded turn in a conversation.
 
@@ -346,6 +391,7 @@ async def run_turn(
                 summary=summary_text,
                 agent_context=conversation.agent_context,
                 user_identity=identity,
+                attachment_file_ids=attachment_file_ids,
             )
             reply = GeneratedReply(
                 reply=orch.reply,
@@ -378,6 +424,7 @@ async def run_turn(
                 summary=summary_text,
                 identity=identity,
                 conversation_id=conversation_id,
+                attachment_file_ids=attachment_file_ids,
             )
     elif settings.agents_run_recording:
         from app.services.agents import run_recorder
@@ -403,13 +450,12 @@ async def run_turn(
                 summary=summary_text,
                 identity=identity,
                 conversation_id=conversation_id,
+                attachment_file_ids=attachment_file_ids,
             )
         except Exception as exc:
             # Flush-only; without a commit the trace vanishes with the
             # rollback — behavior stays identical to the unrecorded path.
-            await run_recorder.finish_failure(
-                session, recording, error=str(exc)
-            )
+            await run_recorder.finish_failure(session, recording, error=str(exc))
             raise
         await run_recorder.finish_success(
             session,
@@ -434,6 +480,7 @@ async def run_turn(
             summary=summary_text,
             identity=identity,
             conversation_id=conversation_id,
+            attachment_file_ids=attachment_file_ids,
         )
 
     assistant_message = await msg_repo.append_message(
@@ -472,9 +519,7 @@ async def run_turn(
                 llm=llm,
             )
         except Exception:
-            logger.exception(
-                "inline title generation failed; worker will retry"
-            )
+            logger.exception("inline title generation failed; worker will retry")
 
     await session.commit()
     await session.refresh(assistant_message)
@@ -530,6 +575,7 @@ async def stream_turn(
     max_memories: int = DEFAULT_CONTEXT_MAX_MEMORIES,
     history_limit: int = DEFAULT_TURN_HISTORY_MESSAGES,
     identity: str | None = None,
+    attachment_file_ids: list[uuid.UUID] | None = None,
 ) -> AsyncIterator[dict]:
     """Run a memory-grounded turn, streaming the reply as it is generated.
 
@@ -617,6 +663,12 @@ async def stream_turn(
         current_conversation_id=conversation_id,
     )
     goals = await _active_goals_for_prompt(session, user_id=user_id)
+    files = await _file_context_for_prompt(
+        session,
+        user_id=user_id,
+        message=message,
+        attachment_file_ids=attachment_file_ids,
+    )
     payload = prompt_builder.build_prompt(
         context=package,
         query=message,
@@ -625,6 +677,7 @@ async def stream_turn(
         identity=identity,
         prior_context=prior_context,
         goals=goals or None,
+        files=files,
     )
     prompt_build_ms = _ms(prompt_start)
 
@@ -634,18 +687,14 @@ async def stream_turn(
     llm_start = time.perf_counter()
     first_token_ms: float | None = None
     if isinstance(llm, SupportsStreaming):
-        async for chunk in llm.stream(
-            system=payload.system, messages=payload.messages
-        ):
+        async for chunk in llm.stream(system=payload.system, messages=payload.messages):
             if first_token_ms is None:
                 first_token_ms = _ms(llm_start)
             chunks.append(chunk)
             yield {"type": "delta", "text": chunk}
         model = getattr(llm, "_default_model", llm.name)
     else:
-        response = await llm.generate(
-            system=payload.system, messages=payload.messages
-        )
+        response = await llm.generate(system=payload.system, messages=payload.messages)
         first_token_ms = _ms(llm_start)
         chunks.append(response.text)
         model = response.model

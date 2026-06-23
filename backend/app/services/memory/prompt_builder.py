@@ -55,6 +55,40 @@ def _render_goals(goals: list[dict[str, object]]) -> str:
     return "\n".join(lines)
 
 
+def _render_files(files: dict[str, object]) -> str:
+    """Render the file grounding block (inventory + retrieved excerpts).
+
+    ``files`` carries an ``inventory`` (list of file metadata, so the assistant
+    can answer "what files do I have?") and ``excerpts`` (retrieved chunk
+    content with its source filename, so it can answer *from* the documents).
+    """
+    sections: list[str] = []
+    inventory = files.get("inventory") or []
+    if isinstance(inventory, list) and inventory:
+        lines = []
+        for f in inventory:
+            if not isinstance(f, dict):
+                continue
+            lines.append(
+                f"- {f.get('filename', '')} "
+                f"({f.get('processing_status', 'unknown')}, "
+                f"{f.get('chunk_count', 0)} chunks, "
+                f"uploaded {f.get('uploaded_at', 'n/a')})"
+            )
+        if lines:
+            sections.append("Uploaded files:\n" + "\n".join(lines))
+    excerpts = files.get("excerpts") or []
+    if isinstance(excerpts, list) and excerpts:
+        lines = []
+        for e in excerpts:
+            if not isinstance(e, dict):
+                continue
+            lines.append(f"[{e.get('filename', 'file')}] {e.get('content', '')}")
+        if lines:
+            sections.append("Relevant content from the files:\n" + "\n\n".join(lines))
+    return "\n\n".join(sections)
+
+
 def build_prompt(
     *,
     context: ContextPackage,
@@ -64,6 +98,7 @@ def build_prompt(
     identity: str | None = None,
     prior_context: str | None = None,
     goals: list[dict[str, object]] | None = None,
+    files: dict[str, object] | None = None,
 ) -> PromptPayload:
     """Build the system prompt + chat messages for a memory-grounded turn.
 
@@ -93,6 +128,16 @@ def build_prompt(
             "or deciding what to do); do not bring them up otherwise:\n"
             f"<goals>\n{_render_goals(goals)}\n</goals>"
         )
+    if files:
+        rendered_files = _render_files(files)
+        if rendered_files:
+            system += (
+                "\n\nThe user's uploaded files. When the user asks about their "
+                "documents (or a file is attached), answer using the content "
+                "below and cite the filename; if it isn't there, say so rather "
+                "than guessing:\n"
+                f"<files>\n{rendered_files}\n</files>"
+            )
     if prior_context:
         system += (
             "\n\nRelevant context from the user's earlier conversations "

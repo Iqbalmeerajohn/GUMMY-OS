@@ -10,8 +10,9 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterable
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.file_chunk import FileChunk
 
@@ -89,6 +90,39 @@ async def search_chunks(
         .where(*filters)
         .order_by(FileChunk.file_id, FileChunk.chunk_index)
         .limit(limit)
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def search_chunks_by_terms(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    terms: list[str],
+    file_ids: list[uuid.UUID] | None = None,
+    candidate_limit: int,
+) -> list[FileChunk]:
+    """Fetch chunks matching ANY of ``terms`` (OR of ILIKEs), for re-ranking.
+
+    Returns up to ``candidate_limit`` candidate chunks; the caller ranks them by
+    how many distinct terms each contains (done in Python so ranking stays
+    DB-portable — no full-text index needed for the M6.5 keyword retriever).
+    ``file_ids`` optionally scopes the search to specific files.
+    """
+    if not terms:
+        return []
+    term_filter = or_(*(FileChunk.content.ilike(f"%{t}%") for t in terms))
+    filters = [FileChunk.user_id == user_id, term_filter]
+    if file_ids:
+        filters.append(FileChunk.file_id.in_(file_ids))
+    stmt = (
+        select(FileChunk)
+        # Eager-load the parent file so the service can read its filename
+        # without an async lazy-load (which would raise MissingGreenlet).
+        .options(selectinload(FileChunk.file))
+        .where(*filters)
+        .order_by(FileChunk.file_id, FileChunk.chunk_index)
+        .limit(candidate_limit)
     )
     return list((await session.execute(stmt)).scalars().all())
 

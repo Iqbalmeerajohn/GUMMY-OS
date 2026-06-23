@@ -49,6 +49,10 @@ class TurnRequest(BaseModel):
     """A user message that drives one conversation turn."""
 
     message: str = Field(min_length=1, max_length=4000)
+    # File Intelligence (M6.5): ids of previously-uploaded files attached to
+    # this message. When present, file grounding uses ONLY these files (not a
+    # broad search). Each must belong to the tenant (foreign id → 404).
+    attachment_file_ids: list[uuid.UUID] | None = Field(default=None, max_length=10)
 
     @field_validator("message")
     @classmethod

@@ -30,20 +30,14 @@ async def handle(task: AgentTask, *, llm: LLMProvider) -> AgentResult:
         )
         for m in pack.memories
     ]
-    token_budget = int(
-        task.inputs.get("token_budget", DEFAULT_CONTEXT_TOKEN_BUDGET)
-    )
-    max_memories = int(
-        task.inputs.get("max_memories", DEFAULT_CONTEXT_MAX_MEMORIES)
-    )
+    token_budget = int(task.inputs.get("token_budget", DEFAULT_CONTEXT_TOKEN_BUDGET))
+    max_memories = int(task.inputs.get("max_memories", DEFAULT_CONTEXT_MAX_MEMORIES))
     package = context_assembly_service.assemble_context(
         candidates,
         token_budget=token_budget,
         max_memories=max_memories,
     )
-    history = [
-        {str(k): str(v) for k, v in entry.items()} for entry in pack.history
-    ]
+    history = [{str(k): str(v) for k, v in entry.items()} for entry in pack.history]
     # Pipeline hand-off (M5): fold prior agents' findings into the summary
     # block. Empty scratch (the single-agent route) leaves the prompt
     # byte-identical to the legacy core — the parity invariant.
@@ -51,8 +45,7 @@ async def handle(task: AgentTask, *, llm: LLMProvider) -> AgentResult:
     findings = [
         str(entry["output"].get("digest", ""))
         for entry in pack.scratch
-        if isinstance(entry.get("output"), dict)
-        and entry["output"].get("digest")
+        if isinstance(entry.get("output"), dict) and entry["output"].get("digest")
     ]
     if findings:
         block = "\n\n".join(findings)
@@ -70,6 +63,10 @@ async def handle(task: AgentTask, *, llm: LLMProvider) -> AgentResult:
         }
         for g in pack.goals
     ]
+    # File Intelligence (M6.5): the context builder packs retrieved file content
+    # (attachments or keyword search) as ``file_context``; render it so the agent
+    # answers from uploaded documents. ``None`` leaves the prompt unchanged.
+    file_context = pack.file_context if isinstance(pack.file_context, dict) else None
     payload = prompt_builder.build_prompt(
         context=package,
         query=task.intent,
@@ -77,10 +74,9 @@ async def handle(task: AgentTask, *, llm: LLMProvider) -> AgentResult:
         summary=summary,
         identity=str(identity) if isinstance(identity, str) else None,
         goals=goals or None,
+        files=file_context,
     )
-    response = await llm.generate(
-        system=payload.system, messages=payload.messages
-    )
+    response = await llm.generate(system=payload.system, messages=payload.messages)
     return AgentResult(
         output={
             "reply": response.text,
@@ -89,7 +85,5 @@ async def handle(task: AgentTask, *, llm: LLMProvider) -> AgentResult:
             "input_tokens": response.input_tokens,
             "output_tokens": response.output_tokens,
         },
-        cost=CostInfo(
-            tokens=response.input_tokens + response.output_tokens
-        ),
+        cost=CostInfo(tokens=response.input_tokens + response.output_tokens),
     )

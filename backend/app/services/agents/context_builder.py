@@ -26,6 +26,7 @@ from app.observability import langfuse as langfuse_obs
 from app.repositories import file_repository, goal_repository, task_repository
 from app.schemas.agents import ContextPack
 from app.services.embeddings.embedding_service import EmbeddingService
+from app.services.files import file_context_service
 from app.services.memory import memory_retrieval_service
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ async def build(
     history: list[dict] | None = None,
     summary: str | None = None,
     scratch: list[dict] | None = None,
+    attachment_file_ids: list[uuid.UUID] | None = None,
 ) -> ContextPack:
     """Build a scoped context pack for one agent dispatch.
 
@@ -81,9 +83,7 @@ async def build(
                     session, user_id=user_id, limit=CONTEXT_MAX_GOALS
                 )
         except Exception:
-            logger.exception(
-                "active-goals lookup failed; agent runs without goals"
-            )
+            logger.exception("active-goals lookup failed; agent runs without goals")
         span.update(metadata={"active_goals": len(active_goals)})
     open_tasks = await task_repository.list_open(
         session, user_id=user_id, limit=CONTEXT_MAX_TASKS
@@ -99,10 +99,21 @@ async def build(
                     session, user_id=user_id, limit=CONTEXT_MAX_FILES
                 )
         except Exception:
-            logger.exception(
-                "recent-files lookup failed; agent runs without files"
-            )
+            logger.exception("recent-files lookup failed; agent runs without files")
         span.update(metadata={"recent_files": len(recent_files)})
+
+    # File Intelligence (M6.5): retrieved file *content* for grounding. The
+    # search path is internally best-effort; the attachment path lets a 404
+    # propagate (the user explicitly referenced that file). Returns ``None`` when
+    # there is nothing to add, leaving the legacy prompt byte-identical.
+    file_ctx = await file_context_service.retrieve_file_context(
+        session,
+        user_id=user_id,
+        query=query,
+        attached_file_ids=attachment_file_ids,
+    )
+    file_context = file_context_service.render_file_context(file_ctx)
+
     return ContextPack(
         memories=memories,
         history=list(history or []),
@@ -115,13 +126,9 @@ async def build(
                 "priority": g.priority.value,
                 "category": g.category,
                 "progress_percentage": g.progress_percentage,
-                "target_date": (
-                    g.target_date.isoformat() if g.target_date else None
-                ),
+                "target_date": (g.target_date.isoformat() if g.target_date else None),
                 "milestones_total": len(g.milestones),
-                "milestones_completed": sum(
-                    1 for m in g.milestones if m.completed
-                ),
+                "milestones_completed": sum(1 for m in g.milestones if m.completed),
                 "agent_context": g.agent_context.value,
             }
             for g in active_goals
@@ -146,5 +153,6 @@ async def build(
             }
             for f in recent_files
         ],
+        file_context=file_context,
         scratch=list(scratch or []),
     )

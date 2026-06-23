@@ -153,17 +153,27 @@ SUPPORTED_FILE_MIME_TYPES: dict[str, str] = {
     "application/pdf": "PDF",
     "text/plain": "Text",
     "text/markdown": "Markdown",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": (
-        "Word"
-    ),
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ("Word"),
     "text/csv": "CSV",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": (
-        "Excel"
-    ),
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ("Excel"),
 }
 # How many recently-uploaded files surface in agent context (metadata only —
 # never file content; see context_builder).
 CONTEXT_MAX_FILES = 10
+
+# ── File Intelligence (M6.5) ──────────────────────────────────────────────────
+# How many file chunks are injected into a prompt as grounding content. A turn
+# budget that keeps the file context useful without crowding out memory/goals.
+FILE_CONTEXT_MAX_CHUNKS = 8
+# Over-fetch this many × the final chunk limit as keyword candidates, then
+# re-rank by term-match count in the service (DB-portable ranking).
+FILE_CONTEXT_CANDIDATE_MULTIPLIER = 4
+# Minimum length of a query token to be treated as a search term (drops "a",
+# "is", "of"-style noise without a full stopword list).
+FILE_SEARCH_MIN_TERM_LENGTH = 3
+# Max characters of a single chunk rendered into the prompt (defensive cap so a
+# pathologically long chunk can't blow the context budget).
+FILE_CONTEXT_CHUNK_CHAR_CAP = 1500
 
 # ── Ollama (local inference) ──────────────────────────────────────────────────
 # Local, self-hosted models served by Ollama (https://ollama.com). No API key
