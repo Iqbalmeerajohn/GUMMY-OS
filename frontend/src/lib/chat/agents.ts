@@ -1,11 +1,24 @@
 /**
- * Conversation agent contexts — the backend `agent_context` enum values the
- * workspace agent selector binds to (general/career/learning/research/builder).
+ * The M8 multi-agent workforce — the specialists the backend Router selects and
+ * the workspace selector can pin manually. ``value`` is the backend agent key
+ * (sent as `agent` on a turn to override Auto routing); ``label`` is the badge
+ * text. "General" is the always-on fallback and is not a manual specialist here
+ * (Auto already falls back to it), so it is not listed as a selectable override.
  */
-export const AGENT_CONTEXTS = [
-  { value: "general", label: "General" },
+export const AGENTS = [
   { value: "career", label: "Career" },
   { value: "learning", label: "Learning" },
+  { value: "planner", label: "Planner" },
+  { value: "memory", label: "Memory" },
   { value: "research", label: "Research" },
-  { value: "builder", label: "Builder" },
 ] as const;
+
+/** Backend agent key → human label (badges). Includes the General fallback. */
+export const AGENT_LABELS: Record<string, string> = {
+  general: "General",
+  career: "Career",
+  learning: "Learning",
+  planner: "Planner",
+  memory: "Memory",
+  research: "Research",
+};

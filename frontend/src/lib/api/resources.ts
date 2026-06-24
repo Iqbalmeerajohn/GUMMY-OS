@@ -86,6 +86,8 @@ export interface MessageItem {
   model: string | null;
   input_tokens: number | null;
   output_tokens: number | null;
+  /** Persisted reply metadata. M8 carries `agent_key` (which agent replied). */
+  metadata: Record<string, unknown> | null;
   created_at: string;
 }
 
@@ -448,6 +450,7 @@ export function postTurn(
   conversationId: string,
   message: string,
   attachmentFileIds?: string[],
+  agent?: string,
 ) {
   return apiFetch<TurnResult>(
     `/api/v1/conversations/${conversationId}/messages`,
@@ -458,9 +461,35 @@ export function postTurn(
         ...(attachmentFileIds?.length
           ? { attachment_file_ids: attachmentFileIds }
           : {}),
+        // M8 manual override: pin an agent (Auto omits this → Router decides).
+        ...(agent ? { agent } : {}),
       },
     },
   );
+}
+
+/** The selectable agents the backend advertises (workspace selector / badges). */
+export interface AgentInfo {
+  name: string;
+  display_name: string;
+  description: string;
+  keywords: string[];
+}
+
+/** List the available agents (General + the five M8 specialists). */
+export function listAgents() {
+  return apiFetch<AgentInfo[]>("/api/v1/agents");
+}
+
+/** Routing diagnostics: which agent the Router would pick for a query, and why. */
+export function agentDiagnostics(q: string) {
+  return apiFetch<{
+    query: string;
+    selected_agent: string;
+    confidence: number;
+    reason: string;
+    available_agents: AgentInfo[];
+  }>("/api/v1/agents/diagnostics", { query: { q } });
 }
 
 // ── Unified search (conversations + messages + memories) ──────────────────────
@@ -515,6 +544,13 @@ export function searchMemories(q: string, limit = 8) {
   });
 }
 
+/** One live web source used to ground a reply (M8.5 🌐 Web Sources). */
+export interface WebSource {
+  title: string;
+  url: string;
+  domain: string;
+}
+
 /** A single Server-Sent Event from the streaming turn endpoint. */
 export interface StreamEvent {
   type: "delta" | "done";
@@ -527,6 +563,10 @@ export interface StreamEvent {
   /** Short contents of the memories used to ground the reply (Memory Used UI). */
   memories?: string[];
   message_count?: number;
+  /** M8: the agent that answered (Auto-routed or overridden), or null (legacy). */
+  agent?: string | null;
+  /** M8.5: live web sources used to ground the reply (🌐 Web Sources), or []. */
+  web_sources?: WebSource[];
   /** A goal-like statement detected in the user's message (M5.5), or null. */
   goal_candidate?: GoalCandidate | null;
 }
@@ -540,6 +580,7 @@ export async function* streamTurn(
   message: string,
   signal?: AbortSignal,
   attachmentFileIds?: string[],
+  agent?: string,
 ): AsyncGenerator<StreamEvent> {
   const res = await fetch(
     apiUrl(`/api/v1/conversations/${conversationId}/messages/stream`),
@@ -555,6 +596,8 @@ export async function* streamTurn(
         ...(attachmentFileIds?.length
           ? { attachment_file_ids: attachmentFileIds }
           : {}),
+        // M8 manual override: pin an agent (Auto omits this → Router decides).
+        ...(agent ? { agent } : {}),
       }),
       signal,
     },

@@ -6,6 +6,7 @@ import {
   Briefcase,
   ChevronDown,
   FileSearch,
+  Globe,
   GraduationCap,
   Hammer,
   PanelLeft,
@@ -30,8 +31,14 @@ import {
   streamTurn,
   uploadFile,
   type GoalCandidate,
+  type WebSource,
 } from "@/lib/api/resources";
-import { modeToAgentContext, previewRoutedAgents } from "@/lib/chat/routing";
+import { AGENT_LABELS } from "@/lib/chat/agents";
+import {
+  modeToAgent,
+  modeToAgentContext,
+  previewRoutedAgents,
+} from "@/lib/chat/routing";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
@@ -50,16 +57,36 @@ function logMsg(
   }
 }
 
+// M8 badge emojis (A3) — one per specialist + the General fallback.
 const AGENT_EMOJI: Record<string, string> = {
-  General: "🧠",
-  Learning: "🎓",
-  Career: "💼",
+  Career: "🎯",
+  Learning: "📚",
+  Memory: "🧠",
+  Planner: "📋",
   Research: "🔬",
+  General: "💬",
+  // Legacy contexts still referenced by the preview heuristic.
   Builder: "🛠️",
   Content: "✍️",
   Sales: "📈",
   Admin: "🗂️",
 };
+
+/**
+ * The agent badge label for an assistant message: prefer the real backend
+ * decision (persisted `metadata.agent_key`, or the live stream's `agent`), and
+ * fall back to the client-side preview only when neither is available yet.
+ */
+function agentLabelFor(
+  metadataKey: unknown,
+  streamedKey: string | undefined,
+  previewLabel: string | null,
+): string | null {
+  const key =
+    typeof metadataKey === "string" ? metadataKey : (streamedKey ?? null);
+  if (key) return AGENT_LABELS[key] ?? previewLabel ?? "General";
+  return previewLabel;
+}
 
 const STREAM_PHASES = [
   "Thinking…",
@@ -139,6 +166,45 @@ function MemoryUsed({ memories }: { memories: string[] }) {
   );
 }
 
+/** Collapsible "🌐 Web Sources" disclosure (M8.5): title, domain, link. */
+function WebSources({ sources }: { sources: WebSource[] }) {
+  const [open, setOpen] = useState(false);
+  if (sources.length === 0) return null;
+  return (
+    <div className="mt-2">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="text-muted-foreground hover:text-primary inline-flex items-center gap-1.5 text-xs transition-colors"
+      >
+        <Globe className="size-3.5" />
+        Web Sources ({sources.length})
+        <ChevronDown
+          className={cn("size-3 transition-transform", open && "rotate-180")}
+        />
+      </button>
+      {open ? (
+        <ul className="border-primary/20 mt-1.5 space-y-1 border-l pl-3">
+          {sources.map((s, i) => (
+            <li key={i} className="text-xs">
+              <a
+                href={s.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary/90 hover:text-primary hover:underline"
+              >
+                {s.title}
+              </a>
+              {s.domain ? (
+                <span className="text-muted-foreground"> — {s.domain}</span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 export function ChatPane({
   activeId,
   agentContext,
@@ -169,6 +235,17 @@ export function ChatPane({
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [memoriesByMessage, setMemoriesByMessage] = useState<
     Record<string, string[]>
+  >({});
+  // M8: the agent that actually answered each assistant message, captured from
+  // the stream's terminal `done` event (the authoritative backend decision)
+  // until the persisted message (with `metadata.agent_key`) is refetched.
+  const [agentByMessage, setAgentByMessage] = useState<Record<string, string>>(
+    {},
+  );
+  // M8.5: live web sources used to ground each assistant message, captured from
+  // the stream's `done` event (also persisted on `metadata.web_sources`).
+  const [webSourcesByMessage, setWebSourcesByMessage] = useState<
+    Record<string, WebSource[]>
   >({});
   // Goal Intelligence (M5.5): detected candidates keyed by the assistant message
   // they accompany, so the "Goal Detected" prompt renders under that reply until
@@ -251,7 +328,10 @@ export function ChatPane({
     atBottomRef.current = true;
     logMsg("(pending)", "user", "optimistic");
 
-    // Agent that will (most likely) handle this turn — for analytics only.
+    // Manual override (Auto → undefined → the backend Router decides).
+    const overrideAgent = modeToAgent(agentContext);
+    // Agent that will (most likely) handle this turn — for the optimistic
+    // preview + analytics; the authoritative agent comes back on the reply.
     const routedAgent = previewRoutedAgents(text, agentContext)[0] ?? null;
     const startedAt = Date.now();
 
@@ -287,6 +367,7 @@ export function ChatPane({
         text,
         controller.signal,
         attachmentIds,
+        overrideAgent,
       )) {
         if (ev.type === "delta" && ev.text) {
           setStreamText((prev) => prev + ev.text);
@@ -297,6 +378,21 @@ export function ChatPane({
             ...m,
             [ev.assistant_message_id as string]: memories,
           }));
+          // Capture the real agent that answered (authoritative backend
+          // decision) so the reply badge reflects routing, not the preview.
+          if (ev.agent) {
+            setAgentByMessage((a) => ({
+              ...a,
+              [ev.assistant_message_id as string]: ev.agent as string,
+            }));
+          }
+          // M8.5: capture the live web sources used to ground this reply.
+          if (ev.web_sources && ev.web_sources.length > 0) {
+            setWebSourcesByMessage((w) => ({
+              ...w,
+              [ev.assistant_message_id as string]: ev.web_sources as WebSource[],
+            }));
+          }
           analytics.track(AnalyticsEvent.AssistantResponseCompleted, {
             conversation_id: id,
             agent_context: agentContext,
@@ -344,7 +440,7 @@ export function ChatPane({
       // so the user still gets a persisted reply instead of a dead end.
       try {
         if (!id) throw err;
-        const result = await postTurn(id, text, attachmentIds);
+        const result = await postTurn(id, text, attachmentIds, overrideAgent);
         if (result.goal_candidate) {
           const candidate = result.goal_candidate;
           setGoalCandidateByMessage((g) => ({
@@ -460,10 +556,22 @@ export function ChatPane({
                       .reverse()
                       .find((x) => x.role === "user")
                   : null;
-              const agent =
+              const previewLabel =
                 prevUser != null
-                  ? previewRoutedAgents(prevUser.content, agentContext)[0]
+                  ? (previewRoutedAgents(prevUser.content, agentContext)[0] ??
+                    null)
                   : null;
+              const agent = agentLabelFor(
+                (m.metadata as Record<string, unknown> | null)?.agent_key,
+                agentByMessage[m.id],
+                previewLabel,
+              );
+              // M8.5: prefer the just-streamed sources, else the persisted ones.
+              const webSources =
+                webSourcesByMessage[m.id] ??
+                ((m.metadata as Record<string, unknown> | null)
+                  ?.web_sources as WebSource[] | undefined) ??
+                [];
               return (
                 <MessageBubble
                   key={m.id}
@@ -474,6 +582,7 @@ export function ChatPane({
                       <div className="mt-1.5 space-y-0.5">
                         {agent ? <AgentChip label={agent} /> : null}
                         <MemoryUsed memories={memoriesByMessage[m.id] ?? []} />
+                        <WebSources sources={webSources} />
                         {goalCandidateByMessage[m.id] ? (
                           <GoalConfirmation
                             candidate={goalCandidateByMessage[m.id]}
