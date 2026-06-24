@@ -1,13 +1,21 @@
-"""Research Agent tests (Phase 3, M8) — grounded analysis via the M7 seam."""
+"""Research Agent tests (Phase 3, M8 → M8.5) — grounded analysis via the M7 seam,
+plus supplemental live web search fusion (M8.5)."""
 
 from __future__ import annotations
 
 import uuid
 
+import pytest
+
 from app.schemas.agents import AgentTask, ContextPack
 from app.services.agents import handlers
 from app.services.agents.manifests import RESEARCH_AGENT_KEY
 from app.services.llm.fake_provider import FakeLLMProvider
+from app.services.search import SearchResult, search_service, set_provider
+
+
+class _SettingsOn:
+    web_search_enabled = True
 
 
 def _task(intent: str) -> AgentTask:
@@ -48,3 +56,57 @@ async def test_research_agent_handles_empty_pack() -> None:
     )
     result = await handlers.dispatch(task, llm=llm)
     assert result.output["reply"]
+
+
+async def test_research_agent_fuses_web_search(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(search_service, "get_settings", lambda: _SettingsOn())
+
+    class _Stub:
+        async def search(self, query: str, *, limit: int = 5):
+            return [
+                SearchResult(
+                    title="Latest AI breakthroughs",
+                    url="https://news.example.com/ai",
+                    snippet="New model released.",
+                    source="brave",
+                )
+            ]
+
+    original = search_service.get_provider()
+    set_provider(_Stub())
+    try:
+        llm = FakeLLMProvider(reply="Summary with sources.")
+        # "latest" is a search cue + Research is eligible → fusion fires.
+        result = await handlers.dispatch(_task("latest AI news"), llm=llm)
+    finally:
+        set_provider(original)
+
+    system = str(llm.calls[0]["system"])
+    assert "https://news.example.com/ai" in system
+    assert "Search" in system
+    sources = result.output["web_sources"]
+    assert sources[0]["url"] == "https://news.example.com/ai"
+    assert result.citations[0]["url"] == "https://news.example.com/ai"
+
+
+async def test_research_agent_survives_search_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(search_service, "get_settings", lambda: _SettingsOn())
+
+    class _Boom:
+        async def search(self, query: str, *, limit: int = 5):
+            raise RuntimeError("provider down")
+
+    original = search_service.get_provider()
+    set_provider(_Boom())
+    try:
+        llm = FakeLLMProvider(reply="Answer without live data.")
+        result = await handlers.dispatch(_task("latest AI news"), llm=llm)
+    finally:
+        set_provider(original)
+    # Search failure degrades silently — the reply still lands, no web sources.
+    assert result.output["reply"] == "Answer without live data."
+    assert result.output["web_sources"] == []

@@ -1,41 +1,23 @@
-"""Green tool: read-only web search behind a provider seam.
+"""Green tool: read-only web search, delegating to the single search seam.
 
-The default provider is a deterministic, offline-safe null provider (no
-external dependency, no key). A real provider (Brave/SerpAPI/etc.) plugs in
-behind ``set_provider`` without touching the interface or the gate.
+The tool owns no provider of its own (Rule #4: no parallel systems) — it calls
+``services/search`` (``search_service``), the same seam the knowledge-fusion path
+uses, so a real backend (Brave) configured at the composition root serves both.
+The offline ``DummySearchProvider`` is the default until Brave is wired in.
+
 **Results are untrusted data** — they inform answers but can never escalate
 permissions or approve actions (the policy engine never sees them).
 """
 
 from __future__ import annotations
 
-from typing import Protocol
+import dataclasses
 
+from app.core.constants import SEARCH_DEFAULT_LIMIT
 from app.services.agents.tools.context import ToolContext
+from app.services.search import search_service
 
 _MAX_RESULTS = 10
-
-
-class WebSearchProvider(Protocol):
-    """Returns search results for a query."""
-
-    async def search(self, query: str, *, limit: int) -> list[dict]: ...
-
-
-class NullWebSearchProvider:
-    """Offline-safe default: always returns no results."""
-
-    async def search(self, query: str, *, limit: int) -> list[dict]:
-        return []
-
-
-_provider: WebSearchProvider = NullWebSearchProvider()
-
-
-def set_provider(provider: WebSearchProvider) -> None:
-    """Swap the search backend (composition-root seam)."""
-    global _provider
-    _provider = provider
 
 
 async def execute(context: ToolContext, args: dict) -> dict:
@@ -43,6 +25,9 @@ async def execute(context: ToolContext, args: dict) -> dict:
     query = str(args.get("query", "")).strip()
     if not query:
         raise ValueError("web_search requires a non-empty 'query'")
-    limit = min(int(args.get("limit", 5)), _MAX_RESULTS)
-    results = await _provider.search(query, limit=limit)
-    return {"results": results, "untrusted": True}
+    limit = min(int(args.get("limit", SEARCH_DEFAULT_LIMIT)), _MAX_RESULTS)
+    results = await search_service.search(query, limit=limit)
+    return {
+        "results": [dataclasses.asdict(r) for r in results],
+        "untrusted": True,
+    }

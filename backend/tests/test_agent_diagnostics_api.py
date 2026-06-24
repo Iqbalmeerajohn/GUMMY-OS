@@ -24,6 +24,9 @@ async def test_diagnostics_selects_career(
     assert body["selected_agent"] == "career"
     assert body["confidence"] > 0
     assert "resume" in body["reason"]
+    # A4 routing explanation: matched keywords + routing_reason are exposed.
+    assert "resume" in body["matched_keywords"]
+    assert body["routing_reason"] == body["reason"]
     names = {a["name"] for a in body["available_agents"]}
     assert {"general", "career", "learning", "planner", "memory", "research"} <= names
 

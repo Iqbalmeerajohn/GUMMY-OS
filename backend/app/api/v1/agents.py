@@ -96,5 +96,7 @@ async def agent_diagnostics(
         selected_agent=decision.steps[-1].agent_key,
         confidence=decision.confidence,
         reason=decision.rationale,
+        matched_keywords=decision.matched_keywords,
+        routing_reason=decision.rationale,
         available_agents=_available_agents(),
     )

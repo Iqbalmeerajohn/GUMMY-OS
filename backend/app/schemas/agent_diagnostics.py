@@ -26,4 +26,8 @@ class AgentDiagnosticsResponse(BaseModel):
     selected_agent: str
     confidence: float
     reason: str
+    # A4 routing explanation: the keywords that fired and a human-readable
+    # reason. ``routing_reason`` mirrors ``reason`` under the brief's field name.
+    matched_keywords: list[str] = Field(default_factory=list)
+    routing_reason: str = ""
     available_agents: list[AgentInfo] = Field(default_factory=list)

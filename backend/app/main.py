@@ -28,6 +28,7 @@ from app.observability import langfuse as langfuse_obs
 from app.services.agents.registry import get_registry
 from app.services.embeddings.factory import get_embedding_service
 from app.services.llm.factory import get_llm_provider
+from app.services.search import provider as search_provider
 from app.workers.embedding_worker import embedding_worker
 from app.workers.enrichment_worker import enrichment_worker
 
@@ -92,6 +93,8 @@ def create_app() -> FastAPI:
     langfuse_obs.init_langfuse(settings)
     # Product analytics (no-op without POSTHOG_API_KEY).
     analytics.init_analytics(settings)
+    # Live web search backend (M8.5; offline Dummy default without BRAVE_API_KEY).
+    search_provider.init_provider(settings)
     assert_auth_safe(settings)  # fail fast if dev auth bypass reaches production
 
     app = FastAPI(

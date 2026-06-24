@@ -52,6 +52,9 @@ logger = logging.getLogger(__name__)
 SOURCE_MEMORY = "memory"
 SOURCE_GOAL = "goal"
 SOURCE_FILE = "file"
+# Live web search (M8.5): a *supplemental* source fused after the user's own
+# knowledge. Never overrides memories/goals/files (the ranker weights it lower).
+SOURCE_SEARCH = "search"
 
 
 @dataclass(frozen=True)
@@ -82,6 +85,9 @@ class UnifiedKnowledgeContext:
     memories: list[KnowledgeItem] = field(default_factory=list)
     goals: list[KnowledgeItem] = field(default_factory=list)
     files: list[KnowledgeItem] = field(default_factory=list)
+    # Live web-search hits (M8.5) — supplemental, ranked below the user's own
+    # knowledge. Empty unless the agent is search-eligible and the query matched.
+    search: list[KnowledgeItem] = field(default_factory=list)
     # Lightweight file metadata (so the assistant can answer "what files do I
     # have?" from the same context). Mirrors ``FileContext.inventory``.
     inventory: list[dict] = field(default_factory=list)
@@ -91,7 +97,7 @@ class UnifiedKnowledgeContext:
 
     @property
     def all_items(self) -> list[KnowledgeItem]:
-        return [*self.memories, *self.goals, *self.files]
+        return [*self.memories, *self.goals, *self.files, *self.search]
 
     @property
     def is_empty(self) -> bool:
@@ -99,8 +105,43 @@ class UnifiedKnowledgeContext:
             not self.memories
             and not self.goals
             and not self.files
+            and not self.search
             and (not self.inventory)
         )
+
+
+def search_items_from_results(results: list) -> list[KnowledgeItem]:
+    """Adapt provider ``SearchResult``s into ``SOURCE_SEARCH`` knowledge items.
+
+    Pure (no I/O): used by both reply paths to fuse live search into the same
+    ranker + builder as the user's own knowledge. ``order`` drives the ranker's
+    decay (best hit first); ``url``/``domain`` survive for citation/rendering.
+    """
+    items: list[KnowledgeItem] = []
+    for order, r in enumerate(results):
+        title = str(getattr(r, "title", "")).strip()
+        url = str(getattr(r, "url", "")).strip()
+        if not title or not url:
+            continue
+        snippet = str(getattr(r, "snippet", "")).strip()
+        items.append(
+            KnowledgeItem(
+                source=SOURCE_SEARCH,
+                item_id=url,
+                content=f"{title} — {snippet}" if snippet else title,
+                label=title,
+                source_score=0.0,
+                metadata={
+                    "title": title,
+                    "url": url,
+                    "domain": str(getattr(r, "domain", "")),
+                    "snippet": snippet,
+                    "provider": str(getattr(r, "source", "")),
+                    "order": order,
+                },
+            )
+        )
+    return items
 
 
 async def _retrieve_memories(

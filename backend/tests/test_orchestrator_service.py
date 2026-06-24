@@ -117,6 +117,10 @@ async def test_orchestrate_single_agent_traced(
         "agent_key": GENERAL_AGENT_KEY,
         "run_id": str(result.run_id),
         "route_shape": "single",
+        # A5 routing explanation + B11 web sources (none for the general path).
+        "confidence": 0.3,
+        "routing_reason": "default: low confidence",
+        "web_sources": [],
     }
     assert result.cost.tokens == result.input_tokens + result.output_tokens
 

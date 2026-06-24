@@ -148,6 +148,7 @@ def score_agents(
         steps=[RouteStep(agent_key=best_key)],
         rationale=f"matched {', '.join(best_matched)}",
         confidence=_confidence_for(best_score),
+        matched_keywords=best_matched,
     )
 
 

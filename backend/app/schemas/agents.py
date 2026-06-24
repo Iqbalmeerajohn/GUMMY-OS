@@ -106,6 +106,9 @@ class RoutingDecision(BaseModel):
     steps: list[RouteStep] = Field(default_factory=list)
     rationale: str = ""
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    # The specialist keywords that fired for the winning agent (A4: routing
+    # explanation). Empty for the general/recall defaults (no keyword match).
+    matched_keywords: list[str] = Field(default_factory=list)
 
 
 class OrchestrationResult(BaseModel):

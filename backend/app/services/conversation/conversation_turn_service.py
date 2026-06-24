@@ -14,6 +14,7 @@ entrypoint (the legacy stateless ``/chat`` route was retired in M8).
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import time
 import uuid
@@ -50,6 +51,7 @@ from app.services.knowledge.knowledge_context_builder import CompiledKnowledge
 from app.services.llm.base import LLMProvider, SupportsStreaming
 from app.services.memory import prompt_builder
 from app.services.memory.context_assembly_service import ContextPackage
+from app.services.search import search_service
 from app.utils.tokens import estimate_tokens
 from app.workers.enrichment_worker import enrichment_worker
 
@@ -71,13 +73,19 @@ async def _build_knowledge(
     embedding_service: EmbeddingService,
     attachment_file_ids: list[uuid.UUID] | None,
     query_vector: list[float] | None,
-) -> CompiledKnowledge:
-    """Retrieve → rank → compress the user's knowledge into one prompt block (M7).
+    agent_key: str | None = None,
+) -> tuple[CompiledKnowledge, list[dict]]:
+    """Retrieve → (fuse search) → rank → compress into one prompt block (M7/M8.5).
 
     The Unified Knowledge Engine fuses memories, goals, and files into a single
     ranked, token-budgeted ``<knowledge>`` block. Per-source failures degrade
     gracefully inside the engine (no source can take down a turn); only an
     explicit file-attachment 404 propagates.
+
+    ``agent_key`` (M8.5) enables supplemental live web search for the eligible
+    specialists when the query is search-worthy; the gate + provider are
+    best-effort, so an ineligible/disabled/failed search just adds nothing.
+    Returns the compiled block plus the compact web sources used (for the UI).
     """
     ctx = await knowledge_retrieval_service.retrieve(
         session,
@@ -87,8 +95,26 @@ async def _build_knowledge(
         attachment_file_ids=attachment_file_ids,
         query_vector=query_vector,
     )
+    web_sources: list[dict] = []
+    web_results = await search_service.maybe_search(
+        agent_key, message, user_id=user_id
+    )
+    if web_results:
+        search_items = knowledge_retrieval_service.search_items_from_results(
+            web_results
+        )
+        ctx = dataclasses.replace(ctx, search=search_items)
+        web_sources = [
+            {
+                "title": str(i.metadata.get("title", i.label)),
+                "url": str(i.metadata.get("url", "")),
+                "domain": str(i.metadata.get("domain", "")),
+            }
+            for i in search_items
+        ]
     ranked = knowledge_ranker.rank(ctx)
-    return knowledge_context_builder.build(ranked, inventory=ctx.inventory)
+    compiled = knowledge_context_builder.build(ranked, inventory=ctx.inventory)
+    return compiled, web_sources
 
 
 def _detect_goal_candidate(message: str) -> GoalCandidate | None:
@@ -150,6 +176,9 @@ async def _select_stream_agent(
         metadata = {
             "agent_key": selected_agent,
             "route_shape": decision.plan_shape.value,
+            # A5: persist the routing explanation on the streamed reply too.
+            "confidence": decision.confidence,
+            "routing_reason": decision.rationale,
         }
         return selected_agent, metadata, persona
     except Exception:
@@ -271,7 +300,10 @@ async def generate_grounded_reply(
     embedding_ms = _ms(embed_start)
 
     retrieve_start = time.perf_counter()
-    knowledge = await _build_knowledge(
+    # Legacy/general reply core: no specialist routing here, so search stays off
+    # (agent_key=None → no fusion). The orchestrated + streamed paths carry the
+    # agent and own search fusion.
+    knowledge, _web_sources = await _build_knowledge(
         session,
         user_id=user_id,
         message=message,
@@ -661,14 +693,27 @@ async def stream_turn(
     query_vector = await embedding_service.embed_query(message)
     embedding_ms = _ms(embed_start)
 
+    # Multi-Agent Workforce (M8): pick the agent that answers *before* building
+    # knowledge, so M8.5 can gate live web search on the selected specialist.
+    # Deterministic + free (the keyword router runs without an LLM by default);
+    # ``None`` selected_agent on the legacy path leaves the prompt unchanged.
+    selected_agent, assistant_metadata, persona = await _select_stream_agent(
+        message=message,
+        agent_context=conversation.agent_context,
+        agent_key=agent_key,
+        knowledge_block="",
+        llm=llm,
+    )
+
     retrieve_start = time.perf_counter()
-    knowledge = await _build_knowledge(
+    knowledge, web_sources = await _build_knowledge(
         session,
         user_id=user_id,
         message=message,
         embedding_service=embedding_service,
         attachment_file_ids=attachment_file_ids,
         query_vector=query_vector,
+        agent_key=selected_agent,
     )
     retrieve_memories_ms = _ms(retrieve_start)
 
@@ -691,19 +736,10 @@ async def stream_turn(
         prior_context=prior_context,
         knowledge=knowledge.block,
     )
-    # Multi-Agent Workforce (M8): pick the agent that answers and prepend its
-    # persona to the system prompt. Deterministic + free (the keyword router runs
-    # without an LLM by default), so the streamed reply speaks in the right
-    # specialist's voice and we can attribute it. Gated on the same flag as the
-    # orchestrated path; ``None`` selected_agent on the legacy path leaves the
-    # prompt byte-identical to before.
-    selected_agent, assistant_metadata, persona = await _select_stream_agent(
-        message=message,
-        agent_context=conversation.agent_context,
-        agent_key=agent_key,
-        knowledge_block=knowledge.block,
-        llm=llm,
-    )
+    # B11: carry the live web sources on the persisted metadata so the client can
+    # render the 🌐 Web Sources disclosure from the refetched message too.
+    if web_sources and assistant_metadata is not None:
+        assistant_metadata = {**assistant_metadata, "web_sources": web_sources}
     system = f"{persona}\n\n{payload.system}" if persona else payload.system
     if selected_agent is not None:
         _emit_stream_route_analytics(
@@ -809,6 +845,8 @@ async def stream_turn(
         # the client badges the reply with the real backend decision. ``None``
         # on the legacy path (orchestration disabled).
         "agent": selected_agent,
+        # M8.5: live web sources used to ground this reply (B11), or [].
+        "web_sources": web_sources,
         "goal_candidate": (
             goal_candidate.model_dump(mode="json") if goal_candidate else None
         ),

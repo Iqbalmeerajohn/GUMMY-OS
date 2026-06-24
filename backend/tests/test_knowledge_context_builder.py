@@ -11,8 +11,27 @@ from app.services.knowledge.knowledge_retrieval_service import (
     SOURCE_FILE,
     SOURCE_GOAL,
     SOURCE_MEMORY,
+    SOURCE_SEARCH,
     KnowledgeItem,
 )
+
+
+def _search(title: str, url: str, snippet: str = "snip") -> KnowledgeItem:
+    return KnowledgeItem(
+        source=SOURCE_SEARCH,
+        item_id=url,
+        content=f"{title} — {snippet}",
+        label=title,
+        source_score=0.6,
+        rank_score=0.3,
+        metadata={
+            "title": title,
+            "url": url,
+            "snippet": snippet,
+            "provider": "brave",
+            "order": 0,
+        },
+    )
 
 
 def _memory(content: str, score: float = 0.5) -> KnowledgeItem:
@@ -68,6 +87,20 @@ def test_renders_three_attributed_sections() -> None:
     assert "[memory" in block
     assert "[goal]" in block
     assert "[file]" in block
+
+
+def test_search_section_rendered_only_when_present() -> None:
+    # No search items → no Search section.
+    plain = knowledge_context_builder.build([_memory("likes python")])
+    assert "Search" not in plain.block
+
+    compiled = knowledge_context_builder.build(
+        [_memory("likes python"), _search("AI News", "https://ex.com/ai")]
+    )
+    assert "Search" in compiled.block
+    assert "https://ex.com/ai" in compiled.block
+    assert "[search:brave]" in compiled.block
+    assert compiled.search_used == 1
 
 
 def test_duplicate_memories_are_compressed() -> None:

@@ -550,6 +550,8 @@ async def orchestrate(
             "memories_used": memories_used,
             "agent_key": results[-1][0],
             "run_id": str(run.id),
+            "confidence": decision.confidence,
+            "routing_reason": decision.rationale,
         }
         with langfuse_obs.observe_operation(
             "agent.response", metadata={"agent": results[-1][0]}
@@ -577,6 +579,17 @@ async def orchestrate(
                 "agent_key": results[-1][0],
                 "run_id": str(run.id),
                 "route_shape": decision.plan_shape.value,
+                # A5: persist the routing explanation for analytics + UI.
+                "confidence": decision.confidence,
+                "routing_reason": decision.rationale,
+                # B11: live web sources used by the terminal agent (if any), so
+                # the client can render the 🌐 Web Sources disclosure.
+                "web_sources": [
+                    s
+                    for _, r in results
+                    for s in r.output.get("web_sources", [])
+                    if isinstance(s, dict)
+                ],
             },
             model=model,
             memories_used=memories_used,

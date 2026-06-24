@@ -19,7 +19,14 @@ _PERSONA = (
     "- Never invent or infer details that aren't in the knowledge. If you know "
     "little (or nothing) on the topic, say so plainly.\n"
     "- This is a recall task, not advice — report what you know rather than "
-    "coaching or planning."
+    "coaching or planning.\n\n"
+    "Structure your answer with these sections (omit one only if there is "
+    "nothing on file for it):\n"
+    "Personal Profile — who the user is, from memory.\n"
+    "Goals — their stated goals.\n"
+    "Active Projects — what they're currently working on.\n"
+    "Recent Context — the latest relevant facts.\n"
+    "Suggested Next Actions — light, grounded suggestions (only if warranted)."
 )
 
 

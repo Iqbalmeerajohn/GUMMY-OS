@@ -25,11 +25,14 @@ from app.core.constants import (
     KNOWLEDGE_FILE_RANK_DECAY,
     KNOWLEDGE_GOAL_BASE_SCORE,
     KNOWLEDGE_GOAL_DEADLINE_HORIZON_DAYS,
+    KNOWLEDGE_SEARCH_BASE_SCORE,
+    KNOWLEDGE_SEARCH_RANK_DECAY,
     KNOWLEDGE_WEIGHT_FILE,
     KNOWLEDGE_WEIGHT_GOAL,
     KNOWLEDGE_WEIGHT_GOAL_DEADLINE,
     KNOWLEDGE_WEIGHT_GOAL_PRIORITY,
     KNOWLEDGE_WEIGHT_MEMORY,
+    KNOWLEDGE_WEIGHT_SEARCH,
 )
 from app.models.enums import GOAL_PRIORITY_RANK, GoalPriority
 from app.observability import langfuse as langfuse_obs
@@ -37,6 +40,7 @@ from app.services.knowledge.knowledge_retrieval_service import (
     SOURCE_FILE,
     SOURCE_GOAL,
     SOURCE_MEMORY,
+    SOURCE_SEARCH,
     KnowledgeItem,
     UnifiedKnowledgeContext,
 )
@@ -95,6 +99,12 @@ def file_native_score(item: KnowledgeItem) -> float:
     return KNOWLEDGE_FILE_BASE_SCORE * (KNOWLEDGE_FILE_RANK_DECAY**order)
 
 
+def search_native_score(item: KnowledgeItem) -> float:
+    """Score a web-search hit by its result order (best hit leads, gentle decay)."""
+    order = int(item.metadata.get("order", 0))
+    return KNOWLEDGE_SEARCH_BASE_SCORE * (KNOWLEDGE_SEARCH_RANK_DECAY**order)
+
+
 def _score_item(item: KnowledgeItem, *, now: datetime) -> KnowledgeItem:
     """Return a copy of ``item`` with ``source_score`` and ``rank_score`` set."""
     if item.source == SOURCE_MEMORY:
@@ -112,6 +122,14 @@ def _score_item(item: KnowledgeItem, *, now: datetime) -> KnowledgeItem:
         rank = KNOWLEDGE_WEIGHT_FILE * native
         if item.metadata.get("attached"):
             rank += KNOWLEDGE_ATTACHMENT_BOOST
+        return dataclasses.replace(item, source_score=native, rank_score=rank)
+
+    if item.source == SOURCE_SEARCH:
+        # Supplemental: weighted below memory so live results never override the
+        # user's own knowledge (priority: attachments > files > goals > memories
+        # > search).
+        native = search_native_score(item)
+        rank = KNOWLEDGE_WEIGHT_SEARCH * native
         return dataclasses.replace(item, source_score=native, rank_score=rank)
 
     return item
@@ -134,8 +152,13 @@ def rank(
     ) as span:
         scored = [_score_item(item, now=now) for item in context.all_items]
         # Source tiebreak: attached/relevant files first, then goals, then
-        # memories — matters when rank_scores are equal.
-        tiebreak = {SOURCE_FILE: 2, SOURCE_GOAL: 1, SOURCE_MEMORY: 0}
+        # memories, then supplemental search — matters when rank_scores are equal.
+        tiebreak = {
+            SOURCE_FILE: 3,
+            SOURCE_GOAL: 2,
+            SOURCE_MEMORY: 1,
+            SOURCE_SEARCH: 0,
+        }
         scored.sort(
             key=lambda i: (i.rank_score, tiebreak.get(i.source, 0), i.source_score),
             reverse=True,

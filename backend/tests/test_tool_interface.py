@@ -27,7 +27,7 @@ from app.repositories import agent_run_repository as run_repo
 from app.repositories import memory_repository as mem_repo
 from app.repositories import tool_invocation_repository as audit_repo
 from app.services.agents.manifests import RECALL_AGENT_KEY
-from app.services.agents.tools import interface, web_search
+from app.services.agents.tools import interface
 from app.services.agents.tools.catalog import TOOL_CATALOG
 from app.services.agents.tools.context import ToolContext
 from app.services.embeddings.embedding_service import EmbeddingService
@@ -298,7 +298,7 @@ async def test_green_failure_recorded(
     assert rows[0].error is not None
 
 
-async def test_web_search_null_provider_offline_safe(
+async def test_web_search_delegates_to_search_seam(
     db_session: AsyncSession,
     seed_user: uuid.UUID,
     monkeypatch: pytest.MonkeyPatch,
@@ -306,6 +306,7 @@ async def test_web_search_null_provider_offline_safe(
     from app.schemas.agents import AgentManifest
     from app.services.agents import registry as registry_module
     from app.services.agents.registry import AgentRegistry
+    from app.services.search import SearchResult, get_provider, set_provider
 
     searcher = AgentManifest(
         key="searcher",
@@ -317,17 +318,36 @@ async def test_web_search_null_provider_offline_safe(
     monkeypatch.setattr(
         registry_module, "_registry", AgentRegistry((searcher,))
     )
-    run_id = await _run(db_session, seed_user)
-    result = await interface.invoke(
-        db_session,
-        tool_key="web_search",
-        args={"query": "gummy os"},
-        agent_key="searcher",
-        run_id=run_id,
-        user_id=seed_user,
-        context=_context(db_session, seed_user),
-    )
+
+    class _Stub:
+        async def search(
+            self, query: str, *, limit: int = 5
+        ) -> list[SearchResult]:
+            return [
+                SearchResult(
+                    title="Gummy OS",
+                    url="https://example.com/gummy",
+                    snippet="A personal AI OS.",
+                    source="stub",
+                )
+            ]
+
+    original = get_provider()
+    set_provider(_Stub())
+    try:
+        run_id = await _run(db_session, seed_user)
+        result = await interface.invoke(
+            db_session,
+            tool_key="web_search",
+            args={"query": "gummy os"},
+            agent_key="searcher",
+            run_id=run_id,
+            user_id=seed_user,
+            context=_context(db_session, seed_user),
+        )
+    finally:
+        set_provider(original)
     assert result.status == ToolRunStatus.SUCCEEDED
-    assert result.output == {"results": [], "untrusted": True}
-    # Output is flagged untrusted data — and the gate never reads it.
-    assert isinstance(web_search._provider, web_search.NullWebSearchProvider)
+    # The tool delegates to the single search seam and flags results untrusted.
+    assert result.output["untrusted"] is True
+    assert result.output["results"][0]["url"] == "https://example.com/gummy"

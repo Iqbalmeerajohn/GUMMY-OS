@@ -126,3 +126,7 @@ EVENT_AGENT_SELECTED = "AgentSelected"
 EVENT_AGENT_EXECUTED = "AgentExecuted"
 EVENT_AGENT_FALLBACK = "AgentFallback"
 EVENT_AGENT_OVERRIDE = "AgentOverride"
+
+# ── M8.5 web search event names (single source of truth) ──────────────────────
+EVENT_SEARCH_PERFORMED = "SearchPerformed"
+EVENT_SEARCH_RESULTS_RETURNED = "SearchResultsReturned"

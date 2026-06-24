@@ -13,6 +13,7 @@ from app.services.knowledge.knowledge_retrieval_service import (
     SOURCE_FILE,
     SOURCE_GOAL,
     SOURCE_MEMORY,
+    SOURCE_SEARCH,
     KnowledgeItem,
     UnifiedKnowledgeContext,
 )
@@ -53,12 +54,24 @@ def _file(name: str, order: int, *, attached: bool = False) -> KnowledgeItem:
     )
 
 
+def _search(title: str, order: int) -> KnowledgeItem:
+    return KnowledgeItem(
+        source=SOURCE_SEARCH,
+        item_id=f"https://ex.com/{order}",
+        content=title,
+        label=title,
+        source_score=0.0,
+        metadata={"title": title, "url": f"https://ex.com/{order}", "order": order},
+    )
+
+
 def _ctx(*items: KnowledgeItem) -> UnifiedKnowledgeContext:
     return UnifiedKnowledgeContext(
         query="q",
         memories=[i for i in items if i.source == SOURCE_MEMORY],
         goals=[i for i in items if i.source == SOURCE_GOAL],
         files=[i for i in items if i.source == SOURCE_FILE],
+        search=[i for i in items if i.source == SOURCE_SEARCH],
     )
 
 
@@ -136,3 +149,21 @@ def test_every_item_gets_a_rank_score() -> None:
 
 def test_empty_context_ranks_to_empty_list() -> None:
     assert knowledge_ranker.rank(_ctx(), now=_NOW) == []
+
+
+# ── Web search fusion (M8.5): supplemental, ranked below user knowledge ───────
+
+
+def test_search_ranks_below_memory() -> None:
+    # A weak memory still outranks a top web-search hit (search is supplemental).
+    ranked = knowledge_ranker.rank(
+        _ctx(_memory("weak memory", 0.3), _search("Top hit", 0)), now=_NOW
+    )
+    assert ranked[0].source == SOURCE_MEMORY
+    assert ranked[-1].source == SOURCE_SEARCH
+
+
+def test_search_is_included_in_ranking() -> None:
+    ranked = knowledge_ranker.rank(_ctx(_search("a", 0), _search("b", 1)), now=_NOW)
+    assert [i.label for i in ranked] == ["a", "b"]
+    assert all(i.rank_score > 0 for i in ranked)

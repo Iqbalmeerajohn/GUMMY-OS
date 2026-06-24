@@ -1,14 +1,16 @@
-"""Search provider seam (Phase 3, M8 — prep for M8.5).
+"""Search provider seam (Phase 3, M8 → M8.5).
 
-Exposes the ``SearchProvider`` abstraction and the offline-safe
-``DummySearchProvider`` default. M8 ships **only the seam** — no agent calls it
-yet. M8.5 plugs real providers (Brave primary, Tavily fallback) in behind
-``set_provider`` without touching callers.
+The single search seam for the codebase: the ``SearchProvider`` abstraction, the
+offline-safe ``DummySearchProvider`` default, and the real ``BraveSearchProvider``
+(M8.5). Real backends swap in behind ``set_provider`` at the composition root
+without touching callers; the ``web_search`` green tool and the knowledge-fusion
+path both consume this seam.
 """
 
 from __future__ import annotations
 
 from app.services.search.provider import (
+    BraveSearchProvider,
     DummySearchProvider,
     SearchProvider,
     SearchResult,
@@ -17,6 +19,7 @@ from app.services.search.provider import (
 )
 
 __all__ = [
+    "BraveSearchProvider",
     "DummySearchProvider",
     "SearchProvider",
     "SearchResult",

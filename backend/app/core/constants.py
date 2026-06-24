@@ -221,6 +221,23 @@ KNOWLEDGE_MAX_FILES = 8
 # mirrors FILE_CONTEXT_CHUNK_CHAR_CAP).
 KNOWLEDGE_FILE_CHUNK_CHAR_CAP = 1500
 
+# ── Web search fusion (M8.5) ──────────────────────────────────────────────────
+# Live web search is a *supplemental* knowledge source: it must never override
+# the user's own knowledge, so its cross-source weight sits BELOW memory. With
+# the base weights all 1.0, a search weight of 0.5 keeps the priority order
+# attachments > files > goals > memories > search.
+KNOWLEDGE_WEIGHT_SEARCH = 0.5
+# Search hits carry no numeric score, so they rank by result order (like file
+# chunks): the Nth hit gets BASE * DECAY**N.
+KNOWLEDGE_SEARCH_BASE_SCORE = 0.6
+KNOWLEDGE_SEARCH_RANK_DECAY = 0.9
+# Hard cap on search hits fused into the knowledge block (applied before the
+# shared token budget) and the default number requested from the provider.
+KNOWLEDGE_MAX_SEARCH = 5
+SEARCH_DEFAULT_LIMIT = 5
+# Max characters of a search snippet rendered into the block (defensive cap).
+KNOWLEDGE_SEARCH_SNIPPET_CHAR_CAP = 500
+
 # ── Ollama (local inference) ──────────────────────────────────────────────────
 # Local, self-hosted models served by Ollama (https://ollama.com). No API key
 # and no per-call cost; selected via LLM_PROVIDER=ollama.

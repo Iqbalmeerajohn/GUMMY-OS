@@ -19,12 +19,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from app.core.constants import KNOWLEDGE_CONTEXT_TOKEN_BUDGET
+from app.core.constants import (
+    KNOWLEDGE_CONTEXT_TOKEN_BUDGET,
+    KNOWLEDGE_SEARCH_SNIPPET_CHAR_CAP,
+)
 from app.observability import langfuse as langfuse_obs
 from app.services.knowledge.knowledge_retrieval_service import (
     SOURCE_FILE,
     SOURCE_GOAL,
     SOURCE_MEMORY,
+    SOURCE_SEARCH,
     KnowledgeItem,
 )
 from app.utils.tokens import estimate_tokens
@@ -42,6 +46,7 @@ class CompiledKnowledge:
     memories_used: int = 0
     goals_used: int = 0
     files_used: int = 0
+    search_used: int = 0
     # Stable per-item keys that survived selection (for the diagnostics verdict).
     included_keys: frozenset[str] = frozenset()
 
@@ -81,6 +86,18 @@ def _render_goal(item: KnowledgeItem) -> str:
 
 def _render_file(item: KnowledgeItem) -> str:
     return f"- [file] [{item.metadata.get('filename', 'file')}] {item.content}"
+
+
+def _render_search(item: KnowledgeItem) -> str:
+    """Render a web-search hit with source/title/url/snippet (B8)."""
+    title = item.metadata.get("title", item.content)
+    url = item.metadata.get("url", "")
+    snippet = str(item.metadata.get("snippet", ""))[
+        :KNOWLEDGE_SEARCH_SNIPPET_CHAR_CAP
+    ]
+    provider = item.metadata.get("provider", "web")
+    line = f"- [search:{provider}] {title} ({url})"
+    return f"{line}\n  {snippet}" if snippet else line
 
 
 def _render_inventory(inventory: list[dict]) -> str:
@@ -135,12 +152,14 @@ def build(
         memories = sum(1 for i in selected if i.source == SOURCE_MEMORY)
         goals = sum(1 for i in selected if i.source == SOURCE_GOAL)
         files = sum(1 for i in selected if i.source == SOURCE_FILE)
+        searches = sum(1 for i in selected if i.source == SOURCE_SEARCH)
         span.update(
             metadata={
                 "selected": len(selected),
                 "memories": memories,
                 "goals": goals,
                 "files": files,
+                "search": searches,
                 "token_estimate": used_tokens,
             }
         )
@@ -151,6 +170,7 @@ def build(
             memories_used=memories,
             goals_used=goals,
             files_used=files,
+            search_used=searches,
             included_keys=frozenset(item_key(i) for i in selected),
         )
 
@@ -159,6 +179,7 @@ _RENDERERS = {
     SOURCE_MEMORY: _render_memory,
     SOURCE_GOAL: _render_goal,
     SOURCE_FILE: _render_file,
+    SOURCE_SEARCH: _render_search,
 }
 
 
@@ -167,6 +188,7 @@ def _render_block(selected: list[KnowledgeItem], inventory_block: str) -> str:
     memories = [i for i in selected if i.source == SOURCE_MEMORY]
     goals = [i for i in selected if i.source == SOURCE_GOAL]
     files = [i for i in selected if i.source == SOURCE_FILE]
+    searches = [i for i in selected if i.source == SOURCE_SEARCH]
 
     sections: list[str] = []
     if memories:
@@ -184,5 +206,12 @@ def _render_block(selected: list[KnowledgeItem], inventory_block: str) -> str:
         )
     if file_parts:
         sections.append("Files:\n" + "\n\n".join(file_parts))
+
+    # Supplemental live web results, last (B8) — only when search hits survived.
+    if searches:
+        sections.append(
+            "Search (live web results — supplemental, verify before relying on):\n"
+            + "\n".join(_render_search(i) for i in searches)
+        )
 
     return "\n\n".join(sections)

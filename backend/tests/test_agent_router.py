@@ -79,6 +79,18 @@ def test_rationale_lists_matched_keywords() -> None:
     assert "jobs" in decision.rationale
 
 
+def test_matched_keywords_populated_for_specialist() -> None:
+    # A4: the structured matched_keywords mirror the rationale for the UI.
+    decision = router.score_agents("Review my resume and jobs", get_registry())
+    assert decision.matched_keywords == ["resume", "jobs"]
+
+
+def test_matched_keywords_empty_on_general_fallback() -> None:
+    decision = router.score_agents("tell me a joke", get_registry())
+    assert decision.steps[-1].agent_key == GENERAL_AGENT_KEY
+    assert decision.matched_keywords == []
+
+
 def test_word_boundary_avoids_false_match() -> None:
     # "explanation" must NOT trigger Planner via the "plan" keyword.
     decision = router.score_agents(
