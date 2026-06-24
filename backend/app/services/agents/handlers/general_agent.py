@@ -1,46 +1,49 @@
 """The general-purpose conversational agent (Phase 3, M4).
 
-A pure ``AgentTask -> AgentResult`` function that reuses the proven Phase 2
-core verbatim: context assembly (token budgeting/dedupe) → prompt builder →
-LLM. Given the same ranked memory candidates, history, and summary that
-``generate_grounded_reply`` uses, it produces an **identical** prompt and
-therefore an identical reply — the M4 parity guarantee.
+A pure ``AgentTask -> AgentResult`` function. It consumes the unified knowledge
+already packed onto the task (memories + goals + files) by adapting it into a
+``UnifiedKnowledgeContext`` and running the **same** M7 ranker + compressor the
+chat core uses — so given the same packed inputs it produces an identical
+``<knowledge>`` block, prompt, and reply (the orchestration parity guarantee).
+This is the M8 consumption seam: agents rank/render from the unified context
+rather than retrieving each source themselves.
 """
 
 from __future__ import annotations
 
-from app.core.constants import (
-    DEFAULT_CONTEXT_MAX_MEMORIES,
-    DEFAULT_CONTEXT_TOKEN_BUDGET,
-)
 from app.schemas.agents import AgentResult, AgentTask, CostInfo
+from app.services.knowledge import (
+    knowledge_context_builder,
+    knowledge_ranker,
+    knowledge_retrieval_service,
+)
 from app.services.llm.base import LLMProvider
-from app.services.memory import context_assembly_service, prompt_builder
-from app.services.memory.context_assembly_service import ContextMemory
+from app.services.memory import prompt_builder
+from app.services.memory.context_assembly_service import ContextPackage
+
+_EMPTY_CONTEXT = ContextPackage(memories=[], token_estimate=0)
 
 
 async def handle(task: AgentTask, *, llm: LLMProvider) -> AgentResult:
     """Ground a reply in the task's context pack and return it as a result."""
     pack = task.context_pack
-    candidates = [
-        ContextMemory(
-            content=str(m["content"]),
-            category=str(m["category"]),
-            score=float(m["score"]),
-        )
-        for m in pack.memories
-    ]
-    token_budget = int(task.inputs.get("token_budget", DEFAULT_CONTEXT_TOKEN_BUDGET))
-    max_memories = int(task.inputs.get("max_memories", DEFAULT_CONTEXT_MAX_MEMORIES))
-    package = context_assembly_service.assemble_context(
-        candidates,
-        token_budget=token_budget,
-        max_memories=max_memories,
+    # Adapt the packed context into the unified shape, then rank + compress it
+    # exactly as the chat core does (parity invariant).
+    ctx = knowledge_retrieval_service.context_from_pack(
+        memories=list(pack.memories),
+        goals=list(pack.goals),
+        file_context=(
+            pack.file_context if isinstance(pack.file_context, dict) else None
+        ),
+        query=task.intent,
     )
+    ranked = knowledge_ranker.rank(ctx)
+    compiled = knowledge_context_builder.build(ranked, inventory=ctx.inventory)
+
     history = [{str(k): str(v) for k, v in entry.items()} for entry in pack.history]
     # Pipeline hand-off (M5): fold prior agents' findings into the summary
     # block. Empty scratch (the single-agent route) leaves the prompt
-    # byte-identical to the legacy core — the parity invariant.
+    # byte-identical to the chat core — the parity invariant.
     summary = pack.summary
     findings = [
         str(entry["output"].get("digest", ""))
@@ -51,37 +54,20 @@ async def handle(task: AgentTask, *, llm: LLMProvider) -> AgentResult:
         block = "\n\n".join(findings)
         summary = f"{summary}\n\n{block}" if summary else block
     identity = task.inputs.get("user_identity")
-    # Goal awareness (M5.5): surface the user's active goals (already packed by
-    # the context builder) so the agent can reference them when relevant. Empty
-    # goals leave the prompt byte-identical to the legacy core.
-    goals = [
-        {
-            "title": g.get("title", ""),
-            "priority": g.get("priority", "medium"),
-            "target_date": g.get("target_date"),
-            "progress_percentage": g.get("progress_percentage", 0),
-        }
-        for g in pack.goals
-    ]
-    # File Intelligence (M6.5): the context builder packs retrieved file content
-    # (attachments or keyword search) as ``file_context``; render it so the agent
-    # answers from uploaded documents. ``None`` leaves the prompt unchanged.
-    file_context = pack.file_context if isinstance(pack.file_context, dict) else None
     payload = prompt_builder.build_prompt(
-        context=package,
+        context=_EMPTY_CONTEXT,
         query=task.intent,
         history=history or None,
         summary=summary,
         identity=str(identity) if isinstance(identity, str) else None,
-        goals=goals or None,
-        files=file_context,
+        knowledge=compiled.block,
     )
     response = await llm.generate(system=payload.system, messages=payload.messages)
     return AgentResult(
         output={
             "reply": response.text,
             "model": response.model,
-            "memories_used": len(package.memories),
+            "memories_used": compiled.memories_used,
             "input_tokens": response.input_tokens,
             "output_tokens": response.output_tokens,
         },

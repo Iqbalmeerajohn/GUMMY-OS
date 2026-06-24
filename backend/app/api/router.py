@@ -17,6 +17,7 @@ from app.api.v1 import (
     conversations,
     files,
     goals,
+    knowledge,
     memories,
     milestones,
     tasks,
@@ -30,3 +31,4 @@ api_router.include_router(milestones.router)
 api_router.include_router(tasks.router)
 api_router.include_router(actions.router)
 api_router.include_router(files.router)
+api_router.include_router(knowledge.router)

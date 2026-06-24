@@ -23,7 +23,7 @@ from app.models.memory import Memory
 from app.repositories import memory_repository as repo
 from app.schemas.conversation import ConversationCreate
 from app.services.conversation import conversation_service
-from app.services.conversation import conversation_turn_service as turn_svc
+from app.services.knowledge import knowledge_retrieval_service
 
 
 async def _boom_list_active(
@@ -46,8 +46,10 @@ async def test_failed_goal_lookup_keeps_session_usable(
         "app.repositories.goal_repository.list_active", _boom_list_active
     )
 
-    # The lookup fails internally but degrades to no goals (never raises).
-    goals = await turn_svc._active_goals_for_prompt(
+    # The lookup fails internally but degrades to no goals (never raises). M7
+    # moved the SAVEPOINT-isolated active-goals lookup into the unified knowledge
+    # engine; the resilience contract is unchanged.
+    goals = await knowledge_retrieval_service._retrieve_goals(
         db_session, user_id=seed_user
     )
     assert goals == []

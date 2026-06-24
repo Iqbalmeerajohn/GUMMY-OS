@@ -175,6 +175,46 @@ FILE_SEARCH_MIN_TERM_LENGTH = 3
 # pathologically long chunk can't blow the context budget).
 FILE_CONTEXT_CHUNK_CHAR_CAP = 1500
 
+# ── Unified Knowledge & Retrieval Engine (M7) ─────────────────────────────────
+# The engine fuses three sources — memories, goals, files — into one ranked,
+# token-budgeted context layer. Cross-source weights scale each source's native
+# score onto a shared 0–1 axis so a memory, a goal, and a file chunk can be
+# ranked against each other. They are deliberate priorities, not a probability
+# distribution, so they need not sum to 1.0.
+KNOWLEDGE_WEIGHT_MEMORY = 1.0
+KNOWLEDGE_WEIGHT_GOAL = 1.0
+KNOWLEDGE_WEIGHT_FILE = 1.0
+# An attached file is something the user explicitly pointed at ("summarize this
+# resume"), so it must dominate the ranking — this additive boost lifts attached
+# file chunks above every retrieved memory/goal/unattached file.
+KNOWLEDGE_ATTACHMENT_BOOST = 1.0
+# Goal scoring (all in [0, 1], blended like the memory hybrid score):
+#   * active goals get a baseline presence so they can surface for "what should
+#     I work on?" style queries even with no semantic hook;
+#   * priority rank (high/medium/low) and deadline proximity break ties.
+KNOWLEDGE_GOAL_BASE_SCORE = 0.5
+KNOWLEDGE_WEIGHT_GOAL_PRIORITY = 0.3
+KNOWLEDGE_WEIGHT_GOAL_DEADLINE = 0.2
+# A goal due within this many days scores full deadline-proximity (linearly
+# decaying to 0 at the horizon); overdue goals also score full proximity.
+KNOWLEDGE_GOAL_DEADLINE_HORIZON_DAYS = 30.0
+# File chunks from keyword search carry no numeric score, so they are ranked by
+# their retrieval order: the Nth chunk gets BASE * DECAY**N (gentle decay so the
+# best keyword match leads without collapsing the tail to zero).
+KNOWLEDGE_FILE_BASE_SCORE = 0.6
+KNOWLEDGE_FILE_RANK_DECAY = 0.9
+# Token budget for the whole unified <knowledge> block packed into a prompt.
+# Sized to comfortably hold memory + goals + file grounding together.
+KNOWLEDGE_CONTEXT_TOKEN_BUDGET = 2500
+# Hard caps per source so no single source can crowd out the others after
+# ranking (applied before the shared token budget).
+KNOWLEDGE_MAX_MEMORIES = 12
+KNOWLEDGE_MAX_GOALS = 5
+KNOWLEDGE_MAX_FILES = 8
+# Max characters of a file chunk rendered into the unified block (defensive cap,
+# mirrors FILE_CONTEXT_CHUNK_CHAR_CAP).
+KNOWLEDGE_FILE_CHUNK_CHAR_CAP = 1500
+
 # ── Ollama (local inference) ──────────────────────────────────────────────────
 # Local, self-hosted models served by Ollama (https://ollama.com). No API key
 # and no per-call cost; selected via LLM_PROVIDER=ollama.

@@ -89,6 +89,15 @@ def _render_files(files: dict[str, object]) -> str:
     return "\n\n".join(sections)
 
 
+_KNOWLEDGE_GUIDANCE = (
+    "The unified knowledge below is retrieved from everything the user has told "
+    "you — their memories, goals, and uploaded files — each item tagged with its "
+    "source. Answer using it when relevant (cite a filename when you use file "
+    "content); if the answer is not here, say you don't have that information yet "
+    "rather than guessing. When a file is attached, prefer it."
+)
+
+
 def build_prompt(
     *,
     context: ContextPackage,
@@ -99,21 +108,51 @@ def build_prompt(
     prior_context: str | None = None,
     goals: list[dict[str, object]] | None = None,
     files: dict[str, object] | None = None,
+    knowledge: str | None = None,
 ) -> PromptPayload:
-    """Build the system prompt + chat messages for a memory-grounded turn.
+    """Build the system prompt + chat messages for a grounded turn.
 
     ``history`` is the recent prior turns of THIS conversation (working memory),
     each a ``{"role", "content"}`` dict, prepended before the current ``query``.
     ``summary`` is the thread's rolling summary (compressed older context).
     ``identity`` is the authenticated user-profile block (see the identity
-    service); it precedes memory so every agent knows who the user is.
+    service); it precedes the grounding so every agent knows who the user is.
     ``prior_context`` is relevant context pulled from *other* conversations when
-    the user references a past discussion (conversation continuity). ``goals``
-    are the user's active goals (M5.5 goal awareness): referenced naturally only
-    when relevant, never volunteered. All default to ``None`` so the legacy path
-    (no goals) stays byte-identical.
+    the user references a past discussion (conversation continuity).
+
+    Grounding has two mutually-exclusive shapes:
+
+    * **unified** (M7) — when ``knowledge`` (a rendered ``<knowledge>`` body from
+      the Unified Knowledge Engine) is supplied, it replaces the separate
+      ``<memory>``/``<goals>``/``<files>`` blocks with one attributed block;
+    * **legacy** — otherwise ``context`` (memories), ``goals``, and ``files`` are
+      rendered as independent blocks. All default to ``None`` so the legacy path
+      stays byte-identical for the existing callers and tests.
     """
     identity_block = f"{identity}\n\n" if identity else ""
+
+    if knowledge is not None and knowledge.strip():
+        system = (
+            f"{_PERSONA}\n\n"
+            f"{identity_block}"
+            f"{_KNOWLEDGE_GUIDANCE}\n\n"
+            f"=== KNOWLEDGE ===\n"
+            f"<knowledge>\n{knowledge}\n</knowledge>"
+        )
+        if prior_context:
+            system += (
+                "\n\nRelevant context from the user's earlier conversations "
+                "(use it when they refer back to a past discussion):\n"
+                f"<prior_conversations>\n{prior_context}\n</prior_conversations>"
+            )
+        if summary:
+            system += (
+                "\n\nSummary of earlier in this conversation:\n"
+                f"<conversation_summary>\n{summary}\n</conversation_summary>"
+            )
+        messages = [*(history or []), {"role": "user", "content": query}]
+        return PromptPayload(system=system, messages=messages)
+
     system = (
         f"{_PERSONA}\n\n"
         f"{identity_block}"

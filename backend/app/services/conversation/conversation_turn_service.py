@@ -25,7 +25,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.constants import (
-    CONTEXT_MAX_GOALS,
     DEFAULT_CONTEXT_MAX_MEMORIES,
     DEFAULT_CONTEXT_TOKEN_BUDGET,
     DEFAULT_TURN_HISTORY_MESSAGES,
@@ -34,7 +33,6 @@ from app.core.observability import capture_exception
 from app.models.enums import MessageRole, SummaryType
 from app.repositories import conversation_repository as conv_repo
 from app.repositories import conversation_summary_repository as sum_repo
-from app.repositories import goal_repository
 from app.repositories import message_repository as msg_repo
 from app.schemas.goal import GoalCandidate
 from app.services.conversation import (
@@ -42,15 +40,16 @@ from app.services.conversation import (
     conversation_service,
 )
 from app.services.embeddings.embedding_service import EmbeddingService
-from app.services.files import file_context_service
 from app.services.goals import goal_extraction_service
-from app.services.llm.base import LLMProvider, SupportsStreaming
-from app.services.memory import (
-    context_assembly_service,
-    memory_retrieval_service,
-    prompt_builder,
+from app.services.knowledge import (
+    knowledge_context_builder,
+    knowledge_ranker,
+    knowledge_retrieval_service,
 )
-from app.services.memory.context_assembly_service import ContextMemory
+from app.services.knowledge.knowledge_context_builder import CompiledKnowledge
+from app.services.llm.base import LLMProvider, SupportsStreaming
+from app.services.memory import prompt_builder
+from app.services.memory.context_assembly_service import ContextPackage
 from app.utils.tokens import estimate_tokens
 from app.workers.enrichment_worker import enrichment_worker
 
@@ -59,74 +58,37 @@ logger = logging.getLogger(__name__)
 # Roles that belong in the LLM message history (working memory).
 _HISTORY_ROLES = (MessageRole.USER, MessageRole.ASSISTANT)
 
-
-async def _active_goals_for_prompt(
-    session: AsyncSession, *, user_id: uuid.UUID
-) -> list[dict[str, object]]:
-    """Active goals shaped for prompt rendering (M5.5 goal awareness).
-
-    Best-effort: a goals lookup must never cost the user a reply, so any failure
-    degrades to no goals rather than raising.
-
-    The query runs inside a SAVEPOINT (``begin_nested``). A bare ``try/except``
-    is *not* enough: on PostgreSQL a failed statement (e.g. a schema that is
-    behind the code) aborts the whole transaction, so catching the Python
-    exception still leaves the turn's transaction poisoned and the next write
-    raises ``InFailedSQLTransactionError``. The savepoint rolls back only this
-    lookup, leaving the outer transaction usable so the reply still persists.
-    """
-    try:
-        async with session.begin_nested():
-            goals = await goal_repository.list_active(
-                session, user_id=user_id, limit=CONTEXT_MAX_GOALS
-            )
-    except Exception:
-        logger.exception("active-goals lookup failed; replying without goals")
-        return []
-    return [
-        {
-            "title": g.title,
-            "priority": g.priority.value,
-            "target_date": (
-                g.target_date.date().isoformat() if g.target_date else None
-            ),
-            "progress_percentage": g.progress_percentage,
-        }
-        for g in goals
-    ]
+# The unified knowledge path renders its own ``<knowledge>`` block, so the legacy
+# ``<memory>`` block is empty — build_prompt skips it when ``knowledge`` is set.
+_EMPTY_CONTEXT = ContextPackage(memories=[], token_estimate=0)
 
 
-async def _file_context_for_prompt(
+async def _build_knowledge(
     session: AsyncSession,
     *,
     user_id: uuid.UUID,
     message: str,
+    embedding_service: EmbeddingService,
     attachment_file_ids: list[uuid.UUID] | None,
-) -> dict | None:
-    """Retrieve file grounding (attachments-first, else keyword search) for the
-    prompt (M6.5 File Intelligence).
+    query_vector: list[float] | None,
+) -> CompiledKnowledge:
+    """Retrieve → rank → compress the user's knowledge into one prompt block (M7).
 
-    Best-effort for the search path — a file-retrieval hiccup must never cost a
-    reply, so any failure degrades to no file context. The attachment path lets
-    a 404 (foreign/missing id) propagate: the user explicitly referenced that
-    file, so a silent miss would be wrong (and is a tenancy signal).
+    The Unified Knowledge Engine fuses memories, goals, and files into a single
+    ranked, token-budgeted ``<knowledge>`` block. Per-source failures degrade
+    gracefully inside the engine (no source can take down a turn); only an
+    explicit file-attachment 404 propagates.
     """
-    if not attachment_file_ids:
-        try:
-            ctx = await file_context_service.retrieve_file_context(
-                session, user_id=user_id, query=message
-            )
-        except Exception:
-            logger.exception("file context failed; replying without files")
-            return None
-        return file_context_service.render_file_context(ctx)
-    ctx = await file_context_service.retrieve_file_context(
+    ctx = await knowledge_retrieval_service.retrieve(
         session,
         user_id=user_id,
         query=message,
-        attached_file_ids=attachment_file_ids,
+        embedding_service=embedding_service,
+        attachment_file_ids=attachment_file_ids,
+        query_vector=query_vector,
     )
-    return file_context_service.render_file_context(ctx)
+    ranked = knowledge_ranker.rank(ctx)
+    return knowledge_context_builder.build(ranked, inventory=ctx.inventory)
 
 
 def _detect_goal_candidate(message: str) -> GoalCandidate | None:
@@ -230,30 +192,17 @@ async def generate_grounded_reply(
     embedding_ms = _ms(embed_start)
 
     retrieve_start = time.perf_counter()
-    ranked = await memory_retrieval_service.retrieve_memories(
+    knowledge = await _build_knowledge(
         session,
         user_id=user_id,
-        query=message,
+        message=message,
         embedding_service=embedding_service,
-        limit=max_memories,
+        attachment_file_ids=attachment_file_ids,
         query_vector=query_vector,
     )
     retrieve_memories_ms = _ms(retrieve_start)
 
     prompt_start = time.perf_counter()
-    candidates = [
-        ContextMemory(
-            content=item.memory.content,
-            category=item.memory.category.value,
-            score=item.final_score,
-        )
-        for item in ranked
-    ]
-    package = context_assembly_service.assemble_context(
-        candidates,
-        token_budget=token_budget,
-        max_memories=max_memories,
-    )
     prior_context = await conversation_continuity_service.gather_prior_context(
         session,
         user_id=user_id,
@@ -261,22 +210,14 @@ async def generate_grounded_reply(
         embedding_service=embedding_service,
         current_conversation_id=conversation_id,
     )
-    goals = await _active_goals_for_prompt(session, user_id=user_id)
-    files = await _file_context_for_prompt(
-        session,
-        user_id=user_id,
-        message=message,
-        attachment_file_ids=attachment_file_ids,
-    )
     payload = prompt_builder.build_prompt(
-        context=package,
+        context=_EMPTY_CONTEXT,
         query=message,
         history=history,
         summary=summary,
         identity=identity,
         prior_context=prior_context,
-        goals=goals or None,
-        files=files,
+        knowledge=knowledge.block,
     )
     prompt_build_ms = _ms(prompt_start)
 
@@ -294,12 +235,12 @@ async def generate_grounded_reply(
             "first_token_ms": first_token_ms,
             "total_turn_ms": _ms(turn_start),
         },
-        memories_used=len(package.memories),
+        memories_used=knowledge.memories_used,
     )
     return GeneratedReply(
         reply=response.text,
         model=response.model,
-        memories_used=len(package.memories),
+        memories_used=knowledge.memories_used,
         input_tokens=response.input_tokens,
         output_tokens=response.output_tokens,
     )
@@ -631,28 +572,17 @@ async def stream_turn(
     embedding_ms = _ms(embed_start)
 
     retrieve_start = time.perf_counter()
-    ranked = await memory_retrieval_service.retrieve_memories(
+    knowledge = await _build_knowledge(
         session,
         user_id=user_id,
-        query=message,
+        message=message,
         embedding_service=embedding_service,
-        limit=max_memories,
+        attachment_file_ids=attachment_file_ids,
         query_vector=query_vector,
     )
     retrieve_memories_ms = _ms(retrieve_start)
 
     prompt_start = time.perf_counter()
-    candidates = [
-        ContextMemory(
-            content=item.memory.content,
-            category=item.memory.category.value,
-            score=item.final_score,
-        )
-        for item in ranked
-    ]
-    package = context_assembly_service.assemble_context(
-        candidates, token_budget=token_budget, max_memories=max_memories
-    )
     # Continuity: when the user refers back to a past discussion, fold in the
     # most relevant *other* conversations (best-effort; never blocks the reply).
     prior_context = await conversation_continuity_service.gather_prior_context(
@@ -662,22 +592,14 @@ async def stream_turn(
         embedding_service=embedding_service,
         current_conversation_id=conversation_id,
     )
-    goals = await _active_goals_for_prompt(session, user_id=user_id)
-    files = await _file_context_for_prompt(
-        session,
-        user_id=user_id,
-        message=message,
-        attachment_file_ids=attachment_file_ids,
-    )
     payload = prompt_builder.build_prompt(
-        context=package,
+        context=_EMPTY_CONTEXT,
         query=message,
         history=history,
         summary=summary_text,
         identity=identity,
         prior_context=prior_context,
-        goals=goals or None,
-        files=files,
+        knowledge=knowledge.block,
     )
     prompt_build_ms = _ms(prompt_start)
 
@@ -710,7 +632,7 @@ async def stream_turn(
             "first_token_ms": first_token_ms,
             "total_turn_ms": _ms(turn_start),
         },
-        memories_used=len(package.memories),
+        memories_used=knowledge.memories_used,
     )
 
     reply_text = "".join(chunks)
@@ -763,10 +685,14 @@ async def stream_turn(
         "user_message_id": str(user_message.id),
         "assistant_message_id": str(assistant_message.id),
         "model": model,
-        "memories_used": len(package.memories),
+        "memories_used": knowledge.memories_used,
         # Short contents of the grounding memories so the client can show a
         # "Memory Used" disclosure (never the embeddings/scores — just the fact).
-        "memories": [m.content for m in package.memories],
+        "memories": [
+            i.content
+            for i in knowledge.items
+            if i.source == knowledge_retrieval_service.SOURCE_MEMORY
+        ],
         "message_count": message_count,
         "goal_candidate": (
             goal_candidate.model_dump(mode="json") if goal_candidate else None

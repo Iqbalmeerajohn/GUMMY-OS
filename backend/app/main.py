@@ -23,6 +23,7 @@ from app.core.logging import configure_logging
 from app.core.observability import init_sentry
 from app.core.security import assert_auth_safe
 from app.database.session import dispose_engine, get_sessionmaker
+from app.observability import analytics
 from app.observability import langfuse as langfuse_obs
 from app.services.agents.registry import get_registry
 from app.services.embeddings.factory import get_embedding_service
@@ -77,6 +78,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await embedding_worker.stop()
     await dispose_engine()
     langfuse_obs.shutdown()  # flush buffered LLM traces (no-op when disabled)
+    analytics.shutdown()  # flush buffered product events (no-op when disabled)
     logger.info("shutdown complete")
 
 
@@ -88,6 +90,8 @@ def create_app() -> FastAPI:
     init_sentry(settings)
     # LLM/agent tracing (no-op without Langfuse keys).
     langfuse_obs.init_langfuse(settings)
+    # Product analytics (no-op without POSTHOG_API_KEY).
+    analytics.init_analytics(settings)
     assert_auth_safe(settings)  # fail fast if dev auth bypass reaches production
 
     app = FastAPI(

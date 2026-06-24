@@ -199,6 +199,14 @@ class Settings(BaseSettings):
     langfuse_environment: str | None = None
     langfuse_sample_rate: float = 1.0
 
+    # ── Observability (PostHog — product analytics) ───────────────────────────
+    # Server-side product events (e.g. the M7 KnowledgeRetrieved family). Fully
+    # disabled (a no-op) unless ``posthog_api_key`` is set; the key is a project
+    # write key, kept per-environment. Mirrors the frontend PostHog project so
+    # backend and client events land in the same funnel.
+    posthog_api_key: str | None = None
+    posthog_host: str = "https://us.i.posthog.com"
+
     @field_validator("log_level")
     @classmethod
     def _normalize_log_level(cls, value: str) -> str:
@@ -225,6 +233,11 @@ class Settings(BaseSettings):
     def langfuse_enabled(self) -> bool:
         """True only when both Langfuse keys are present (tracing active)."""
         return bool(self.langfuse_public_key and self.langfuse_secret_key)
+
+    @property
+    def posthog_enabled(self) -> bool:
+        """True only when a PostHog write key is present (analytics active)."""
+        return bool(self.posthog_api_key)
 
     @property
     def is_production(self) -> bool:

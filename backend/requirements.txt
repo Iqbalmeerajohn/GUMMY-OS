@@ -24,6 +24,9 @@ sentry-sdk[fastapi]>=2.0
 # LLM/agent observability — token usage, latency, cost, retrieval/agent traces.
 # No-op unless LANGFUSE_PUBLIC_KEY + LANGFUSE_SECRET_KEY are set.
 langfuse>=4.0,<5.0
+# Server-side product analytics (M7 knowledge events). Lazy-imported; no-op
+# unless POSTHOG_API_KEY is set (events are still logged structurally).
+posthog>=3.0
 # Default embedding provider is OpenAI (hosted API via httpx — no torch/CUDA).
 # The local Hugging Face provider is OPTIONAL and heavy (pulls torch). Install it
 # only when running with EMBEDDING_PROVIDER=hf:

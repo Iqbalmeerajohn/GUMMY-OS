@@ -71,7 +71,8 @@ async def test_reply_grounds_in_uploaded_file_via_search(
         llm=llm,
     )
     system = str(llm.calls[-1]["system"])
-    assert "<files>" in system
+    # M7: file grounding now lands inside the unified <knowledge> block.
+    assert "<knowledge>" in system
     assert "compiler projects" in system
     assert "ResumeGUM.txt" in system
 
@@ -128,7 +129,8 @@ async def test_no_files_keeps_prompt_clean(
         llm=llm,
     )
     system = str(llm.calls[-1]["system"])
-    # No files uploaded → no <files> block (legacy prompt unchanged).
+    # No memories, goals, or files → the unified <knowledge> block is omitted.
+    assert "<knowledge>" not in system
     assert "<files>" not in system
 
 
