@@ -15,6 +15,10 @@ secrets/
 *.key
 service-account*.json
 
+# ── Local file storage (M6 Files System, FILES_STORAGE_PROVIDER=local) ────────
+# Machine-local uploaded file bytes — never commit user content.
+backend/var/
+
 # ── Node / Next.js (frontend) ─────────────────────────────────────────────────
 node_modules/
 .pnpm-store/

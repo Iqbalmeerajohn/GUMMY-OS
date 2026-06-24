@@ -1,69 +1,101 @@
 # GUMMY OS
 
-> A Personal & Business Multi-Agent AI Operating System. Your assistant's name is **Gummy**.
+> A Personal, Memory-First **Multi-Agent AI Operating System**. Your assistant's
+> name is **Gummy**.
 
-GUMMY OS is a long-term project to build a unified, agentic operating layer that manages
-personal life, career, learning, research, building, productivity, and business
-automation through a coordinated team of specialized AI agents — all backed by a
-persistent, consent-based long-term memory.
+GUMMY OS is a unified, agentic operating layer that manages personal life, career,
+learning, research, and planning through a coordinated team of specialized AI
+agents — all backed by a persistent, **consent-based long-term memory** behind
+**fail-closed multi-tenant isolation**.
 
-**Gummy** is the assistant at the center of it: an AI companion that gradually learns you
-through conversation, memory, documents, activities, preferences, and workflows — while
-staying **secure, permission-based, and user-controlled**.
-
-It is being built **first for personal use**, with a deliberate path toward a public,
-multi-user **SaaS** platform.
+**Gummy** learns you through conversation, memory, documents, and goals — while
+staying secure, permission-based, and user-controlled. It is built **first for
+personal use**, with a deliberate path toward a multi-user **SaaS** platform.
 
 ---
 
-## Repository Structure
+## Status — M8.5 development freeze (2026-06-24)
+
+Active development is **paused** at the M8.5 freeze point. The substrate is built,
+tested, and documented; the project resumes at **M9 (Workflow Learning)**.
+
+| Area | State |
+| --- | --- |
+| Phases complete | 0, 1, 1.5, 2, 3 ✅ · Phase 4 partial (M7, M8, M8.5) 🟡 |
+| Backend tests | **598 passing**, 0 failing (4 Postgres-gated skips) |
+| Migrations | 21 Alembic revisions |
+| API | ~55 REST endpoints across 10 routers (`/api/v1`) |
+| Agents | 5 specialists + general + recall (deterministic router) |
+| Stack | Python 3.12 · FastAPI · SQLAlchemy 2.0 async · PostgreSQL/pgvector · Next.js 16 / React 19 |
+
+**What works today:** memory engine, JWT auth + fail-closed RLS, conversation
+engine (streaming, summaries, chat→memory extraction), goals, file intelligence
+(keyword RAG + attachments), unified knowledge layer, and a routed five-specialist
+agent workforce — with Langfuse / Sentry / PostHog observability.
+
+**Seam-only (not yet wired):** live web search (Brave/Tavily), vector file RAG,
+and the action/automation layer (scaffolded via the Green/Yellow/Red approval model).
+
+---
+
+## Repository structure
 
 ```
 GUMMY-OS/
-├── README.md
-├── CONVENTIONS.md           # Engineering & documentation standards
-├── frontend/                # Web client (UI) — placeholder until Phase 1+
-├── backend/                 # API, agent runtime, services — placeholder until Phase 1+
-├── docs/                    # Product documentation
-│   ├── VISION.md            # What GUMMY OS is and why it exists
-│   ├── ROADMAP.md           # Phased delivery plan (Phase 0 → Phase 14)
-│   ├── FEATURES.md          # Feature catalogue + agent descriptions
-│   └── FUTURE_AGENTS.md     # Exploratory future agents (not yet scheduled)
-└── architecture/            # Technical & product design
-    ├── system-design.md         # High-level + agent + memory + security architecture
-    ├── database-design.md       # Core data model and relationships
-    ├── tech-stack.md            # Finalized technology stack (Phase 0 → 5)
-    ├── memory-system.md         # Consent-based long-term memory design
-    ├── conversation-system.md   # Chat history, context & session design
-    ├── security-system.md       # Green/Yellow/Red permission model & SaaS security
-    ├── agent-framework.md       # Master Orchestrator + agent architecture
-    └── ui-ux-system.md          # The GUMMY OS experience & design language
+├── README.md, CONVENTIONS.md, .env.example
+├── architecture/            # Design specs + ADRs
+├── docs/                    # Product docs, release notes, freeze document set
+├── backend/                 # FastAPI app, agent runtime, services, tests
+│   └── app/{api,core,database,models,repositories,schemas,services,workers}
+└── frontend/                # Next.js 16 / React 19 web client
 ```
-
-## Current Status
-
-**Phase 0 — Foundation.** This repository contains *planning, architecture, product
-design, and documentation only*. No application code has been written yet — this is
-intentional. See the [Phase 0 Completion Report](#) summary in chat / `docs/ROADMAP.md`.
-
-## Where to Start
-
-1. **Why** — [docs/VISION.md](docs/VISION.md)
-2. **When** — [docs/ROADMAP.md](docs/ROADMAP.md)
-3. **What** — [docs/FEATURES.md](docs/FEATURES.md)
-4. **How (system)** — [architecture/system-design.md](architecture/system-design.md)
-5. **How (memory)** — [architecture/memory-system.md](architecture/memory-system.md)
-6. **How (agents)** — [architecture/agent-framework.md](architecture/agent-framework.md)
-7. **How (security)** — [architecture/security-system.md](architecture/security-system.md)
-8. **How (experience)** — [architecture/ui-ux-system.md](architecture/ui-ux-system.md)
-9. **Data model** — [architecture/database-design.md](architecture/database-design.md)
-10. **Stack** — [architecture/tech-stack.md](architecture/tech-stack.md)
-11. **Standards** — [CONVENTIONS.md](CONVENTIONS.md)
 
 ---
 
-> **Note on the directory name:** the folder on disk is currently `IQBAL-OS`. The product
-> is now **GUMMY OS**; rename the directory to `GUMMY-OS` at your convenience (no code
-> depends on it yet).
+## Documentation map
 
-_Maintained as a single-founder project with the discipline of a startup engineering org._
+**Freeze document set (start here):**
+1. [Master Document](docs/GUMMY_OS_MASTER_DOCUMENT.md) — the single canonical record
+2. [Project Audit](docs/PROJECT_AUDIT.md) — code-verified inventory & technical debt
+3. [The GUMMY OS Story](docs/GUMMY_OS_STORY.md) — product history
+4. [Technical Architecture](docs/GUMMY_OS_ARCHITECTURE.md) — all layers, as-built
+5. [Product Overview](docs/PRODUCT_OVERVIEW.md) — what it is for users
+6. [Test Report](docs/TEST_REPORT.md) — verification snapshot
+7. [Résumé & Interview Positioning](docs/RESUME_PROJECT_SUMMARY.md)
+8. [Future Roadmap](docs/FUTURE_ROADMAP.md) — Phase 4 remaining → Phase 9
+
+**Design specs:** [VISION.md](docs/VISION.md) · [ROADMAP.md](docs/ROADMAP.md) ·
+[FEATURES.md](docs/FEATURES.md) · [architecture/](architecture/) ·
+[CONVENTIONS.md](CONVENTIONS.md)
+
+**Release notes:** [M4](docs/06_RELEASE_NOTES_M4.md) ·
+[M6](docs/07_RELEASE_NOTES_M6.md) · [M6.5](docs/08_RELEASE_NOTES_M6_5.md) ·
+[M8](docs/09_RELEASE_NOTES_M8.md)
+
+---
+
+## Running the backend
+
+```bash
+cd backend
+uv sync                       # or: pip install -r requirements.txt
+# configure .env from .env.example
+.venv/Scripts/python -m pytest -q     # 598 passed, 4 skipped
+uvicorn app.main:app --reload          # OpenAPI at /docs
+```
+
+The Postgres-gated security suite (fail-closed RLS, cross-tenant rejection) runs
+with `RUN_RLS_PG_TESTS=1` and `RLS_TEST_DSN` pointed at a `gummy_app` DSN.
+
+## Running the frontend
+
+```bash
+cd frontend
+npm install
+npm run dev        # Next.js dev server
+```
+
+---
+
+_Maintained as a single-founder project with the discipline of a startup
+engineering org._
