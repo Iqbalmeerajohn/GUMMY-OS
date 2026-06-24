@@ -115,6 +115,12 @@ AGENT_MAX_RUN_COST_TOKENS = 60_000
 # Preview length for message/reply snippets stored on trace rows (keeps JSONB
 # rows lean; full text lives on the messages table).
 AGENT_TRACE_PREVIEW_CHARS = 200
+# Router (M8): minimum weighted keyword score a specialist must reach to win the
+# route; below this the General agent answers (graceful degradation). A
+# multi-word phrase match scores more than a single keyword.
+AGENT_ROUTER_MIN_SCORE = 1
+AGENT_ROUTER_PHRASE_WEIGHT = 2
+AGENT_ROUTER_KEYWORD_WEIGHT = 1
 # Context-pack caps for the Goal & Task Foundation (M8): how many active
 # goals / open tasks are surfaced to an agent per dispatch.
 CONTEXT_MAX_GOALS = 5

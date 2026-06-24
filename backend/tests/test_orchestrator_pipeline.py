@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.models.agent_run import AgentRun
 from app.models.enums import (
+    AgentContext,
     MemoryCategory,
     PlanShape,
     RunStatus,
@@ -103,6 +104,9 @@ async def test_pipeline_hands_off_recall_digest_to_general(
         message="what do you remember about my career?",
         embedding_service=_embeddings(),
         llm=fake_llm,
+        # M8: the recall→general pipeline is now reached via the research-thread
+        # hint (the memory *keyword* routes to the Memory specialist instead).
+        agent_context=AgentContext.RESEARCH,
     )
     assert result.reply == "Here is what I remember."
 

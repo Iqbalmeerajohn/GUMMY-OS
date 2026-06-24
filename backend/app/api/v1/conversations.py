@@ -310,6 +310,7 @@ async def create_turn(
         max_memories=settings.context_max_memories,
         identity=_identity_for(current_user),
         attachment_file_ids=payload.attachment_file_ids,
+        agent_key=payload.agent,
     )
     return TurnResponse(
         conversation_id=result.conversation_id,
@@ -359,6 +360,7 @@ async def create_turn_stream(
             max_memories=settings.context_max_memories,
             identity=identity,
             attachment_file_ids=payload.attachment_file_ids,
+            agent_key=payload.agent,
         ):
             yield f"data: {json.dumps(event)}\n\n"
 

@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent_run import AgentRun
 from app.models.enums import (
+    AgentContext,
     AgentMessageRole,
     MemoryCategory,
     PlanShape,
@@ -325,9 +326,12 @@ async def test_sequential_shapes_also_write_hop_trail(
         db_session,
         user_id=seed_user,
         conversation_id=conv_id,
-        message="what do you remember about me?",  # routes recall→general
+        message="what do you remember about me?",
         embedding_service=_embeddings(),
         llm=FakeLLMProvider(reply="pipeline reply"),
+        # M8: reach the recall→general pipeline via the research-thread hint (the
+        # memory keyword now routes to the Memory specialist).
+        agent_context=AgentContext.RESEARCH,
     )
     run = (await db_session.execute(select(AgentRun))).scalar_one()
     hops = await a2a_repo.list_for_run(

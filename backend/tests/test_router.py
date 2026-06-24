@@ -9,7 +9,9 @@ import pytest
 from app.models.enums import AgentContext, PlanShape
 from app.services.agents import router
 from app.services.agents.manifests import (
+    CAREER_AGENT_KEY,
     GENERAL_AGENT_KEY,
+    MEMORY_AGENT_KEY,
     RECALL_AGENT_KEY,
 )
 from app.services.agents.registry import get_registry
@@ -67,16 +69,17 @@ async def test_agent_context_hint_routes_without_llm() -> None:
 
 
 async def test_keyword_rule_routes_without_llm() -> None:
+    # M8: a clear specialist keyword routes to that specialist (SINGLE), free.
     llm = _SpyLLM()
     decision = await router.route(
-        intent="What do you remember about my interview prep?",
+        intent="What jobs should I apply for?",
         registry=get_registry(),
         llm=llm,
     )
-    assert decision.plan_shape == PlanShape.PIPELINE
-    assert decision.steps[0].agent_key == RECALL_AGENT_KEY
-    assert "keyword match" in decision.rationale
-    assert llm.calls == 0
+    assert decision.plan_shape == PlanShape.SINGLE
+    assert decision.steps[0].agent_key == CAREER_AGENT_KEY
+    assert "matched" in decision.rationale
+    assert llm.calls == 0  # deterministic path: no LLM
 
 
 async def test_ambiguous_intent_uses_llm_fallback_on_cheap_tier() -> None:
@@ -134,11 +137,13 @@ async def test_no_llm_default_is_single_general() -> None:
 @pytest.mark.parametrize(
     "intent",
     [
-        "do you remember my goals?",
+        "do you remember my preferences?",
         "search your memory for my preferences",
         "what do you know about me?",
     ],
 )
-async def test_recall_keywords_routing(intent: str) -> None:
+async def test_memory_keywords_route_to_memory_specialist(intent: str) -> None:
+    # M8: user-facing memory questions route to the Memory specialist (the
+    # internal recall agent is no longer a keyword target).
     decision = await router.route(intent=intent, registry=get_registry())
-    assert decision.steps[0].agent_key == RECALL_AGENT_KEY
+    assert decision.steps[-1].agent_key == MEMORY_AGENT_KEY

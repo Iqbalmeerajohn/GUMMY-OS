@@ -120,3 +120,9 @@ def reset_for_tests() -> None:
 EVENT_KNOWLEDGE_RETRIEVED = "KnowledgeRetrieved"
 EVENT_KNOWLEDGE_SOURCE_USED = "KnowledgeSourceUsed"
 EVENT_KNOWLEDGE_ATTACHMENT_USED = "KnowledgeAttachmentUsed"
+
+# ── M8 multi-agent event names (single source of truth) ───────────────────────
+EVENT_AGENT_SELECTED = "AgentSelected"
+EVENT_AGENT_EXECUTED = "AgentExecuted"
+EVENT_AGENT_FALLBACK = "AgentFallback"
+EVENT_AGENT_OVERRIDE = "AgentOverride"

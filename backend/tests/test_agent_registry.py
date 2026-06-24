@@ -10,7 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.enums import PermissionTier
 from app.repositories import agent_repository
 from app.schemas.agents import AgentManifest
-from app.services.agents.manifests import BUILTIN_MANIFESTS, GENERAL_AGENT_KEY
+from app.services.agents.manifests import (
+    BUILTIN_MANIFESTS,
+    GENERAL_AGENT_KEY,
+    SPECIALIST_AGENT_KEYS,
+)
 from app.services.agents.registry import (
     AgentRegistry,
     ManifestValidationError,
@@ -35,6 +39,28 @@ def test_builtin_registry_validates() -> None:
     manifest = registry.get(GENERAL_AGENT_KEY)
     assert manifest.ceiling == PermissionTier.GREEN
     assert manifest.tools == ()
+
+
+def test_m8_specialists_registered_with_keywords() -> None:
+    """All five M8 specialists are registered, Green-only, and have keywords."""
+    registry = get_registry()
+    for key in SPECIALIST_AGENT_KEYS:
+        manifest = registry.get(key)
+        assert manifest.ceiling == PermissionTier.GREEN
+        assert manifest.keywords, f"{key} must declare routing keywords"
+    assert set(SPECIALIST_AGENT_KEYS) == {
+        "career",
+        "learning",
+        "planner",
+        "memory",
+        "research",
+    }
+
+
+def test_priority_breaks_keyword_ties() -> None:
+    """Learning outranks Planner so the shared 'roadmap' keyword splits right."""
+    registry = get_registry()
+    assert registry.get("learning").priority > registry.get("planner").priority
 
 
 def test_unknown_key_raises() -> None:

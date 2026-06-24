@@ -30,7 +30,7 @@ from app.core.constants import (
     DEFAULT_TURN_HISTORY_MESSAGES,
 )
 from app.core.observability import capture_exception
-from app.models.enums import MessageRole, SummaryType
+from app.models.enums import AgentContext, MessageRole, SummaryType
 from app.repositories import conversation_repository as conv_repo
 from app.repositories import conversation_summary_repository as sum_repo
 from app.repositories import message_repository as msg_repo
@@ -102,6 +102,85 @@ def _detect_goal_candidate(message: str) -> GoalCandidate | None:
     except Exception:
         logger.exception("goal detection failed; turn unaffected")
         return None
+
+
+async def _select_stream_agent(
+    *,
+    message: str,
+    agent_context: AgentContext | None,
+    agent_key: str | None,
+    knowledge_block: str,
+    llm: LLMProvider,
+) -> tuple[str | None, dict | None, str]:
+    """Route a streamed turn to an agent and resolve its persona (M8).
+
+    Mirrors the orchestrated path's routing for the streaming core: the
+    deterministic keyword Router (free; no LLM by default) picks the agent, and
+    the specialist's persona is prepended to the system prompt so the streamed
+    reply speaks in the right voice. Returns
+    ``(selected_agent, assistant_metadata, persona)``; a no-op
+    ``(None, None, "")`` when orchestration is disabled, leaving the legacy
+    stream byte-identical. Best-effort — any routing fault degrades to the
+    general grounded stream so a reply is never lost.
+    """
+    settings = get_settings()
+    if not settings.agents_orchestration_enabled:
+        return None, None, ""
+    try:
+        # Lazy imports keep the conversation domain free of a module-level
+        # agents dependency (same pattern as run_turn's orchestration branch).
+        from app.services.agents import router as agent_router
+        from app.services.agents.manifests import GENERAL_AGENT_KEY
+        from app.services.agents.prompts import PERSONA_BUILDERS
+        from app.services.agents.registry import get_registry
+
+        decision = await agent_router.route(
+            intent=message,
+            registry=get_registry(),
+            agent_context=agent_context,
+            forced_agent_key=agent_key,
+            llm=llm if settings.agents_router_llm_fallback else None,
+            fast_model=settings.claude_model_fast,
+        )
+        selected_agent = decision.steps[-1].agent_key
+        persona = ""
+        persona_fn = PERSONA_BUILDERS.get(selected_agent)
+        if persona_fn is not None and selected_agent != GENERAL_AGENT_KEY:
+            persona = persona_fn(message, knowledge_block)
+        metadata = {
+            "agent_key": selected_agent,
+            "route_shape": decision.plan_shape.value,
+        }
+        return selected_agent, metadata, persona
+    except Exception:
+        logger.exception("stream agent routing failed; streaming general reply")
+        return None, None, ""
+
+
+def _emit_stream_route_analytics(
+    *, user_id: uuid.UUID, selected_agent: str, overridden: bool
+) -> None:
+    """Emit ``AgentSelected`` (+ ``AgentOverride``) for a streamed turn.
+
+    Best-effort and lazy-imported; ``capture_event`` never raises, so analytics
+    can never break a stream.
+    """
+    try:
+        from app.observability import analytics
+
+        analytics.capture_event(
+            distinct_id=str(user_id),
+            event=analytics.EVENT_AGENT_SELECTED,
+            properties={"agent": selected_agent, "overridden": overridden},
+        )
+        if overridden:
+            analytics.capture_event(
+                distinct_id=str(user_id),
+                event=analytics.EVENT_AGENT_OVERRIDE,
+                properties={"agent": selected_agent},
+            )
+    except Exception:
+        logger.debug("stream route analytics failed", exc_info=True)
 
 
 def _ms(start: float) -> float:
@@ -259,12 +338,15 @@ async def run_turn(
     history_limit: int = DEFAULT_TURN_HISTORY_MESSAGES,
     identity: str | None = None,
     attachment_file_ids: list[uuid.UUID] | None = None,
+    agent_key: str | None = None,
 ) -> TurnResult:
     """Run one persisted, memory-grounded turn in a conversation.
 
     Persists the user message and the assistant reply, bumps the conversation's
     recency + counter, commits, then dispatches enrichment (no-op consumers in
-    M4). Raises 404 if the conversation is not the tenant's.
+    M4). Raises 404 if the conversation is not the tenant's. ``agent_key`` (M8)
+    is the manual agent override forwarded to the orchestrator; ``None`` lets the
+    Router decide (Auto).
     """
     conversation = await conversation_service.get_conversation(
         session, user_id=user_id, conversation_id=conversation_id
@@ -315,6 +397,10 @@ async def run_turn(
     # All trace rows are flush-only and commit atomically with the messages.
     settings = get_settings()
     proposed_memories: list[dict] = []
+    # M8: the agent that answered + run trace ids, persisted on the assistant
+    # message so the client can badge which agent replied. ``None`` on the
+    # legacy/fallback paths (no orchestrated route to attribute).
+    assistant_metadata: dict | None = None
     if settings.agents_orchestration_enabled:
         from app.services.agents import orchestrator_service
 
@@ -331,6 +417,7 @@ async def run_turn(
                 history=history,
                 summary=summary_text,
                 agent_context=conversation.agent_context,
+                agent_key=agent_key,
                 user_identity=identity,
                 attachment_file_ids=attachment_file_ids,
             )
@@ -342,6 +429,7 @@ async def run_turn(
                 output_tokens=orch.output_tokens,
             )
             proposed_memories = orch.proposed_memories
+            assistant_metadata = orch.message_metadata
         except Exception as exc:
             logger.exception(
                 "orchestrator failed; falling back to the legacy reply core"
@@ -434,6 +522,7 @@ async def run_turn(
         model=reply.model,
         input_tokens=reply.input_tokens,
         output_tokens=reply.output_tokens,
+        extra_metadata=assistant_metadata,
     )
 
     message_count = await msg_repo.count_messages(
@@ -517,6 +606,7 @@ async def stream_turn(
     history_limit: int = DEFAULT_TURN_HISTORY_MESSAGES,
     identity: str | None = None,
     attachment_file_ids: list[uuid.UUID] | None = None,
+    agent_key: str | None = None,
 ) -> AsyncIterator[dict]:
     """Run a memory-grounded turn, streaming the reply as it is generated.
 
@@ -601,6 +691,26 @@ async def stream_turn(
         prior_context=prior_context,
         knowledge=knowledge.block,
     )
+    # Multi-Agent Workforce (M8): pick the agent that answers and prepend its
+    # persona to the system prompt. Deterministic + free (the keyword router runs
+    # without an LLM by default), so the streamed reply speaks in the right
+    # specialist's voice and we can attribute it. Gated on the same flag as the
+    # orchestrated path; ``None`` selected_agent on the legacy path leaves the
+    # prompt byte-identical to before.
+    selected_agent, assistant_metadata, persona = await _select_stream_agent(
+        message=message,
+        agent_context=conversation.agent_context,
+        agent_key=agent_key,
+        knowledge_block=knowledge.block,
+        llm=llm,
+    )
+    system = f"{persona}\n\n{payload.system}" if persona else payload.system
+    if selected_agent is not None:
+        _emit_stream_route_analytics(
+            user_id=user_id,
+            selected_agent=selected_agent,
+            overridden=agent_key is not None,
+        )
     prompt_build_ms = _ms(prompt_start)
 
     # Stream the reply, accumulating the full text for persistence. Record the
@@ -609,14 +719,14 @@ async def stream_turn(
     llm_start = time.perf_counter()
     first_token_ms: float | None = None
     if isinstance(llm, SupportsStreaming):
-        async for chunk in llm.stream(system=payload.system, messages=payload.messages):
+        async for chunk in llm.stream(system=system, messages=payload.messages):
             if first_token_ms is None:
                 first_token_ms = _ms(llm_start)
             chunks.append(chunk)
             yield {"type": "delta", "text": chunk}
         model = getattr(llm, "_default_model", llm.name)
     else:
-        response = await llm.generate(system=payload.system, messages=payload.messages)
+        response = await llm.generate(system=system, messages=payload.messages)
         first_token_ms = _ms(llm_start)
         chunks.append(response.text)
         model = response.model
@@ -645,8 +755,9 @@ async def stream_turn(
         content=reply_text,
         token_count=estimate_tokens(reply_text),
         model=model,
-        input_tokens=estimate_tokens(payload.system),
+        input_tokens=estimate_tokens(system),
         output_tokens=estimate_tokens(reply_text),
+        extra_metadata=assistant_metadata,
     )
 
     message_count = await msg_repo.count_messages(
@@ -694,6 +805,10 @@ async def stream_turn(
             if i.source == knowledge_retrieval_service.SOURCE_MEMORY
         ],
         "message_count": message_count,
+        # M8: the agent that answered (Auto-routed or manually overridden), so
+        # the client badges the reply with the real backend decision. ``None``
+        # on the legacy path (orchestration disabled).
+        "agent": selected_agent,
         "goal_candidate": (
             goal_candidate.model_dump(mode="json") if goal_candidate else None
         ),

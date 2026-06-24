@@ -53,6 +53,10 @@ class TurnRequest(BaseModel):
     # this message. When present, file grounding uses ONLY these files (not a
     # broad search). Each must belong to the tenant (foreign id → 404).
     attachment_file_ids: list[uuid.UUID] | None = Field(default=None, max_length=10)
+    # Multi-Agent Workforce (M8): manual agent override. ``None`` (Auto) lets the
+    # Router pick; a key (e.g. "career") pins that agent and bypasses routing. An
+    # unknown key degrades to General — routing must never fail a request.
+    agent: str | None = Field(default=None, max_length=64)
 
     @field_validator("message")
     @classmethod

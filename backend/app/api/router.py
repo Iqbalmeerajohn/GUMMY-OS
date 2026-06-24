@@ -14,6 +14,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     actions,
+    agents,
     conversations,
     files,
     goals,
@@ -32,3 +33,4 @@ api_router.include_router(tasks.router)
 api_router.include_router(actions.router)
 api_router.include_router(files.router)
 api_router.include_router(knowledge.router)
+api_router.include_router(agents.router)

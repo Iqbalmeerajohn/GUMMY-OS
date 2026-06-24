@@ -33,6 +33,9 @@ class AgentManifest(BaseModel):
     tools: tuple[str, ...] = ()
     # Routing descriptors: keyword hints the rules-first Router matches (M5).
     keywords: tuple[str, ...] = ()
+    # Deterministic tie-break when two specialists score equally on keywords
+    # (higher wins); 0 for the general/recall agents (M8).
+    priority: int = 0
     model_tier: str | None = None
     enabled: bool = True
 

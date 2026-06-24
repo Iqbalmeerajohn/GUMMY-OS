@@ -59,4 +59,184 @@ RECALL_AGENT = AgentManifest(
     model_tier="fast",
 )
 
-BUILTIN_MANIFESTS: tuple[AgentManifest, ...] = (GENERAL_AGENT, RECALL_AGENT)
+# ── M8 specialist workforce ──────────────────────────────────────────────────
+#
+# Five user-facing specialists the Router scores by keyword. Each is Green-only,
+# tool-less, and LLM-backed: identity/reasoning live in its prompt builder
+# (services/agents/prompts/), while grounding flows exclusively through the M7
+# Unified Knowledge seam in the shared specialist handler — no agent retrieves on
+# its own (Rule #1). ``priority`` breaks keyword-score ties deterministically.
+
+CAREER_AGENT_KEY = "career"
+
+CAREER_AGENT = AgentManifest(
+    key=CAREER_AGENT_KEY,
+    display_name="Career Agent",
+    mission=(
+        "Help the user advance their career: resumes, internships, job and "
+        "internship applications, LinkedIn, salary, interview prep, and career "
+        "planning — grounded in their memories, goals, and uploaded documents."
+    ),
+    ceiling=PermissionTier.GREEN,
+    tools=(),
+    keywords=(
+        "resume",
+        "cv",
+        "internship",
+        "internships",
+        "job",
+        "jobs",
+        "application",
+        "applications",
+        "apply",
+        "linkedin",
+        "salary",
+        "compensation",
+        "career",
+        "interview",
+        "interviews",
+        "recruiter",
+        "hiring",
+        "cover letter",
+        "portfolio",
+    ),
+    priority=5,
+    model_tier="default",
+)
+
+LEARNING_AGENT_KEY = "learning"
+
+LEARNING_AGENT = AgentManifest(
+    key=LEARNING_AGENT_KEY,
+    display_name="Learning Agent",
+    mission=(
+        "Teach the user: explain topics, design study roadmaps and courses, and "
+        "structure learning paths — grounded in what they already know and aim "
+        "to learn."
+    ),
+    ceiling=PermissionTier.GREEN,
+    tools=(),
+    keywords=(
+        "teach",
+        "learn",
+        "learning",
+        "study",
+        "course",
+        "courses",
+        "topic",
+        "explain",
+        "tutorial",
+        "understand",
+        "concept",
+        "curriculum",
+        "lesson",
+    ),
+    # Above Planner so "roadmap for deep learning" (roadmap∩planner, learning)
+    # routes to Learning; Planner still wins its distinctive keywords by score.
+    priority=4,
+    model_tier="default",
+)
+
+PLANNER_AGENT_KEY = "planner"
+
+PLANNER_AGENT = AgentManifest(
+    key=PLANNER_AGENT_KEY,
+    display_name="Planner Agent",
+    mission=(
+        "Turn intentions into executable plans: goals, milestones, timelines, "
+        "schedules, and step-by-step roadmaps — grounded in the user's active "
+        "goals and deadlines."
+    ),
+    ceiling=PermissionTier.GREEN,
+    tools=(),
+    keywords=(
+        "goal",
+        "goals",
+        "milestone",
+        "milestones",
+        "timeline",
+        "plan",
+        "planning",
+        "schedule",
+        "execution",
+        "deadline",
+        "roadmap",
+    ),
+    priority=1,
+    model_tier="default",
+)
+
+MEMORY_AGENT_KEY = "memory"
+
+MEMORY_AGENT = AgentManifest(
+    key=MEMORY_AGENT_KEY,
+    display_name="Memory Agent",
+    mission=(
+        "Answer what Gummy knows about the user: summarize their profile, "
+        "history, and stored memories — grounded entirely in retrieved memory."
+    ),
+    ceiling=PermissionTier.GREEN,
+    tools=(),
+    keywords=(
+        "memory",
+        "memories",
+        "remember",
+        "recall",
+        "history",
+        "profile",
+        "what do you know",
+        "know about me",
+    ),
+    priority=2,
+    model_tier="default",
+)
+
+RESEARCH_AGENT_KEY = "research"
+
+RESEARCH_AGENT = AgentManifest(
+    key=RESEARCH_AGENT_KEY,
+    display_name="Research Agent",
+    mission=(
+        "Investigate and compare: analyze options, markets, and trends, and "
+        "synthesize findings — grounded in the user's knowledge (external web "
+        "search arrives in M8.5)."
+    ),
+    ceiling=PermissionTier.GREEN,
+    tools=(),
+    keywords=(
+        "research",
+        "compare",
+        "comparison",
+        "analyze",
+        "analysis",
+        "investigate",
+        "market",
+        "trend",
+        "trends",
+        "evaluate",
+        "vs",
+        "versus",
+    ),
+    priority=3,
+    model_tier="default",
+)
+
+# The Router scores against these specialists (general is the fallthrough and
+# recall is an internal pipeline head — neither is a keyword target).
+SPECIALIST_AGENT_KEYS: tuple[str, ...] = (
+    CAREER_AGENT_KEY,
+    LEARNING_AGENT_KEY,
+    PLANNER_AGENT_KEY,
+    MEMORY_AGENT_KEY,
+    RESEARCH_AGENT_KEY,
+)
+
+BUILTIN_MANIFESTS: tuple[AgentManifest, ...] = (
+    GENERAL_AGENT,
+    RECALL_AGENT,
+    CAREER_AGENT,
+    LEARNING_AGENT,
+    PLANNER_AGENT,
+    MEMORY_AGENT,
+    RESEARCH_AGENT,
+)

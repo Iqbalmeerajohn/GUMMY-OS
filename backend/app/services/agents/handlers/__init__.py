@@ -10,11 +10,16 @@ handler — adding an agent = manifest + handler + an entry here.
 from __future__ import annotations
 
 from app.schemas.agents import AgentResult, AgentTask
-from app.services.agents.handlers import general_agent, recall_agent
+from app.services.agents.handlers import (
+    general_agent,
+    recall_agent,
+    specialist_agent,
+)
 from app.services.agents.manifests import (
     GENERAL_AGENT_KEY,
     RECALL_AGENT_KEY,
 )
+from app.services.agents.prompts import PERSONA_BUILDERS
 from app.services.llm.base import LLMProvider
 
 
@@ -30,4 +35,8 @@ async def dispatch(
         return await general_agent.handle(task, llm=llm)
     if task.agent_key == RECALL_AGENT_KEY:
         return await recall_agent.handle(task)
+    # The five M8 specialists share one handler, differing only by persona.
+    persona_fn = PERSONA_BUILDERS.get(task.agent_key)
+    if persona_fn is not None:
+        return await specialist_agent.handle(task, llm=llm, persona_fn=persona_fn)
     raise UnknownAgentError(task.agent_key)

@@ -39,6 +39,7 @@ from app.core.constants import (
 from app.models.agent_run import AgentRun
 from app.models.agent_step import AgentStep
 from app.models.enums import AgentContext, AgentMessageRole, PlanShape
+from app.observability import analytics
 from app.observability import langfuse as langfuse_obs
 from app.repositories import agent_message_repository as a2a_repo
 from app.schemas.agents import (
@@ -56,6 +57,7 @@ from app.services.agents import (
     router,
     run_recorder,
 )
+from app.services.agents.manifests import GENERAL_AGENT_KEY
 from app.services.agents.registry import get_registry
 from app.services.embeddings.embedding_service import EmbeddingService
 from app.services.llm.base import LLMProvider
@@ -64,6 +66,65 @@ logger = logging.getLogger(__name__)
 
 # The Orchestrator's name on the A2A trace (it is not an agent).
 ORCHESTRATOR_ACTOR = "orchestrator"
+
+
+def _emit_route_analytics(
+    *,
+    user_id: uuid.UUID,
+    decision: RoutingDecision,
+    selected_agent: str,
+    overridden: bool,
+) -> None:
+    """Emit the M8 routing events (best-effort; ``capture_event`` never raises).
+
+    ``AgentSelected`` always fires; ``AgentOverride`` when the user pinned the
+    agent; ``AgentFallback`` when the General agent answers by routing default
+    (low confidence) rather than by explicit override.
+    """
+    distinct_id = str(user_id)
+    analytics.capture_event(
+        distinct_id=distinct_id,
+        event=analytics.EVENT_AGENT_SELECTED,
+        properties={
+            "agent": selected_agent,
+            "confidence": decision.confidence,
+            "shape": decision.plan_shape.value,
+            "overridden": overridden,
+        },
+    )
+    if overridden:
+        analytics.capture_event(
+            distinct_id=distinct_id,
+            event=analytics.EVENT_AGENT_OVERRIDE,
+            properties={"agent": selected_agent},
+        )
+    elif selected_agent == GENERAL_AGENT_KEY:
+        analytics.capture_event(
+            distinct_id=distinct_id,
+            event=analytics.EVENT_AGENT_FALLBACK,
+            properties={
+                "agent": selected_agent,
+                "reason": decision.rationale,
+            },
+        )
+
+
+def _emit_execute_analytics(
+    *,
+    user_id: uuid.UUID,
+    decision: RoutingDecision,
+    results: list[tuple[str, AgentResult]],
+) -> None:
+    """Emit ``AgentExecuted`` after a successful run (best-effort)."""
+    analytics.capture_event(
+        distinct_id=str(user_id),
+        event=analytics.EVENT_AGENT_EXECUTED,
+        properties={
+            "agent": results[-1][0] if results else "",
+            "shape": decision.plan_shape.value,
+            "cost_tokens": sum(r.cost.tokens for _, r in results),
+        },
+    )
 
 
 class RunBudgetExceededError(RuntimeError):
@@ -347,14 +408,17 @@ async def orchestrate(
     history: list[dict] | None = None,
     summary: str | None = None,
     agent_context: AgentContext | None = None,
+    agent_key: str | None = None,
     user_identity: str | None = None,
     attachment_file_ids: list[uuid.UUID] | None = None,
 ) -> OrchestrationResult:
     """Run one orchestrated turn (routed single | pipeline | parallel).
 
-    Flush-only — the caller owns the commit, so the run/step/hop trace lands
-    atomically with the conversation messages. Raises on total failure; the
-    caller falls back to the legacy reply core.
+    ``agent_key`` is a manual override: when set, the Router is bypassed and that
+    agent answers (Auto routing otherwise). Flush-only — the caller owns the
+    commit, so the run/step/hop trace lands atomically with the conversation
+    messages. Raises on total failure; the caller falls back to the legacy
+    reply core.
     """
     settings = get_settings()
     with langfuse_obs.observe_agent_run(
@@ -362,15 +426,27 @@ async def orchestrate(
         input={"message": message[:AGENT_TRACE_PREVIEW_CHARS]},
         metadata={"conversation_id": str(conversation_id)},
     ) as span:
-        decision: RoutingDecision = await router.route(
-            intent=message,
-            registry=get_registry(),
-            agent_context=agent_context,
-            # The LLM classifier is opt-in (cost): rules are deterministic and
-            # free, and the general agent is a safe catch-all.
-            llm=llm if settings.agents_router_llm_fallback else None,
-            fast_model=settings.claude_model_fast,
-        )
+        with langfuse_obs.observe_operation(
+            "agent.route", input={"message": message[:AGENT_TRACE_PREVIEW_CHARS]}
+        ) as route_span:
+            decision = await router.route(
+                intent=message,
+                registry=get_registry(),
+                agent_context=agent_context,
+                forced_agent_key=agent_key,
+                # The LLM classifier is opt-in (cost): rules are deterministic
+                # and free, and the general agent is a safe catch-all.
+                llm=llm if settings.agents_router_llm_fallback else None,
+                fast_model=settings.claude_model_fast,
+            )
+            selected_agent = decision.steps[-1].agent_key
+            route_span.update(
+                metadata={
+                    "agent": selected_agent,
+                    "confidence": decision.confidence,
+                    "shape": decision.plan_shape.value,
+                }
+            )
         route_plan = {
             "shape": decision.plan_shape.value,
             "steps": [s.agent_key for s in decision.steps],
@@ -378,6 +454,12 @@ async def orchestrate(
             "confidence": decision.confidence,
         }
         span.update(metadata={"route_plan": route_plan})
+        _emit_route_analytics(
+            user_id=user_id,
+            decision=decision,
+            selected_agent=selected_agent,
+            overridden=agent_key is not None,
+        )
         run = await run_recorder.open_run(
             session,
             user_id=user_id,
@@ -401,25 +483,38 @@ async def orchestrate(
                 if decision.plan_shape == PlanShape.PARALLEL
                 else _run_sequential
             )
-            results = await runner(
-                session,
-                run=run,
-                decision=decision,
-                base_pack=base_pack,
-                guard=guard,
-                message=message,
-                llm=llm,
-                token_budget=token_budget,
-                max_memories=max_memories,
-                user_identity=user_identity,
-            )
-            if not results:  # defensive: an empty route plan is a bug
-                raise RuntimeError("router produced an empty route plan")
+            with langfuse_obs.observe_operation(
+                "agent.execute",
+                metadata={
+                    "agent": selected_agent,
+                    "shape": decision.plan_shape.value,
+                },
+            ) as exec_span:
+                results = await runner(
+                    session,
+                    run=run,
+                    decision=decision,
+                    base_pack=base_pack,
+                    guard=guard,
+                    message=message,
+                    llm=llm,
+                    token_budget=token_budget,
+                    max_memories=max_memories,
+                    user_identity=user_identity,
+                )
+                if not results:  # defensive: an empty route plan is a bug
+                    raise RuntimeError("router produced an empty route plan")
+                exec_span.update(
+                    metadata={"steps": [k for k, _ in results]}
+                )
         except Exception as exc:
             await run_recorder.close_run_failure(session, run, error=str(exc))
             raise
 
         await run_recorder.close_run_success(session, run)
+        _emit_execute_analytics(
+            user_id=user_id, decision=decision, results=results
+        )
 
         reply = compose.compose_reply(decision.plan_shape, results)
         last_result = results[-1][1]
@@ -446,18 +541,26 @@ async def orchestrate(
             model = str(last_result.output.get("model", ""))
             memories_used = int(last_result.output.get("memories_used", 0))
 
+        response_meta = {
+            "model": model,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cost_tokens": total_cost.tokens,
+            "cost_usd": float(total_cost.usd),
+            "memories_used": memories_used,
+            "agent_key": results[-1][0],
+            "run_id": str(run.id),
+        }
+        with langfuse_obs.observe_operation(
+            "agent.response", metadata={"agent": results[-1][0]}
+        ) as response_span:
+            response_span.update(
+                output={"reply": reply[:AGENT_TRACE_PREVIEW_CHARS]},
+                metadata=response_meta,
+            )
         span.update(
             output={"reply": reply[:AGENT_TRACE_PREVIEW_CHARS]},
-            metadata={
-                "model": model,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "cost_tokens": total_cost.tokens,
-                "cost_usd": float(total_cost.usd),
-                "memories_used": memories_used,
-                "agent_key": results[-1][0],
-                "run_id": str(run.id),
-            },
+            metadata=response_meta,
         )
         return OrchestrationResult(
             reply=reply,
