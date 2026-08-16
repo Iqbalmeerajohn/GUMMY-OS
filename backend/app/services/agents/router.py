@@ -85,9 +85,7 @@ def _keyword_matches(keyword: str, lowered: str) -> bool:
     return re.search(rf"\b{re.escape(kw)}\b", lowered) is not None
 
 
-def _score_specialist(
-    manifest: AgentManifest, lowered: str
-) -> tuple[int, list[str]]:
+def _score_specialist(manifest: AgentManifest, lowered: str) -> tuple[int, list[str]]:
     """Weighted keyword score for one specialist + the keywords that matched."""
     score = 0
     matched: list[str] = []
@@ -95,9 +93,7 @@ def _score_specialist(
         if _keyword_matches(keyword, lowered):
             is_phrase = " " in keyword.strip()
             score += (
-                AGENT_ROUTER_PHRASE_WEIGHT
-                if is_phrase
-                else AGENT_ROUTER_KEYWORD_WEIGHT
+                AGENT_ROUTER_PHRASE_WEIGHT if is_phrase else AGENT_ROUTER_KEYWORD_WEIGHT
             )
             matched.append(keyword.strip())
     return score, matched
@@ -108,9 +104,7 @@ def _confidence_for(score: int) -> float:
     return min(0.95, 0.6 + 0.12 * score)
 
 
-def score_agents(
-    intent: str, registry: AgentRegistry
-) -> RoutingDecision:
+def score_agents(intent: str, registry: AgentRegistry) -> RoutingDecision:
     """Deterministically score the specialists and return the routing decision.
 
     Pure and free (no LLM, no I/O): the highest-scoring specialist above
@@ -189,9 +183,7 @@ async def route(
 
     # (b) The thread's hub hint: research threads lead with memory recall.
     if agent_context == AgentContext.RESEARCH:
-        return _recall_pipeline(
-            "agent_context hint: research thread", confidence=0.95
-        )
+        return _recall_pipeline("agent_context hint: research thread", confidence=0.95)
 
     # (c) Deterministic weighted keyword scoring across the specialists.
     decision = score_agents(intent, registry)

@@ -1,18 +1,14 @@
 """Authentication primitives: JWT verification and the current-user model.
 
-Verifies Supabase-issued access tokens **locally** (no per-request call to
-Supabase). Both signing schemes are supported, selected by the token's own
-``alg`` header (constrained to the ``SUPABASE_JWT_ALGORITHMS`` allowlist):
+GUMMY is its own identity provider: access tokens are HS256 JWTs minted by
+``app.services.auth.token_service`` and verified here against the local secret.
+Verification is self-contained — no database read, no network call — so
+authentication stays off the request latency budget and sign-in keeps working
+with the machine offline.
 
-* **HS256** (symmetric) — verified with the shared ``SUPABASE_JWT_SECRET``.
-* **ES256 / RS256 / EdDSA** (asymmetric) — verified with the project's public key,
-  fetched and cached from Supabase's JWKS endpoint (``SUPABASE_URL`` +
-  ``/auth/v1/.well-known/jwks.json``). This is what Supabase issues after the
-  "JWT Signing Keys" migration (current key ECC P-256 → ``ES256``).
-
-Routing the key material by ``alg`` (secret for HS*, public key for everything
-else) keeps the two schemes isolated, so there is no algorithm-confusion risk.
-All failures map to ``AppError`` with HTTP 401 and a stable error code.
+Exactly one issuer and one algorithm are accepted. That is the whole point: with
+no second scheme there is no key routing, and therefore no algorithm-confusion
+risk. All failures map to ``AppError`` with HTTP 401 and a stable error code.
 """
 
 from __future__ import annotations
@@ -20,11 +16,8 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass
-from typing import Any
 
 import jwt
-from jwt import PyJWKClient
-from jwt.exceptions import PyJWKClientError
 
 from app.core.config import Settings
 from app.core.exceptions import AppError
@@ -34,23 +27,10 @@ logger = logging.getLogger(__name__)
 # Small leeway (seconds) to tolerate minor client/server clock skew on exp/iat.
 _JWT_LEEWAY_SECONDS = 30
 
-# Cached JWKS clients keyed by endpoint URL. PyJWKClient caches the fetched key
-# set, so the network round-trip happens once (then on key rotation), not per
-# request.
-_jwk_clients: dict[str, PyJWKClient] = {}
-
-
-def _get_jwk_client(jwks_url: str) -> PyJWKClient:
-    client = _jwk_clients.get(jwks_url)
-    if client is None:
-        client = PyJWKClient(jwks_url, cache_keys=True)
-        _jwk_clients[jwks_url] = client
-    return client
-
 
 @dataclass(frozen=True)
 class TokenClaims:
-    """The verified, parsed claims we rely on from a Supabase access token."""
+    """The verified, parsed claims we rely on from an access token."""
 
     sub: uuid.UUID
     email: str | None
@@ -59,11 +39,11 @@ class TokenClaims:
 
 
 def _extract_name(payload: dict[str, object]) -> str | None:
-    """Best-effort display name from Supabase claims (signup user_metadata).
+    """Best-effort display name from the token's ``user_metadata`` claim.
 
-    Supabase embeds ``user_metadata`` in the verified access token, so the name
-    the user provided at signup is available WITHOUT any extra DB/Supabase call.
-    Tries the common keys in order; returns ``None`` when none are present.
+    The name given at signup rides in the token itself, so it is available
+    without an extra database read on the request path. Tries the common keys in
+    order; returns ``None`` when none are present.
     """
     candidates: list[object] = []
     meta = payload.get("user_metadata")
@@ -89,80 +69,42 @@ def _unauthorized(code: str, message: str) -> AppError:
     return AppError(message, code=code, status_code=401)
 
 
-def _resolve_key(token: str, alg: str, settings: Settings) -> Any:
-    """Pick the verification key for the token's algorithm.
+def verify_access_token(token: str, settings: Settings) -> TokenClaims:
+    """Verify a GUMMY-issued access token (HS256, local secret) and return its claims.
 
-    HS* → the shared ``SUPABASE_JWT_SECRET``; asymmetric (ES*/RS*/PS*/EdDSA) →
-    the project's public key from Supabase's JWKS endpoint. Raises
-    ``AppError(503)`` when the required config for that scheme is missing.
+    Raises ``AppError(401)`` on any verification failure — bad signature, wrong
+    audience, expiry, malformed token — or ``AppError(503)`` when the server has
+    no signing secret configured.
     """
-    if alg.startswith("HS"):
-        secret = settings.supabase_jwt_secret
-        if not secret:
-            raise AppError(
-                "Auth is enabled but SUPABASE_JWT_SECRET is not configured.",
-                code="auth_misconfigured",
-                status_code=503,
-            )
-        return secret
+    from app.services.auth.token_service import ALGORITHM, TOKEN_AUDIENCE
 
-    jwks_url = settings.supabase_jwks_url
-    if not jwks_url:
+    if not settings.local_auth_secret:
         raise AppError(
-            "Auth is enabled but SUPABASE_URL is not configured for JWKS "
-            "(asymmetric) token verification.",
+            "Auth is enabled but GUMMY_JWT_SECRET is not configured.",
             code="auth_misconfigured",
             status_code=503,
         )
-    try:
-        return _get_jwk_client(jwks_url).get_signing_key_from_jwt(token).key
-    except PyJWKClientError as exc:
-        logger.warning("JWKS signing-key lookup failed: %s", exc)
-        raise _unauthorized("invalid_token", "The access token is invalid.") from exc
-
-
-def verify_access_token(token: str, settings: Settings) -> TokenClaims:
-    """Verify a Supabase JWT (signature, exp, audience) and return its claims.
-
-    Supports both HS256 (shared secret) and asymmetric ES256/RS256/EdDSA (JWKS
-    public key), chosen by the token's ``alg`` header within the configured
-    allowlist. Raises ``AppError(401)`` on any verification failure, or
-    ``AppError(503)`` if the server is missing the config for that scheme.
-    """
-    try:
-        alg = jwt.get_unverified_header(token).get("alg", "")
-    except jwt.InvalidTokenError as exc:
-        logger.warning("JWT header could not be parsed: %s", exc)
-        raise _unauthorized("invalid_token", "The access token is invalid.") from exc
-
-    allowed = settings.jwt_algorithms
-    if alg not in allowed:
-        logger.warning(
-            "JWT alg %r is not in the allowed algorithms %s "
-            "(set SUPABASE_JWT_ALGORITHMS to match the project's signing key).",
-            alg,
-            allowed,
-        )
-        raise _unauthorized("invalid_token", "The access token is invalid.")
-
-    key = _resolve_key(token, alg, settings)
 
     try:
         payload: dict[str, object] = jwt.decode(
             token,
-            key=key,
-            algorithms=[alg],
-            audience=settings.supabase_jwt_aud,
+            key=settings.local_auth_secret,
+            algorithms=[ALGORITHM],
+            audience=TOKEN_AUDIENCE,
             leeway=_JWT_LEEWAY_SECONDS,
             options={"require": ["exp", "sub"]},
         )
     except jwt.ExpiredSignatureError as exc:
         raise _unauthorized("token_expired", "The access token has expired.") from exc
     except jwt.InvalidTokenError as exc:
-        # Covers bad signature, wrong audience, malformed token, missing claims.
-        logger.warning("JWT verification failed (alg=%s): %s", alg, exc)
+        logger.warning("GUMMY token verification failed: %s", exc)
         raise _unauthorized("invalid_token", "The access token is invalid.") from exc
 
+    return _claims_from_payload(payload)
+
+
+def _claims_from_payload(payload: dict[str, object]) -> TokenClaims:
+    """Build ``TokenClaims`` from an already-verified payload."""
     sub = payload.get("sub")
     try:
         user_id = uuid.UUID(str(sub))
@@ -183,10 +125,28 @@ def verify_access_token(token: str, settings: Settings) -> TokenClaims:
 def assert_auth_safe(settings: Settings) -> None:
     """Fail fast if an insecure auth configuration would reach production.
 
-    The dev bypass (legacy ``user_id`` query param / fixed dev user) must never be
-    enabled in production — it would disable authentication entirely.
+    Three configurations would each disable authentication in practice, so each
+    is a hard startup failure rather than a logged warning:
+
+    * ``auth_dev_bypass`` — accepts a tenant id straight from a query parameter.
+    * ``gummy_owner_mode`` — auto-authenticates every request as the owner.
+    * a default/empty token-signing secret — anyone who reads this open-source
+      repo could then mint a valid token for any user id.
     """
-    if settings.is_production and settings.auth_dev_bypass:
+    if not settings.is_production:
+        return
+
+    if settings.auth_dev_bypass:
         raise RuntimeError(
-            "auth_dev_bypass must be disabled in production " "(AUTH_DEV_BYPASS=false)."
+            "auth_dev_bypass must be disabled in production (AUTH_DEV_BYPASS=false)."
+        )
+    if settings.gummy_owner_mode:
+        raise RuntimeError(
+            "gummy_owner_mode must be disabled in production "
+            "(GUMMY_OWNER_MODE=false) — it signs every request in as the owner."
+        )
+    if settings.local_auth_secret in ("", "dev-insecure-change-me"):
+        raise RuntimeError(
+            "GUMMY_JWT_SECRET must be set to a strong random value in production; "
+            "the default secret is public and would let anyone forge a token."
         )

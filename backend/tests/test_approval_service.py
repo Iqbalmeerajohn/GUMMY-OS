@@ -81,9 +81,7 @@ async def test_gate_prompt_creates_previewed_pending(
     seed_user: uuid.UUID,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    approval_id, run_id = await _pending_from_gate(
-        db_session, seed_user, monkeypatch
-    )
+    approval_id, run_id = await _pending_from_gate(db_session, seed_user, monkeypatch)
     approval = await approval_service.get_approval(
         db_session, user_id=seed_user, approval_id=approval_id
     )
@@ -102,9 +100,7 @@ async def test_approve_records_decision_and_no_executor_fires(
     seed_user: uuid.UUID,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    approval_id, _ = await _pending_from_gate(
-        db_session, seed_user, monkeypatch
-    )
+    approval_id, _ = await _pending_from_gate(db_session, seed_user, monkeypatch)
     approved = await approval_service.approve(
         db_session, user_id=seed_user, approval_id=approval_id
     )
@@ -124,9 +120,7 @@ async def test_reject_and_already_decided_conflict(
     seed_user: uuid.UUID,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    approval_id, _ = await _pending_from_gate(
-        db_session, seed_user, monkeypatch
-    )
+    approval_id, _ = await _pending_from_gate(db_session, seed_user, monkeypatch)
     rejected = await approval_service.reject(
         db_session, user_id=seed_user, approval_id=approval_id
     )
@@ -142,9 +136,7 @@ async def test_expired_approval_cannot_be_decided(
     seed_user: uuid.UUID,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    approval_id, _ = await _pending_from_gate(
-        db_session, seed_user, monkeypatch
-    )
+    approval_id, _ = await _pending_from_gate(db_session, seed_user, monkeypatch)
     approval = (
         await db_session.execute(
             select(ActionApproval).where(ActionApproval.id == approval_id)
@@ -189,9 +181,7 @@ async def test_foreign_tenant_404_and_list_scoping(
     db_session.add(other)
     await db_session.commit()
 
-    approval_id, _ = await _pending_from_gate(
-        db_session, seed_user, monkeypatch
-    )
+    approval_id, _ = await _pending_from_gate(db_session, seed_user, monkeypatch)
     with pytest.raises(ApprovalNotFoundError):
         await approval_service.get_approval(
             db_session, user_id=other.id, approval_id=approval_id
@@ -219,11 +209,7 @@ async def test_audit_row_links_the_approval(
 ) -> None:
     from app.models.tool_invocation import ToolInvocation
 
-    approval_id, _ = await _pending_from_gate(
-        db_session, seed_user, monkeypatch
-    )
-    invocation = (
-        await db_session.execute(select(ToolInvocation))
-    ).scalar_one()
+    approval_id, _ = await _pending_from_gate(db_session, seed_user, monkeypatch)
+    invocation = (await db_session.execute(select(ToolInvocation))).scalar_one()
     assert invocation.decision == ToolDecision.PENDING
     assert invocation.output_ref == {"approval_id": str(approval_id)}

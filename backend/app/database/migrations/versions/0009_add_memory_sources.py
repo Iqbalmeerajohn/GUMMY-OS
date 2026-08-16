@@ -94,12 +94,8 @@ def upgrade() -> None:
             name="source_kind_valid",
         ),
     )
-    op.create_index(
-        "ix_memory_sources_user_id", "memory_sources", ["user_id"]
-    )
-    op.create_index(
-        "ix_memory_sources_memory_id", "memory_sources", ["memory_id"]
-    )
+    op.create_index("ix_memory_sources_user_id", "memory_sources", ["user_id"])
+    op.create_index("ix_memory_sources_memory_id", "memory_sources", ["memory_id"])
     op.create_index(
         "ix_memory_sources_conversation_id",
         "memory_sources",

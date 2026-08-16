@@ -27,9 +27,7 @@ class UnknownAgentError(KeyError):
     """No handler is registered for the requested agent key."""
 
 
-async def dispatch(
-    task: AgentTask, *, llm: LLMProvider
-) -> AgentResult:
+async def dispatch(task: AgentTask, *, llm: LLMProvider) -> AgentResult:
     """Invoke the handler registered for ``task.agent_key``."""
     if task.agent_key == GENERAL_AGENT_KEY:
         return await general_agent.handle(task, llm=llm)

@@ -36,9 +36,7 @@ async def _fake_search(
     include_archived: bool = False,
     category: MemoryCategory | None = None,
 ) -> list[tuple[Memory, float]]:
-    items, _ = await repo.list_memories(
-        session, user_id=user_id, limit=limit, offset=0
-    )
+    items, _ = await repo.list_memories(session, user_id=user_id, limit=limit, offset=0)
     return [(memory, 0.1 * index) for index, memory in enumerate(items)]
 
 
@@ -70,9 +68,7 @@ async def test_memory_lifecycle_end_to_end(
         json={"query": "favorite football player", "limit": 5},
     )
     assert retrieved.status_code == 200
-    assert any(
-        "Ronaldo" in r["content"] for r in retrieved.json()["results"]
-    )
+    assert any("Ronaldo" in r["content"] for r in retrieved.json()["results"])
 
     # 3. CROSS-CONVERSATION RECALL — a brand-new conversation uses the memory
     #    that was saved entirely outside it.
@@ -102,9 +98,7 @@ async def test_memory_lifecycle_end_to_end(
         f"/api/v1/memories/{mem_id}", params=_params(seed_user)
     )
     assert deleted.status_code == 204
-    listing = await api_client.get(
-        "/api/v1/memories", params=_params(seed_user)
-    )
+    listing = await api_client.get("/api/v1/memories", params=_params(seed_user))
     assert all(m["id"] != mem_id for m in listing.json()["items"])
 
 

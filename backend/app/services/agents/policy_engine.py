@@ -70,12 +70,8 @@ def evaluate(
         return PolicyVerdict(PolicyDecision.ALLOW, "green: read-only")
     if tool_tier == PermissionTier.YELLOW:
         if tool_key in standing_allowances:
-            return PolicyVerdict(
-                PolicyDecision.ALLOW, "yellow: standing allowance"
-            )
-        return PolicyVerdict(
-            PolicyDecision.PROMPT, "yellow: requires confirmation"
-        )
+            return PolicyVerdict(PolicyDecision.ALLOW, "yellow: standing allowance")
+        return PolicyVerdict(PolicyDecision.PROMPT, "yellow: requires confirmation")
     # Red: per-action human approval, always. Standing allowances ignored.
     return PolicyVerdict(
         PolicyDecision.PROMPT, "red: per-action approval required, always"

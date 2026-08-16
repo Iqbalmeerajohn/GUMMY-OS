@@ -468,7 +468,7 @@ def _emit_analytics(
     sources_used: list[str],
     attachment_file_ids: list[uuid.UUID] | None,
 ) -> None:
-    """Emit the M7 PostHog event family (best-effort; never raises)."""
+    """Emit the M7 analytics event family (best-effort; never raises)."""
     distinct_id = str(user_id)
     analytics.capture_event(
         distinct_id=distinct_id,

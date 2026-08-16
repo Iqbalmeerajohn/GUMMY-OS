@@ -1,78 +1,52 @@
 /**
- * The single GUMMY analytics service.
+ * The single GUMMY analytics seam — local-only.
  *
- * Every component talks to PostHog through this object — never `posthog.capture`
- * directly. That keeps one seam for: disabling analytics (no key), SSR safety,
- * error isolation (a tracking failure must never break a user flow), and a typed
- * event surface.
- *
- * The underlying `posthog` singleton is initialized once in
- * `src/instrumentation-client.ts` (before hydration). This module reuses that
- * same instance.
+ * GUMMY runs on the user's own machine, so product telemetry never leaves it.
+ * This module keeps the typed call sites (`analytics.track(...)`) that the app
+ * is already written against, but the sink is the dev console instead of a
+ * hosted collector. Keeping the seam (rather than deleting every call) means
+ * an opt-in local sink can be added later in one file.
  */
 
-import posthog from "posthog-js";
-
-import { analyticsEnabled } from "./config";
 import type {
   AnalyticsEvent,
   AnalyticsProperties,
   AnalyticsTraits,
 } from "./events";
 
-/** Analytics only runs in the browser, and only when a key is configured. */
-function active(): boolean {
-  return analyticsEnabled && typeof window !== "undefined";
-}
+/** Events are only "recorded" in development, and only in the browser. */
+const active =
+  process.env.NODE_ENV !== "production" && typeof window !== "undefined";
 
-/** Never let an analytics failure surface to the user. */
-function safe(label: string, fn: () => void): void {
-  try {
-    fn();
-  } catch (err) {
-    // Swallow — analytics is best-effort. Surface in dev only.
-    if (process.env.NODE_ENV !== "production") {
-      console.warn(`[analytics] ${label} failed`, err);
-    }
-  }
+function log(kind: string, ...args: unknown[]): void {
+  if (active) console.debug(`[analytics] ${kind}`, ...args);
 }
 
 export const analytics = {
-  /** Whether events will actually be sent (key present, in browser). */
+  /** Always false: nothing is transmitted off-device. */
   get enabled(): boolean {
-    return active();
+    return false;
   },
 
-  /** Record a product event with optional properties. */
   track(event: AnalyticsEvent, properties?: AnalyticsProperties): void {
-    if (!active()) return;
-    safe(`track:${event}`, () => posthog.capture(event, properties));
+    log(event, properties);
   },
 
-  /**
-   * Associate the current session with a known user and set person properties.
-   * Idempotent — safe to call on every auth state change.
-   */
   identify(userId: string, traits?: AnalyticsTraits): void {
-    if (!active() || !userId) return;
-    safe("identify", () => posthog.identify(userId, traits));
+    log("identify", userId, traits);
   },
 
-  /** Clear identity on logout so the next user starts a fresh anonymous session. */
   reset(): void {
-    if (!active()) return;
-    safe("reset", () => posthog.reset());
+    log("reset");
   },
 
   /**
-   * Report a handled error to PostHog Error Tracking. Unhandled errors and
-   * promise rejections are captured automatically by the SDK; use this for
-   * caught failures (e.g. API errors) you still want visibility into.
+   * A handled failure worth seeing. Logged loudly in development; in production
+   * it is deliberately silent rather than shipped to a third party.
    */
   captureException(error: unknown, context?: AnalyticsProperties): void {
-    if (!active()) return;
-    const err = error instanceof Error ? error : new Error(String(error));
-    safe("captureException", () => posthog.captureException(err, context));
+    if (!active) return;
+    console.warn("[analytics] exception", error, context);
   },
 } as const;
 

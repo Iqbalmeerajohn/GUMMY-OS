@@ -112,12 +112,8 @@ def upgrade() -> None:
             name="cost_tokens_non_negative",
         ),
     )
-    op.create_index(
-        "ix_tool_invocations_user_id", "tool_invocations", ["user_id"]
-    )
-    op.create_index(
-        "ix_tool_invocations_run_id", "tool_invocations", ["run_id"]
-    )
+    op.create_index("ix_tool_invocations_user_id", "tool_invocations", ["user_id"])
+    op.create_index("ix_tool_invocations_run_id", "tool_invocations", ["run_id"])
 
     op.execute("ALTER TABLE tool_invocations ENABLE ROW LEVEL SECURITY")
     op.execute(
@@ -130,8 +126,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute(
-        "DROP POLICY IF EXISTS tool_invocations_tenant_isolation "
-        "ON tool_invocations"
+        "DROP POLICY IF EXISTS tool_invocations_tenant_isolation " "ON tool_invocations"
     )
     op.execute("ALTER TABLE tool_invocations DISABLE ROW LEVEL SECURITY")
     op.drop_table("tool_invocations")

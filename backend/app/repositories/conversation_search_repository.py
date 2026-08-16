@@ -160,13 +160,10 @@ async def message_search(
 
     → ``(message_id, conversation_id, role, content, title, rank)``.
     """
-    stmt = build_message_search_statement(
-        user_id=user_id, query=query, limit=limit
-    )
+    stmt = build_message_search_statement(user_id=user_id, query=query, limit=limit)
     result = await session.execute(stmt)
     return [
-        (row[0], row[1], row[2], row[3], row[4], float(row[5]))
-        for row in result.all()
+        (row[0], row[1], row[2], row[3], row[4], float(row[5])) for row in result.all()
     ]
 
 

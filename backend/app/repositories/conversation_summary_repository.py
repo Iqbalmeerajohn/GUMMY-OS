@@ -16,9 +16,7 @@ from app.models.conversation_summary import ConversationSummary
 from app.models.enums import SummaryType
 
 
-async def next_version_number(
-    session: AsyncSession, conversation_id: uuid.UUID
-) -> int:
+async def next_version_number(session: AsyncSession, conversation_id: uuid.UUID) -> int:
     """Return the next sequential summary version for a conversation (1-based)."""
     current = await session.scalar(
         select(func.max(ConversationSummary.version_number)).where(

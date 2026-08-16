@@ -39,7 +39,9 @@ def _patch(
     async def _kw(session, *, user_id, query, limit):  # noqa: ANN001, ANN202
         return keyword
 
-    async def _sem(session, *, user_id, query_vector, embedding_model, limit):  # noqa: ANN001, ANN202
+    async def _sem(
+        session, *, user_id, query_vector, embedding_model, limit
+    ):  # noqa: ANN001, ANN202
         return semantic
 
     monkeypatch.setattr(
@@ -65,8 +67,11 @@ async def test_keyword_mode_ranks_by_normalized_rank(
     )
 
     hits = await search_svc.search(
-        db_session, user_id=seed_user, query="x",
-        mode=ConversationSearchMode.KEYWORD, limit=10,
+        db_session,
+        user_id=seed_user,
+        query="x",
+        mode=ConversationSearchMode.KEYWORD,
+        limit=10,
         embedding_service=_embeddings(),
     )
     assert [h.conversation.id for h in hits] == [a, c]
@@ -88,8 +93,11 @@ async def test_semantic_mode_ranks_by_similarity(
     )
 
     hits = await search_svc.search(
-        db_session, user_id=seed_user, query="x",
-        mode=ConversationSearchMode.SEMANTIC, limit=10,
+        db_session,
+        user_id=seed_user,
+        query="x",
+        mode=ConversationSearchMode.SEMANTIC,
+        limit=10,
         embedding_service=_embeddings(),
     )
     # similarity = 1 - distance → c (0.9) ranks above b (0.8)
@@ -111,8 +119,11 @@ async def test_hybrid_blends_keyword_and_semantic(
     )
 
     hits = await search_svc.search(
-        db_session, user_id=seed_user, query="x",
-        mode=ConversationSearchMode.HYBRID, limit=10,
+        db_session,
+        user_id=seed_user,
+        query="x",
+        mode=ConversationSearchMode.HYBRID,
+        limit=10,
         embedding_service=_embeddings(),
     )
     # 0.5/0.5 blend: C=0.5*0.5+0.5*0.9=0.70, A=0.5*1.0=0.50, B=0.5*0.8=0.40
@@ -130,8 +141,11 @@ async def test_limit_is_respected(
         semantic=[],
     )
     hits = await search_svc.search(
-        db_session, user_id=seed_user, query="x",
-        mode=ConversationSearchMode.KEYWORD, limit=2,
+        db_session,
+        user_id=seed_user,
+        query="x",
+        mode=ConversationSearchMode.KEYWORD,
+        limit=2,
         embedding_service=_embeddings(),
     )
     assert len(hits) == 2
@@ -149,8 +163,11 @@ async def test_foreign_or_missing_conversation_is_skipped(
         semantic=[],
     )
     hits = await search_svc.search(
-        db_session, user_id=seed_user, query="x",
-        mode=ConversationSearchMode.KEYWORD, limit=10,
+        db_session,
+        user_id=seed_user,
+        query="x",
+        mode=ConversationSearchMode.KEYWORD,
+        limit=10,
         embedding_service=_embeddings(),
     )
     # The foreign id ranked higher but is filtered by the tenant-scoped re-fetch.

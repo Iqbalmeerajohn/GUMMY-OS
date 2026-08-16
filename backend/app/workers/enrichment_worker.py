@@ -122,9 +122,7 @@ class EnrichmentWorker:
             for consumer in ENRICHMENT_CONSUMERS:
                 try:
                     async with self._sessionmaker() as session:
-                        await consumer(
-                            session, job, self._llm, self._embedding_service
-                        )
+                        await consumer(session, job, self._llm, self._embedding_service)
                         await session.commit()
                 except Exception as exc:
                     consumer_name = getattr(consumer, "__name__", str(consumer))
@@ -135,7 +133,7 @@ class EnrichmentWorker:
                         exc,
                     )
                     # Swallowed by design so one consumer's failure never blocks
-                    # the others — report it to Sentry so it isn't invisible.
+                    # the others — captured to the local log so it isn't invisible.
                     # Covers memory-extraction failures (the extract_memories
                     # consumer) and every other background enrichment failure.
                     capture_exception(

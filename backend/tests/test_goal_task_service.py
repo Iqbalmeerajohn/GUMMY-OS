@@ -104,9 +104,7 @@ async def test_goal_foreign_tenant_404(
         db_session, user_id=seed_user, payload=GoalCreate(title="mine")
     )
     with pytest.raises(GoalNotFoundError):
-        await goal_service.get_goal(
-            db_session, user_id=other, goal_id=goal.id
-        )
+        await goal_service.get_goal(db_session, user_id=other, goal_id=goal.id)
     items, total = await goal_service.list_goals(
         db_session, user_id=other, limit=10, offset=0
     )
@@ -223,9 +221,7 @@ async def test_task_terminal_states_are_final(
         payload=TaskUpdate(status=TaskStatus.CANCELLED),
     )
     with pytest.raises(InvalidTaskTransitionError):
-        await task_service.advance_task(
-            db_session, user_id=seed_user, task_id=task.id
-        )
+        await task_service.advance_task(db_session, user_id=seed_user, task_id=task.id)
     with pytest.raises(InvalidTaskTransitionError):
         await task_service.update_task(
             db_session,
@@ -243,9 +239,7 @@ async def test_task_foreign_tenant_404_and_scoped_lists(
         db_session, user_id=seed_user, payload=TaskCreate(title="mine")
     )
     with pytest.raises(TaskNotFoundError):
-        await task_service.get_task(
-            db_session, user_id=other, task_id=task.id
-        )
+        await task_service.get_task(db_session, user_id=other, task_id=task.id)
     items, total = await task_service.list_tasks(
         db_session, user_id=other, limit=10, offset=0
     )
@@ -270,15 +264,9 @@ async def test_open_and_active_context_listings(
     closed = await task_service.create_task(
         db_session, user_id=seed_user, payload=TaskCreate(title="closed")
     )
-    await task_service.complete_task(
-        db_session, user_id=seed_user, task_id=closed.id
-    )
+    await task_service.complete_task(db_session, user_id=seed_user, task_id=closed.id)
 
-    goals = await goal_repository.list_active(
-        db_session, user_id=seed_user, limit=10
-    )
+    goals = await goal_repository.list_active(db_session, user_id=seed_user, limit=10)
     assert [g.title for g in goals] == ["active"]
-    tasks = await task_repository.list_open(
-        db_session, user_id=seed_user, limit=10
-    )
+    tasks = await task_repository.list_open(db_session, user_id=seed_user, limit=10)
     assert [t.id for t in tasks] == [open_task.id]

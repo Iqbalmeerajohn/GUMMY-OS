@@ -2,7 +2,7 @@
 
 Mirrors the embeddings / LLM factories: the provider is selected by config and
 returned behind the :class:`FileStorage` protocol, so callers never depend on a
-concrete backend. New backends (supabase / r2 / s3) slot in here only.
+concrete backend. New backends (r2 / s3) slot in here only.
 """
 
 from __future__ import annotations
@@ -24,5 +24,5 @@ def get_file_storage() -> FileStorage:
 
     raise ValueError(
         f"Unknown FILES_STORAGE_PROVIDER {settings.files_storage_provider!r} "
-        "(expected one of: local). supabase/r2/s3 are planned."
+        "(expected one of: local). r2/s3 are planned."
     )

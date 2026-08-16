@@ -71,9 +71,7 @@ async def llm_health() -> LLMHealthResponse:
     if provider == "ollama":
         gateway = get_llm_provider()
         status_str = (
-            await gateway.health()
-            if isinstance(gateway, OllamaGateway)
-            else "unknown"
+            await gateway.health() if isinstance(gateway, OllamaGateway) else "unknown"
         )
         return LLMHealthResponse(
             provider="ollama", model=settings.ollama_model, status=status_str

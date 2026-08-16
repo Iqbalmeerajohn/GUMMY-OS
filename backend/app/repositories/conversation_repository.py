@@ -83,9 +83,7 @@ async def list_conversations(
     total = await session.scalar(
         select(func.count()).select_from(Conversation).where(*filters)
     )
-    sort_key = func.coalesce(
-        Conversation.last_message_at, Conversation.created_at
-    )
+    sort_key = func.coalesce(Conversation.last_message_at, Conversation.created_at)
     stmt = (
         select(Conversation)
         .where(*filters)

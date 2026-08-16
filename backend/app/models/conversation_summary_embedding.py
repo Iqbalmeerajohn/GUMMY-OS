@@ -22,9 +22,7 @@ if TYPE_CHECKING:
     from app.models.conversation_summary import ConversationSummary
 
 
-class ConversationSummaryEmbedding(
-    UUIDPrimaryKeyMixin, CreatedAtMixin, Base
-):
+class ConversationSummaryEmbedding(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     """One embedding of a conversation summary, per embedding model."""
 
     __tablename__ = "conversation_summary_embeddings"
@@ -51,9 +49,7 @@ class ConversationSummaryEmbedding(
         nullable=False,
     )
 
-    summary: Mapped[ConversationSummary] = relationship(
-        back_populates="embedding"
-    )
+    summary: Mapped[ConversationSummary] = relationship(back_populates="embedding")
 
     __table_args__ = (
         UniqueConstraint(

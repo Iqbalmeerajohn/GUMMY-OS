@@ -100,9 +100,7 @@ async def test_gather_injects_relevant_prior_conversation(
             )
         ]
 
-    monkeypatch.setattr(
-        continuity.conversation_search_service, "search", _fake_search
-    )
+    monkeypatch.setattr(continuity.conversation_search_service, "search", _fake_search)
 
     block = await continuity.gather_prior_context(
         db_session,
@@ -148,9 +146,7 @@ async def test_gather_excludes_the_current_conversation(
             )
         ]
 
-    monkeypatch.setattr(
-        continuity.conversation_search_service, "search", _fake_search
-    )
+    monkeypatch.setattr(continuity.conversation_search_service, "search", _fake_search)
 
     # The only hit is the current thread → nothing to add from "elsewhere".
     block = await continuity.gather_prior_context(

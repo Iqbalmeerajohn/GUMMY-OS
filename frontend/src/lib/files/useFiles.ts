@@ -48,7 +48,7 @@ export function useFileStats() {
 /**
  * Upload + delete actions, backed by the API and stable across renders. Each
  * successful mutation invalidates the files queries (so the page + dashboard
- * refetch) and fires the matching PostHog event through the analytics seam.
+ * refetch) and records the matching event through the analytics seam.
  */
 export function useFileActions() {
   const qc = useQueryClient();

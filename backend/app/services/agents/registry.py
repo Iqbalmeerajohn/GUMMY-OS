@@ -65,15 +65,12 @@ class AgentRegistry:
         known_tools: Mapping[str, PermissionTier],
     ) -> None:
         if manifest.key in self._manifests:
-            raise ManifestValidationError(
-                f"duplicate agent key: {manifest.key!r}"
-            )
+            raise ManifestValidationError(f"duplicate agent key: {manifest.key!r}")
         for tool_key in manifest.tools:
             tier = known_tools.get(tool_key)
             if tier is None:
                 raise ManifestValidationError(
-                    f"agent {manifest.key!r} declares unknown tool "
-                    f"{tool_key!r}"
+                    f"agent {manifest.key!r} declares unknown tool " f"{tool_key!r}"
                 )
             if _TIER_ORDER[tier] > _TIER_ORDER[manifest.ceiling]:
                 raise ManifestValidationError(
@@ -100,11 +97,7 @@ class AgentRegistry:
         rows: list[Agent] = await agent_repository.list_enabled(
             session, user_id=user_id
         )
-        return [
-            self._manifests[row.key]
-            for row in rows
-            if row.key in self._manifests
-        ]
+        return [self._manifests[row.key] for row in rows if row.key in self._manifests]
 
     async def seed_catalog(self, session: AsyncSession) -> int:
         """Idempotently upsert every built-in manifest as a global catalog row.

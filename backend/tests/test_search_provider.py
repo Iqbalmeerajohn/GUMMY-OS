@@ -41,9 +41,7 @@ def test_default_provider_is_dummy_and_swappable() -> None:
     assert isinstance(original, DummySearchProvider)
 
     class _Stub:
-        async def search(
-            self, query: str, *, limit: int = 5
-        ) -> list[SearchResult]:
+        async def search(self, query: str, *, limit: int = 5) -> list[SearchResult]:
             return []
 
     stub = _Stub()

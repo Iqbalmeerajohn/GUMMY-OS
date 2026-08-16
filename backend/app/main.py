@@ -20,10 +20,8 @@ from app.api.v1 import health
 from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging
-from app.core.observability import init_sentry
 from app.core.security import assert_auth_safe
 from app.database.session import dispose_engine, get_sessionmaker
-from app.observability import analytics
 from app.observability import langfuse as langfuse_obs
 from app.services.agents.registry import get_registry
 from app.services.embeddings.factory import get_embedding_service
@@ -46,6 +44,15 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         settings.app_env,
         settings.version,
     )
+
+    # Pre-load the local model so the user's FIRST message is answered by a warm
+    # model. Without this, cold-start latency lands on exactly the message that
+    # forms the user's impression of how fast Gummy is. No-op for hosted
+    # providers, and never fatal.
+    llm = get_llm_provider()
+    warm = getattr(llm, "warm", None)
+    if warm is not None:
+        await warm()
 
     # Start the background workers when a database is configured.
     sessionmaker = get_sessionmaker()
@@ -79,20 +86,14 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await embedding_worker.stop()
     await dispose_engine()
     langfuse_obs.shutdown()  # flush buffered LLM traces (no-op when disabled)
-    analytics.shutdown()  # flush buffered product events (no-op when disabled)
     logger.info("shutdown complete")
 
 
 def create_app() -> FastAPI:
     """Construct and configure the FastAPI application."""
     settings = get_settings()
-    # Initialize monitoring as early as possible (no-op without SENTRY_DSN) so
-    # boot-time and request errors are captured from the first request.
-    init_sentry(settings)
     # LLM/agent tracing (no-op without Langfuse keys).
     langfuse_obs.init_langfuse(settings)
-    # Product analytics (no-op without POSTHOG_API_KEY).
-    analytics.init_analytics(settings)
     # Live web search backend (M8.5; offline Dummy default without BRAVE_API_KEY).
     search_provider.init_provider(settings)
     assert_auth_safe(settings)  # fail fast if dev auth bypass reaches production

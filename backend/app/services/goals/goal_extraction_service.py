@@ -178,8 +178,10 @@ def _build_month_date(
 
 def _parse_relative_date(lowered: str, now: datetime) -> datetime | None:
     """Parse relative phrasings ("this year", "next month", "in 3 weeks")."""
-    if "this year" in lowered or "end of the year" in lowered or (
-        "year end" in lowered
+    if (
+        "this year" in lowered
+        or "end of the year" in lowered
+        or ("year end" in lowered)
     ):
         return datetime(now.year, 12, 31, tzinfo=UTC)
     if "this month" in lowered or "end of the month" in lowered:
@@ -290,9 +292,7 @@ def _detect(message: str, now: datetime) -> GoalCandidate | None:
     )
 
 
-def detect_goal(
-    message: str, *, now: datetime | None = None
-) -> GoalCandidate | None:
+def detect_goal(message: str, *, now: datetime | None = None) -> GoalCandidate | None:
     """Detect a goal candidate in a user message, or ``None``.
 
     Deterministic and LLM-free. ``now`` is injectable for testing; it defaults

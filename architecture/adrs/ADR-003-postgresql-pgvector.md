@@ -4,6 +4,11 @@
 > **Date:** Phase 0
 > **Deciders:** Founder / CTO, GUMMY OS
 > **Supersedes:** —  **Superseded by:** —
+
+> **M9 note:** the decision itself stands — Postgres + pgvector is still the
+> unified store. Only the hosting changed: local Postgres 16 in Docker instead
+> of managed Supabase. See
+> [M9 — Local-First GUMMY](../../docs/10_RELEASE_NOTES_M9_LOCAL_FIRST.md).
 > **Relates to:** [ADR-002 (memory-first)](ADR-002-memory-first.md),
 > [ADR-001 (stack)](ADR-001-tech-stack.md)
 

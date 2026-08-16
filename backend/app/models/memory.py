@@ -69,6 +69,13 @@ class Memory(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    # When the remembered thing HAPPENED, as opposed to when it was stored.
+    # Null for timeless facts ("Lives in Vizag"); set for events ("Shipped M8"),
+    # which is what makes "what did I do last week?" answerable.
+    occurred_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     recall_count: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
@@ -102,6 +109,14 @@ class Memory(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "ix_memories_user_id_last_recalled_at",
             "user_id",
             "last_recalled_at",
+        ),
+        # Partial: only event memories set occurred_at, and only the timeline
+        # reads it, so the index stays small however many facts accumulate.
+        Index(
+            "ix_memories_user_id_occurred_at",
+            "user_id",
+            "occurred_at",
+            postgresql_where=text("occurred_at IS NOT NULL"),
         ),
         CheckConstraint(
             "importance_score >= 0 AND importance_score <= 1",

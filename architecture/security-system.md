@@ -74,9 +74,10 @@ confirmation; never auto-allowed regardless of consent mode.*
 ## 2. Authentication
 
 - **Token-based auth** (JWT/session) verified at the API Gateway on every request.
-- **Providers:** email/password + OAuth (Google, etc.) via Supabase Auth early (see
-  [tech-stack.md](tech-stack.md)), abstracted behind a boundary so the provider is
-  swappable.
+- **Providers:** email/password + Google OAuth, issued and verified by GUMMY itself
+  (HS256, audience `gummy-os`). The swappable-provider boundary was the point: the
+  original Supabase Auth choice was replaced in
+  [M9](../docs/10_RELEASE_NOTES_M9_LOCAL_FIRST.md) without touching the callers.
 - **Step-up / re-authentication** for Red actions (payments, account changes) — a fresh
   credential check even within an active session.
 - **MFA** supported (TOTP) and encouraged; required for high-risk accounts at SaaS scale.

@@ -189,9 +189,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     for table in ("tasks", "goals"):
-        op.execute(
-            f"DROP POLICY IF EXISTS {table}_tenant_isolation ON {table}"
-        )
+        op.execute(f"DROP POLICY IF EXISTS {table}_tenant_isolation ON {table}")
         op.execute(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY")
     op.drop_table("tasks")
     op.drop_table("goals")

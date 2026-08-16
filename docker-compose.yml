@@ -1,0 +1,41 @@
+# GUMMY OS — local development stack.
+#
+# One dependency: PostgreSQL 16 + pgvector. Everything else runs natively.
+#
+# Ollama is deliberately NOT containerized: it is already installed on the host
+# with models pulled, and GPU passthrough to Docker on Windows is unreliable.
+# The backend reaches the host daemon at http://localhost:11434.
+#
+#   docker compose up -d          # start
+#   docker compose down           # stop (data survives)
+#   docker compose down -v        # stop + wipe the database
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: gummy-db
+    restart: unless-stopped
+    environment:
+      # The owner role. Migrations run as this user (DIRECT_DATABASE_URL); the
+      # app connects as the non-bypassing `gummy_app` role created in init.sql.
+      POSTGRES_USER: gummy
+      POSTGRES_PASSWORD: gummy_local_dev
+      POSTGRES_DB: gummy
+      # Deterministic collation so ORDER BY matches CI and production.
+      POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - gummy-pgdata:/var/lib/postgresql/data
+      # *.sql here runs once, on first init of an empty data volume.
+      - ./ops/db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # The backend and migrations should only start once Postgres accepts
+      # connections, not merely once the container is up.
+      test: ["CMD-SHELL", "pg_isready -U gummy -d gummy"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  gummy-pgdata:

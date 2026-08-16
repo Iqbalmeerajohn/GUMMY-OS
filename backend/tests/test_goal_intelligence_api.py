@@ -30,16 +30,12 @@ async def _fake_search(
     include_archived: bool = False,
     category: MemoryCategory | None = None,
 ) -> list[tuple[Memory, float]]:
-    items, _ = await repo.list_memories(
-        session, user_id=user_id, limit=limit, offset=0
-    )
+    items, _ = await repo.list_memories(session, user_id=user_id, limit=limit, offset=0)
     return [(memory, 0.1 * index) for index, memory in enumerate(items)]
 
 
 async def _new_conversation(client: AsyncClient, user_id: uuid.UUID) -> str:
-    resp = await client.post(
-        "/api/v1/conversations", params=_q(user_id), json={}
-    )
+    resp = await client.post("/api/v1/conversations", params=_q(user_id), json={})
     return resp.json()["id"]
 
 
@@ -60,7 +56,11 @@ async def test_turn_surfaces_goal_candidate(
     resp = await api_client.post(
         f"/api/v1/conversations/{conv_id}/messages",
         params=_q(seed_user),
-        json={"message": "I want to get an AI Engineer job by July 2nd"},
+        # Relative, not a fixed calendar date. Priority is HIGH only inside
+        # HIGH_PRIORITY_WINDOW_DAYS of the target, so a hardcoded date silently
+        # becomes a LOW/MEDIUM case once it drifts past that window — which is
+        # exactly how this test started failing with no code change.
+        json={"message": "I want to get an AI Engineer job in 2 weeks"},
     )
     assert resp.status_code == 201
     candidate = resp.json()["goal_candidate"]

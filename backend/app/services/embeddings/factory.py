@@ -8,6 +8,7 @@ from app.core.config import get_settings
 from app.services.embeddings.base import EmbeddingProvider
 from app.services.embeddings.embedding_service import EmbeddingService
 from app.services.embeddings.fake_provider import FakeEmbeddingProvider
+from app.services.embeddings.ollama_provider import OllamaEmbeddingProvider
 from app.services.embeddings.openai_provider import OpenAIEmbeddingProvider
 
 
@@ -27,6 +28,14 @@ def get_embedding_provider() -> EmbeddingProvider:
             base_url=settings.openai_base_url,
         )
 
+    if provider == "ollama":
+        return OllamaEmbeddingProvider(
+            base_url=settings.ollama_base_url,
+            model_name=settings.ollama_embedding_model,
+            dimension=settings.embedding_dimension,
+            keep_alive=settings.ollama_keep_alive,
+        )
+
     if provider in ("hf", "huggingface"):
         # Import here ONLY for the HF provider so sentence-transformers/torch is
         # never imported (and need not even be installed) for openai/fake.
@@ -41,7 +50,7 @@ def get_embedding_provider() -> EmbeddingProvider:
 
     raise ValueError(
         f"Unknown EMBEDDING_PROVIDER {settings.embeddings_provider!r} "
-        "(expected one of: openai, hf, fake)."
+        "(expected one of: ollama, openai, hf, fake)."
     )
 
 

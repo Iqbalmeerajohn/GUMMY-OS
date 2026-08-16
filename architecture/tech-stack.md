@@ -4,6 +4,12 @@
 > **Status:** Locked for Phases 0–5 (Foundation → Builder Agent).
 > **Re-evaluation trigger:** Start of Phase 6, or first paying SaaS customer, or
 > sustained infra cost > ₹2,000/month.
+>
+> **Superseded in part by [M9 — Local-First GUMMY](../docs/10_RELEASE_NOTES_M9_LOCAL_FIRST.md).**
+> Every hosted row below (Supabase, Vercel, Railway, Sentry, PostHog) was removed
+> in M9; GUMMY now runs entirely on the user's machine. The language, framework,
+> database, and vector-store decisions still hold. Read the hosting sections as
+> the reasoning that led here, not as current state.
 
 This document finalizes the technology stack for the first six phases of GUMMY OS. It is
 written as a series of **architecture decisions**: each choice states *why it was

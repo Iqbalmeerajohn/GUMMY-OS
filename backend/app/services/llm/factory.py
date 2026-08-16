@@ -47,6 +47,7 @@ def get_llm_provider() -> LLMProvider:
             default_model=settings.ollama_model,
             max_tokens=settings.claude_max_tokens,
             timeout=settings.ollama_timeout_seconds,
+            keep_alive=settings.ollama_keep_alive,
         )
 
     if provider in ("claude", "anthropic"):

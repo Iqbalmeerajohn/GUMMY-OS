@@ -1,7 +1,7 @@
 """The storage backend contract every provider implements.
 
 Storage keys are opaque strings the backend understands (a relative path for the
-local provider, an object key for S3/R2/Supabase). The service layer never
+local provider, an object key for S3/R2). The service layer never
 constructs provider-specific paths — it asks the backend to derive a key from a
 tenant id + filename (:meth:`FileStorage.build_key`) and treats the result as a
 handle to pass back to :meth:`load` / :meth:`delete`.

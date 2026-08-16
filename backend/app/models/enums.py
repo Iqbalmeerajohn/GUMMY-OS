@@ -273,7 +273,7 @@ class ProcessingStatus(StrEnum):
     ``pending`` — uploaded but not yet processed.
     ``processing`` — text extraction / chunking is in flight.
     ``completed`` — chunks are stored and the file is queryable.
-    ``failed`` — extraction or chunking failed (captured to Sentry).
+    ``failed`` — extraction or chunking failed (captured to the log).
     """
 
     PENDING = "pending"

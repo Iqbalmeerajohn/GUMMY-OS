@@ -75,20 +75,14 @@ def upgrade() -> None:
             name="fk_agent_messages_user_id_users",
             ondelete="CASCADE",
         ),
-        sa.UniqueConstraint(
-            "run_id", "seq", name="uq_agent_messages_run_id_seq"
-        ),
+        sa.UniqueConstraint("run_id", "seq", name="uq_agent_messages_run_id_seq"),
         sa.CheckConstraint(
             f"role IN ({_ROLE_VALUES})",
             name="role_valid",
         ),
     )
-    op.create_index(
-        "ix_agent_messages_run_id", "agent_messages", ["run_id"]
-    )
-    op.create_index(
-        "ix_agent_messages_user_id", "agent_messages", ["user_id"]
-    )
+    op.create_index("ix_agent_messages_run_id", "agent_messages", ["run_id"])
+    op.create_index("ix_agent_messages_user_id", "agent_messages", ["user_id"])
 
     op.execute("ALTER TABLE agent_messages ENABLE ROW LEVEL SECURITY")
     op.execute(
@@ -101,8 +95,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute(
-        "DROP POLICY IF EXISTS agent_messages_tenant_isolation "
-        "ON agent_messages"
+        "DROP POLICY IF EXISTS agent_messages_tenant_isolation " "ON agent_messages"
     )
     op.execute("ALTER TABLE agent_messages DISABLE ROW LEVEL SECURITY")
     op.drop_table("agent_messages")

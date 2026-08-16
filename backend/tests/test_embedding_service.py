@@ -6,6 +6,7 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.constants import EMBEDDING_DIMENSION
 from app.models.enums import MemoryCategory
 from app.models.memory import Memory
 from app.repositories import memory_embedding_repository as embed_repo
@@ -36,7 +37,7 @@ def test_fake_provider_is_deterministic_and_normalized() -> None:
     v1 = provider.embed_text("hello")
     v2 = provider.embed_text("hello")
     assert v1 == v2
-    assert len(v1) == provider.dimension == 384
+    assert len(v1) == provider.dimension == EMBEDDING_DIMENSION
     norm = sum(x * x for x in v1) ** 0.5
     assert abs(norm - 1.0) < 1e-6
 
@@ -52,8 +53,8 @@ async def test_sync_creates_embedding(
     await db_session.commit()
 
     assert embedding.embedding_model == provider.model_name
-    assert embedding.embedding_dimension == 384
-    assert len(embedding.embedding_vector) == 384
+    assert embedding.embedding_dimension == EMBEDDING_DIMENSION
+    assert len(embedding.embedding_vector) == EMBEDDING_DIMENSION
     assert embedding.content_hash == EmbeddingService.compute_content_hash(
         memory.content
     )

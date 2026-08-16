@@ -31,7 +31,9 @@ from app.core.constants import (
     DEFAULT_TURN_HISTORY_MESSAGES,
 )
 from app.core.observability import capture_exception
+from app.models.conversation import Conversation
 from app.models.enums import AgentContext, MessageRole, SummaryType
+from app.models.message import Message
 from app.repositories import conversation_repository as conv_repo
 from app.repositories import conversation_summary_repository as sum_repo
 from app.repositories import message_repository as msg_repo
@@ -39,6 +41,7 @@ from app.schemas.goal import GoalCandidate
 from app.services.conversation import (
     conversation_continuity_service,
     conversation_service,
+    emotion,
 )
 from app.services.embeddings.embedding_service import EmbeddingService
 from app.services.goals import goal_extraction_service
@@ -49,7 +52,12 @@ from app.services.knowledge import (
 )
 from app.services.knowledge.knowledge_context_builder import CompiledKnowledge
 from app.services.llm.base import LLMProvider, SupportsStreaming
-from app.services.memory import prompt_builder
+from app.services.memory import (
+    instant_recall,
+    prompt_builder,
+    timeline,
+    user_profile_service,
+)
 from app.services.memory.context_assembly_service import ContextPackage
 from app.services.search import search_service
 from app.utils.tokens import estimate_tokens
@@ -63,6 +71,10 @@ _HISTORY_ROLES = (MessageRole.USER, MessageRole.ASSISTANT)
 # The unified knowledge path renders its own ``<knowledge>`` block, so the legacy
 # ``<memory>`` block is empty — build_prompt skips it when ``knowledge`` is set.
 _EMPTY_CONTEXT = ContextPackage(memories=[], token_estimate=0)
+
+# Recorded as the "model" for instant-recall replies. A real model name would be
+# a lie in the message history and in cost accounting, since none was called.
+_INSTANT_MODEL = "gummy-instant-recall"
 
 
 async def _build_knowledge(
@@ -96,9 +108,7 @@ async def _build_knowledge(
         query_vector=query_vector,
     )
     web_sources: list[dict] = []
-    web_results = await search_service.maybe_search(
-        agent_key, message, user_id=user_id
-    )
+    web_results = await search_service.maybe_search(agent_key, message, user_id=user_id)
     if web_results:
         search_items = knowledge_retrieval_service.search_items_from_results(
             web_results
@@ -158,6 +168,7 @@ async def _select_stream_agent(
         from app.services.agents import router as agent_router
         from app.services.agents.manifests import GENERAL_AGENT_KEY
         from app.services.agents.prompts import PERSONA_BUILDERS
+        from app.services.agents.prompts.formatting import FORMATTING_RULES
         from app.services.agents.registry import get_registry
 
         decision = await agent_router.route(
@@ -173,6 +184,12 @@ async def _select_stream_agent(
         persona_fn = PERSONA_BUILDERS.get(selected_agent)
         if persona_fn is not None and selected_agent != GENERAL_AGENT_KEY:
             persona = persona_fn(message, knowledge_block)
+        # The non-streamed specialist handler prepends FORMATTING_RULES; this
+        # path did not, so streamed replies could emit markdown tables that the
+        # incremental renderer cannot display correctly. Every reply the user
+        # actually sees comes through here, so the rules belong on this path
+        # more than on the one they were written for.
+        persona = f"{persona}\n\n{FORMATTING_RULES}" if persona else FORMATTING_RULES
         metadata = {
             "agent_key": selected_agent,
             "route_shape": decision.plan_shape.value,
@@ -217,6 +234,147 @@ def _ms(start: float) -> float:
     return round((time.perf_counter() - start) * 1000, 1)
 
 
+async def _personalize(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    message: str,
+    identity: str | None,
+) -> str | None:
+    """Fold everything GUMMY knows about *the person* into one prompt block.
+
+    Three things happen here, in one place because they share the same slot in
+    the prompt and the same failure policy:
+
+    * the learned profile is updated with this message and rendered, so the
+      portrait is current before the reply that uses it;
+    * a retrospective question ("what did I do last week") pulls the episodic
+      timeline, which similarity search cannot answer;
+    * the message's emotional register becomes a delivery instruction.
+
+    Entirely best-effort. Personalization improves a reply; it must never be the
+    reason there isn't one, so any failure degrades to the plain identity block.
+    """
+    blocks: list[str | None] = [identity]
+    reading = emotion.detect(message)
+
+    try:
+        profile = await user_profile_service.observe(
+            session, user_id=user_id, message=message, mood=reading
+        )
+        blocks.append(user_profile_service.render(profile))
+    except Exception:
+        logger.exception("profile observation failed; continuing without it")
+
+    try:
+        window = timeline.detect_window(message)
+        if window is not None:
+            events = await timeline.events(session, user_id=user_id, window=window)
+            blocks.append(timeline.render(window, events))
+    except Exception:
+        logger.exception("timeline lookup failed; continuing without it")
+
+    blocks.append(emotion.tone_directive(reading))
+    merged = "\n\n".join(b for b in blocks if b)
+    return merged or None
+
+
+async def _try_instant_recall(
+    session: AsyncSession, *, user_id: uuid.UUID, message: str
+) -> instant_recall.InstantAnswer | None:
+    """Attempt a no-LLM answer, defensively.
+
+    Any failure here degrades to the normal grounded reply, so a bug in the fast
+    path can cost latency but never a reply.
+    """
+    try:
+        return await instant_recall.try_answer(
+            session, user_id=user_id, message=message
+        )
+    except Exception:
+        logger.exception("instant recall failed; falling through to the model")
+        return None
+
+
+async def _finish_instant_turn(
+    session: AsyncSession,
+    *,
+    conversation: Conversation,
+    user_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    user_message: Message,
+    answer: instant_recall.InstantAnswer,
+    turn_start: float,
+    is_first_turn: bool,
+    llm: LLMProvider,
+) -> AsyncIterator[dict]:
+    """Persist and emit an instant-recall turn in the normal stream shape.
+
+    Emits the same ``delta`` → ``done`` sequence as a generated turn so the
+    client needs no special case: from the UI's perspective this is simply a
+    very fast reply.
+    """
+    yield {"type": "delta", "text": answer.text}
+
+    assistant_message = await msg_repo.append_message(
+        session,
+        conversation_id=conversation_id,
+        user_id=user_id,
+        role=MessageRole.ASSISTANT,
+        content=answer.text,
+        token_count=estimate_tokens(answer.text),
+        model=_INSTANT_MODEL,
+        input_tokens=0,
+        output_tokens=0,
+        extra_metadata={
+            "agent_key": "recall",
+            "instant_recall": True,
+            "intent": answer.intent_key,
+            "confidence": answer.confidence,
+        },
+    )
+    message_count = await msg_repo.count_messages(
+        session, conversation_id=conversation_id, user_id=user_id
+    )
+    await conv_repo.touch_last_message(
+        session,
+        conversation,
+        last_message_at=datetime.now(UTC),
+        message_count=message_count,
+    )
+    if is_first_turn:
+        try:
+            await conversation_service.backfill_title(
+                session, user_id=user_id, conversation_id=conversation_id, llm=llm
+            )
+        except Exception:
+            logger.exception("inline title generation failed; worker will retry")
+
+    await session.commit()
+    enrichment_worker.enqueue(conversation_id, user_id)
+
+    _log_turn_timing(
+        phase="instant",
+        conversation_id=conversation_id,
+        timings={"first_token_ms": _ms(turn_start), "total_turn_ms": _ms(turn_start)},
+        memories_used=1,
+    )
+
+    yield {
+        "type": "done",
+        "conversation_id": str(conversation_id),
+        "user_message_id": str(user_message.id),
+        "assistant_message_id": str(assistant_message.id),
+        "model": _INSTANT_MODEL,
+        "memories_used": 1,
+        "memories": [answer.text],
+        "message_count": message_count,
+        "agent": "recall",
+        "web_sources": [],
+        "goal_candidate": None,
+    }
+
+
 def _log_turn_timing(
     *,
     phase: str,
@@ -224,7 +382,7 @@ def _log_turn_timing(
     timings: dict[str, float | None],
     memories_used: int,
 ) -> None:
-    """Emit one structured timing line per turn (Railway-queryable fields).
+    """Emit one structured timing line per turn (queryable log fields).
 
     Surfaces where a turn spends its time — memory retrieval, embedding, prompt
     assembly, first-token, and full latency — without leaking any user content.
@@ -419,6 +577,10 @@ async def run_turn(
         token_count=estimate_tokens(message),
     )
 
+    identity = await _personalize(
+        session, user_id=user_id, message=message, identity=identity
+    )
+
     # Phase 3 (flag-gated; lazy imports keep the conversation domain free of
     # a module-level agents dependency):
     #   - agents_orchestration_enabled (M4): delegate the reply to the Master
@@ -433,7 +595,26 @@ async def run_turn(
     # message so the client can badge which agent replied. ``None`` on the
     # legacy/fallback paths (no orchestrated route to attribute).
     assistant_metadata: dict | None = None
-    if settings.agents_orchestration_enabled:
+
+    # Fast path first, exactly as in the streamed turn: a direct question about a
+    # fact Gummy already stores is answered from memory with no model call, no
+    # embedding, and no retrieval. Declines cheaply and falls through.
+    instant = await _try_instant_recall(session, user_id=user_id, message=message)
+    if instant is not None:
+        reply = GeneratedReply(
+            reply=instant.text,
+            model=_INSTANT_MODEL,
+            memories_used=1,
+            input_tokens=0,
+            output_tokens=0,
+        )
+        assistant_metadata = {
+            "agent_key": "recall",
+            "instant_recall": True,
+            "intent": instant.intent_key,
+            "confidence": instant.confidence,
+        }
+    elif settings.agents_orchestration_enabled:
         from app.services.agents import orchestrator_service
 
         try:
@@ -685,6 +866,32 @@ async def stream_turn(
         content=message,
         token_count=estimate_tokens(message),
     )
+
+    # Before the fast path, so the learned profile counts every turn — including
+    # the ones answered from memory without ever reaching the model.
+    identity = await _personalize(
+        session, user_id=user_id, message=message, identity=identity
+    )
+
+    # Fast path: a direct question about a fact Gummy already stores is answered
+    # from memory with no model call. Placed BEFORE embedding because embedding
+    # is itself part of the latency being avoided — checking after it would save
+    # only the generation half. Declines cheaply and falls through.
+    instant = await _try_instant_recall(session, user_id=user_id, message=message)
+    if instant is not None:
+        async for event in _finish_instant_turn(
+            session,
+            conversation=conversation,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            user_message=user_message,
+            answer=instant,
+            turn_start=turn_start,
+            is_first_turn=is_first_turn,
+            llm=llm,
+        ):
+            yield event
+        return
 
     # Build the grounded prompt (same pipeline as generate_grounded_reply).
     # Embedding is timed separately from candidate retrieval/ranking by

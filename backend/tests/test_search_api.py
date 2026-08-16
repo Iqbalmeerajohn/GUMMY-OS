@@ -2,7 +2,7 @@
 
 The embed endpoint runs end-to-end on SQLite (fake provider). Live semantic
 ranking via ``POST /memories/search`` requires PostgreSQL + pgvector and is
-verified against Supabase; here we cover its request validation.
+verified against Postgres; here we cover its request validation.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import uuid
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.constants import EMBEDDING_DIMENSION
 from app.repositories import memory_embedding_repository as embed_repo
 
 
@@ -43,7 +44,7 @@ async def test_embed_creates_and_is_idempotent(
     assert first.status_code == 201
     body = first.json()
     assert body["memory_id"] == memory_id
-    assert body["embedding_dimension"] == 384
+    assert body["embedding_dimension"] == EMBEDDING_DIMENSION
     assert body["embedding_model"]
     content_hash = body["content_hash"]
 

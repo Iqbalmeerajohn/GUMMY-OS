@@ -75,9 +75,7 @@ def _validate_candidates(
         if not content:
             continue
         try:
-            category = MemoryCategory(
-                str(item.get("category", "")).strip().lower()
-            )
+            category = MemoryCategory(str(item.get("category", "")).strip().lower())
         except ValueError:
             continue
         if category in _SENSITIVE_CATEGORIES:
@@ -108,9 +106,7 @@ async def propose(
         return []
 
     created: list[Memory] = []
-    for category, content in _validate_candidates(candidates)[
-        :EXTRACTION_MAX_MEMORIES
-    ]:
+    for category, content in _validate_candidates(candidates)[:EXTRACTION_MAX_MEMORIES]:
         memory = await memory_service.create_memory(
             session,
             user_id=user_id,

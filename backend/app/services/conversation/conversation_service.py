@@ -179,9 +179,7 @@ async def backfill_title(
         limit=4,
         offset=0,
     )
-    basis = next(
-        (m.content for m in messages if m.role is MessageRole.USER), None
-    )
+    basis = next((m.content for m in messages if m.role is MessageRole.USER), None)
     if basis is None:
         return None
 

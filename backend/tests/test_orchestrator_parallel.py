@@ -78,9 +78,7 @@ def _parallel_route(*keys: str) -> RoutingDecision:
     )
 
 
-def _route_patch(
-    monkeypatch: pytest.MonkeyPatch, decision: RoutingDecision
-) -> None:
+def _route_patch(monkeypatch: pytest.MonkeyPatch, decision: RoutingDecision) -> None:
     async def _fixed_route(**kwargs: object) -> RoutingDecision:
         return decision
 
@@ -107,9 +105,7 @@ async def test_parallel_fan_out_gathers_and_traces(
         confidence_score=0.9,
     )
     await db_session.commit()
-    _route_patch(
-        monkeypatch, _parallel_route(RECALL_AGENT_KEY, GENERAL_AGENT_KEY)
-    )
+    _route_patch(monkeypatch, _parallel_route(RECALL_AGENT_KEY, GENERAL_AGENT_KEY))
 
     conv_id = await _new_conv(db_session, seed_user)
     result = await orchestrator_service.orchestrate(
@@ -129,9 +125,7 @@ async def test_parallel_fan_out_gathers_and_traces(
 
     run = (await db_session.execute(select(AgentRun))).scalar_one()
     assert run.status == RunStatus.SUCCEEDED
-    steps = await step_repo.list_for_run(
-        db_session, run_id=run.id, user_id=seed_user
-    )
+    steps = await step_repo.list_for_run(db_session, run_id=run.id, user_id=seed_user)
     assert {s.agent_key for s in steps} == {
         RECALL_AGENT_KEY,
         GENERAL_AGENT_KEY,
@@ -139,9 +133,7 @@ async def test_parallel_fan_out_gathers_and_traces(
     assert all(s.status == StepStatus.SUCCEEDED for s in steps)
 
     # The A2A trail: 2 task hops then 2 result hops, seq strictly ordered.
-    hops = await a2a_repo.list_for_run(
-        db_session, run_id=run.id, user_id=seed_user
-    )
+    hops = await a2a_repo.list_for_run(db_session, run_id=run.id, user_id=seed_user)
     assert [h.seq for h in hops] == [1, 2, 3, 4]
     assert [h.role for h in hops] == [
         AgentMessageRole.TASK,
@@ -185,9 +177,7 @@ async def test_parallel_branches_run_concurrently(
     monkeypatch.setattr(
         "app.services.agents.handlers.recall_agent.handle", _slow_handle
     )
-    _route_patch(
-        monkeypatch, _parallel_route(RECALL_AGENT_KEY, GENERAL_AGENT_KEY)
-    )
+    _route_patch(monkeypatch, _parallel_route(RECALL_AGENT_KEY, GENERAL_AGENT_KEY))
     conv_id = await _new_conv(db_session, seed_user)
     await orchestrator_service.orchestrate(
         db_session,
@@ -213,12 +203,8 @@ async def test_parallel_failing_branch_isolated(
     async def _boom(task: object, **kwargs: object) -> object:
         raise RuntimeError("branch exploded")
 
-    monkeypatch.setattr(
-        "app.services.agents.handlers.recall_agent.handle", _boom
-    )
-    _route_patch(
-        monkeypatch, _parallel_route(RECALL_AGENT_KEY, GENERAL_AGENT_KEY)
-    )
+    monkeypatch.setattr("app.services.agents.handlers.recall_agent.handle", _boom)
+    _route_patch(monkeypatch, _parallel_route(RECALL_AGENT_KEY, GENERAL_AGENT_KEY))
     conv_id = await _new_conv(db_session, seed_user)
     result = await orchestrator_service.orchestrate(
         db_session,
@@ -233,17 +219,13 @@ async def test_parallel_failing_branch_isolated(
 
     run = (await db_session.execute(select(AgentRun))).scalar_one()
     assert run.status == RunStatus.SUCCEEDED
-    steps = await step_repo.list_for_run(
-        db_session, run_id=run.id, user_id=seed_user
-    )
+    steps = await step_repo.list_for_run(db_session, run_id=run.id, user_id=seed_user)
     by_key = {s.agent_key: s for s in steps}
     assert by_key[RECALL_AGENT_KEY].status == StepStatus.FAILED
     assert by_key[RECALL_AGENT_KEY].error == "branch exploded"
     assert by_key[GENERAL_AGENT_KEY].status == StepStatus.SUCCEEDED
 
-    hops = await a2a_repo.list_for_run(
-        db_session, run_id=run.id, user_id=seed_user
-    )
+    hops = await a2a_repo.list_for_run(db_session, run_id=run.id, user_id=seed_user)
     roles = [h.role for h in hops]
     assert roles.count(AgentMessageRole.TASK) == 2
     assert AgentMessageRole.ERROR in roles
@@ -263,15 +245,9 @@ async def test_parallel_all_branches_failed_raises(
     async def _boom(task: object, **kwargs: object) -> object:
         raise RuntimeError("dead")
 
-    monkeypatch.setattr(
-        "app.services.agents.handlers.recall_agent.handle", _boom
-    )
-    monkeypatch.setattr(
-        "app.services.agents.handlers.general_agent.handle", _boom
-    )
-    _route_patch(
-        monkeypatch, _parallel_route(RECALL_AGENT_KEY, GENERAL_AGENT_KEY)
-    )
+    monkeypatch.setattr("app.services.agents.handlers.recall_agent.handle", _boom)
+    monkeypatch.setattr("app.services.agents.handlers.general_agent.handle", _boom)
+    _route_patch(monkeypatch, _parallel_route(RECALL_AGENT_KEY, GENERAL_AGENT_KEY))
     conv_id = await _new_conv(db_session, seed_user)
     with pytest.raises(RuntimeError, match="all parallel branches failed"):
         await orchestrator_service.orchestrate(
@@ -295,13 +271,9 @@ async def test_parallel_step_cap_enforced_before_fan_out(
         "app.repositories.search_repository.search_similar_memories",
         _fake_search,
     )
-    _route_patch(
-        monkeypatch, _parallel_route(*([RECALL_AGENT_KEY] * 50))
-    )
+    _route_patch(monkeypatch, _parallel_route(*([RECALL_AGENT_KEY] * 50)))
     conv_id = await _new_conv(db_session, seed_user)
-    with pytest.raises(
-        orchestrator_service.RunBudgetExceededError, match="step cap"
-    ):
+    with pytest.raises(orchestrator_service.RunBudgetExceededError, match="step cap"):
         await orchestrator_service.orchestrate(
             db_session,
             user_id=seed_user,
@@ -334,9 +306,7 @@ async def test_sequential_shapes_also_write_hop_trail(
         agent_context=AgentContext.RESEARCH,
     )
     run = (await db_session.execute(select(AgentRun))).scalar_one()
-    hops = await a2a_repo.list_for_run(
-        db_session, run_id=run.id, user_id=seed_user
-    )
+    hops = await a2a_repo.list_for_run(db_session, run_id=run.id, user_id=seed_user)
     # task→result for recall, then task→result for general, in seq order.
     assert [(h.role, h.from_agent) for h in hops] == [
         (AgentMessageRole.TASK, orchestrator_service.ORCHESTRATOR_ACTOR),

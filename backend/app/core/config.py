@@ -28,6 +28,8 @@ from app.core.constants import (
     DEFAULT_LLM_MAX_RETRIES,
     DEFAULT_LLM_TIMEOUT_SECONDS,
     DEFAULT_OLLAMA_BASE_URL,
+    DEFAULT_OLLAMA_EMBEDDING_MODEL,
+    DEFAULT_OLLAMA_KEEP_ALIVE,
     DEFAULT_OLLAMA_MODEL,
     DEFAULT_OLLAMA_TIMEOUT_SECONDS,
     DEFAULT_OPENAI_BASE_URL,
@@ -78,35 +80,56 @@ class Settings(BaseSettings):
     database_url: str | None = None
     direct_database_url: str | None = None
 
-    # ── Supabase (used from Day 2+) ───────────────────────────────────────────
-    supabase_url: str | None = None
-    supabase_service_role_key: str | None = None
-    supabase_jwt_secret: str | None = None
-
-    # ── Authentication (Phase 1.5) ────────────────────────────────────────────
-    # JWTs are verified locally (HS256) with `supabase_jwt_secret`. The algorithm
-    # list is a config seam for future JWKS/RS256 — comma-separated, HS256 today.
+    # ── Authentication ────────────────────────────────────────────────────────
     auth_enabled: bool = True
     auth_dev_bypass: bool = False  # MUST stay false in production (startup guard)
     auth_dev_user_id: uuid.UUID | None = None
-    supabase_jwt_aud: str = "authenticated"
-    # Comma-separated allowlist. Supabase's "JWT Signing Keys" migration issues
-    # ES256 (ECC) tokens; HS256 is the legacy shared-secret scheme. Both are
-    # accepted by default so verification works across the migration window.
-    supabase_jwt_algorithms: str = "ES256,HS256"
+
+    # ── Local auth (GUMMY is its own identity provider) ───────────────────────
+    # GUMMY issues and verifies its own HS256 access tokens, so sign-in works
+    # with no external service and no network — there is no second issuer.
+    #
+    # The signing secret. MUST be overridden per-environment: a shared default
+    # would let anyone mint a valid token, so an unset secret in production is a
+    # startup failure (see assert_auth_safe), not a warning.
+    gummy_jwt_secret: str | None = None
+    gummy_jwt_issuer: str = "gummy-os-local"
+    # Short-lived access token + long-lived rotating refresh token. The access
+    # token is a bearer credential with no revocation list, so its lifetime is
+    # the blast radius of a leak; refresh tokens are stored hashed and revocable.
+    gummy_access_token_ttl_minutes: int = 60
+    gummy_refresh_token_ttl_days: int = 30
+
+    # Owner mode: a single-user local install auto-authenticates as the owner so
+    # the app is usable offline with no login wall. Unlike auth_dev_bypass, this
+    # resolves a REAL persisted user (by gummy_owner_email), so memories written
+    # in owner mode remain owned by the same account after sign-in is enabled.
+    # Refused in production by assert_auth_safe.
+    gummy_owner_mode: bool = False
+    gummy_owner_email: str = "owner@gummy.local"
+
+    # ── Google OAuth (optional; direct to Google, no middleman) ───────────────
+    # Inactive unless BOTH the client id and secret are set, so the app boots and
+    # runs fully without them — Google sign-in is an enhancement, not a gate.
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    google_redirect_uri: str = "http://localhost:8000/api/v1/auth/google/callback"
+    # Where the OAuth callback sends the browser once a session is minted.
+    frontend_url: str = "http://localhost:3000"
 
     # ── AI (used from Day 3+) ─────────────────────────────────────────────────
     anthropic_api_key: str | None = None
 
     # ── Embeddings / semantic search ──────────────────────────────────────────
     # provider:
-    #   "openai" (default, hosted API — no torch/CUDA) |
+    #   "ollama" (local daemon, free, offline — the local-first default) |
+    #   "openai" (hosted API — no torch/CUDA) |
     #   "hf"/"huggingface" (local sentence-transformers; requires the optional
     #       `embeddings` extra) |
     #   "fake" (deterministic, dev/tests)
     # HuggingFace (sentence-transformers + torch) is NEVER imported unless the
     # provider is hf/huggingface.
-    embeddings_provider: str = "openai"
+    embeddings_provider: str = "ollama"
     embeddings_model: str = DEFAULT_EMBEDDING_MODEL
     embedding_dimension: int = EMBEDDING_DIMENSION
     # OpenAI embeddings (used when EMBEDDING_PROVIDER=openai).
@@ -117,8 +140,9 @@ class Settings(BaseSettings):
     # ── LLM gateway ───────────────────────────────────────────────────────────
     # provider:
     #   "claude"/"anthropic" (Claude) | "openai" (OpenAI chat completions) |
-    #   "ollama" (local) | "fake" (dev/tests).
-    llm_provider: str = "claude"
+    #   "ollama" (local, free, offline — the local-first default) |
+    #   "fake" (dev/tests).
+    llm_provider: str = "ollama"
     claude_model: str = DEFAULT_CHAT_MODEL
     claude_model_fast: str = DEFAULT_CLAUDE_MODEL_FAST
     claude_model_smart: str = DEFAULT_CLAUDE_MODEL_SMART
@@ -130,9 +154,15 @@ class Settings(BaseSettings):
     # openai_base_url above).
     openai_chat_model: str = DEFAULT_OPENAI_CHAT_MODEL
 
-    # ── Ollama (local inference; used when LLM_PROVIDER=ollama) ────────────────
+    # ── Ollama (local inference; LLM and/or embeddings) ───────────────────────
     ollama_base_url: str = DEFAULT_OLLAMA_BASE_URL
     ollama_model: str = DEFAULT_OLLAMA_MODEL
+    # Embedding model (used when EMBEDDINGS_PROVIDER=ollama). Its output width
+    # MUST equal embedding_dimension — the provider asserts this on first use.
+    ollama_embedding_model: str = DEFAULT_OLLAMA_EMBEDDING_MODEL
+    # How long Ollama keeps a model in memory after its last request. Sent on
+    # every call, so the warm window is continuously extended during a session.
+    ollama_keep_alive: str = DEFAULT_OLLAMA_KEEP_ALIVE
     # Separate from llm_timeout_seconds: local inference is much slower than the
     # hosted Claude API, so Ollama gets its own generous read timeout while
     # Claude keeps fast failure detection.
@@ -181,41 +211,23 @@ class Settings(BaseSettings):
     # ── Files System (M6) ─────────────────────────────────────────────────────
     # Storage backend for uploaded file bytes. "local" writes to the filesystem
     # under ``files_storage_dir`` (dev / single-node). The abstraction is
-    # provider-agnostic by design — "supabase" / "r2" / "s3" plug in here later
-    # without touching the service or API layers.
+    # provider-agnostic by design — "r2" / "s3" plug in here later without
+    # touching the service or API layers.
     files_storage_provider: str = "local"
     # Base directory for the local provider. Relative paths resolve against the
     # backend working directory; override per-environment.
     files_storage_dir: str = "var/files"
 
-    # ── Observability (Sentry) ────────────────────────────────────────────────
-    # Error monitoring + performance traces. Fully disabled when sentry_dsn is
-    # unset (the DSN is not a secret, but keep it per-environment). environment
-    # defaults to app_env; sample rates are 0–1.
-    sentry_dsn: str | None = None
-    sentry_environment: str | None = None
-    sentry_traces_sample_rate: float = 0.1
-    sentry_profiles_sample_rate: float = 0.0
-
     # ── Observability (Langfuse — LLM/agent tracing) ──────────────────────────
     # Tracks every LLM call, token usage, latency, cost, and agent/retrieval
     # metadata. Fully disabled (a no-op) unless BOTH the public and secret keys
-    # are set — the secret key is a real secret, so keep it out of the repo and
-    # set it per-environment (on Railway, the service's Variables). host points
-    # at Langfuse Cloud by default; sample_rate is 0–1.
+    # are set — GUMMY sends nothing anywhere by default. Point ``langfuse_host``
+    # at a self-hosted instance to keep traces on the machine; sample_rate is 0–1.
     langfuse_public_key: str | None = None
     langfuse_secret_key: str | None = None
     langfuse_host: str = "https://cloud.langfuse.com"
     langfuse_environment: str | None = None
     langfuse_sample_rate: float = 1.0
-
-    # ── Observability (PostHog — product analytics) ───────────────────────────
-    # Server-side product events (e.g. the M7 KnowledgeRetrieved family). Fully
-    # disabled (a no-op) unless ``posthog_api_key`` is set; the key is a project
-    # write key, kept per-environment. Mirrors the frontend PostHog project so
-    # backend and client events land in the same funnel.
-    posthog_api_key: str | None = None
-    posthog_host: str = "https://us.i.posthog.com"
 
     @field_validator("log_level")
     @classmethod
@@ -228,31 +240,29 @@ class Settings(BaseSettings):
         return [o.strip() for o in self.backend_cors_origins.split(",") if o.strip()]
 
     @property
-    def jwt_algorithms(self) -> list[str]:
-        """Accepted JWT algorithms, parsed from the comma-separated env value."""
-        return [a.strip() for a in self.supabase_jwt_algorithms.split(",") if a.strip()]
-
-    @property
-    def supabase_jwks_url(self) -> str | None:
-        """Supabase JWKS endpoint for asymmetric (ES256/RS256) token verification."""
-        if not self.supabase_url:
-            return None
-        return f"{self.supabase_url.rstrip('/')}/auth/v1/.well-known/jwks.json"
-
-    @property
     def langfuse_enabled(self) -> bool:
         """True only when both Langfuse keys are present (tracing active)."""
         return bool(self.langfuse_public_key and self.langfuse_secret_key)
 
     @property
-    def posthog_enabled(self) -> bool:
-        """True only when a PostHog write key is present (analytics active)."""
-        return bool(self.posthog_api_key)
-
-    @property
     def web_search_enabled(self) -> bool:
         """True only when live web search is on AND a Brave key is configured."""
         return bool(self.agents_web_search_enabled and self.brave_api_key)
+
+    @property
+    def google_oauth_enabled(self) -> bool:
+        """True only when both Google OAuth credentials are configured."""
+        return bool(self.google_client_id and self.google_client_secret)
+
+    @property
+    def local_auth_secret(self) -> str:
+        """The signing secret for GUMMY-issued tokens.
+
+        Falls back to ``secret_key`` so a minimal local ``.env`` works, but the
+        production guard in ``assert_auth_safe`` rejects either value being left
+        at its insecure default.
+        """
+        return self.gummy_jwt_secret or self.secret_key
 
     @property
     def is_production(self) -> bool:

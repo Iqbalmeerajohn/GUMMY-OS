@@ -13,6 +13,7 @@ Versioning rules:
 
 from __future__ import annotations
 
+import logging
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,7 +28,11 @@ from app.models.enums import MemoryCategory, MemoryChangeReason, MemoryStatus
 from app.models.memory import Memory
 from app.repositories import memory_repository as repo
 from app.schemas.memory import MemoryCreate, MemoryUpdate
+from app.services.memory import consolidation
+from app.services.memory.consolidation import Resolution
 from app.workers.embedding_worker import embedding_worker
+
+logger = logging.getLogger(__name__)
 
 
 class MemoryNotFoundError(AppError):
@@ -52,13 +57,83 @@ class EmptyUpdateError(AppError):
         )
 
 
+async def _consolidate(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    category: MemoryCategory,
+    content: str,
+) -> Memory | None:
+    """Fold an incoming fact into what is already known.
+
+    Returns the strengthened existing memory when the fact is already stored (so
+    the caller creates nothing), or ``None`` when it should be inserted — having
+    first retired any memory this one replaces.
+
+    Best-effort: a consolidation failure falls back to plain insertion, because
+    losing a fact is worse than storing it twice.
+    """
+    try:
+        decision = await consolidation.resolve(
+            session, user_id=user_id, category=category, content=content
+        )
+    except Exception:
+        logger.exception("memory consolidation failed; storing as new")
+        return None
+
+    if decision.resolution is Resolution.DUPLICATE and decision.existing:
+        consolidation.reinforce(decision.existing)
+        await session.commit()
+        await session.refresh(decision.existing)
+        logger.info(
+            "memory reinforced instead of duplicated (similarity=%.2f)",
+            decision.similarity,
+        )
+        return decision.existing
+
+    if decision.resolution is Resolution.SUPERSEDES and decision.existing:
+        consolidation.supersede(decision.existing)
+        await repo.add_version(
+            session,
+            memory_id=decision.existing.id,
+            version_number=await repo.next_version_number(
+                session, decision.existing.id
+            ),
+            content_snapshot=decision.existing.content,
+            change_reason=MemoryChangeReason.ARCHIVED,
+        )
+        await session.flush()
+        logger.info(
+            "memory superseded by a more specific fact (similarity=%.2f)",
+            decision.similarity,
+        )
+    return None
+
+
 async def create_memory(
     session: AsyncSession,
     *,
     user_id: uuid.UUID,
     payload: MemoryCreate,
+    consolidate: bool = True,
 ) -> Memory:
-    """Create a memory (applying score defaults) and its first version."""
+    """Create a memory (applying score defaults) and its first version.
+
+    By default the incoming fact is first consolidated against what is already
+    stored, so restating something Gummy knows strengthens that memory instead
+    of appending a competing copy. Pass ``consolidate=False`` for an explicit
+    user-authored memory that must be stored verbatim.
+    """
+    if consolidate:
+        existing = await _consolidate(
+            session,
+            user_id=user_id,
+            category=payload.category,
+            content=payload.content,
+        )
+        if existing is not None:
+            return existing
+
     importance = (
         payload.importance_score
         if payload.importance_score is not None

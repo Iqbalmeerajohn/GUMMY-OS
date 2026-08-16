@@ -34,7 +34,7 @@ from app.repositories import memory_source_repository as src_repo
 from app.repositories import message_repository as msg_repo
 from app.schemas.memory import MemoryCreate
 from app.services.llm.base import LLMProvider
-from app.services.memory import memory_service
+from app.services.memory import memory_service, timeline, user_profile_service
 
 logger = logging.getLogger(__name__)
 
@@ -49,16 +49,16 @@ _EXTRACTION_SYSTEM = (
     "excerpt, extract durable facts worth remembering across future "
     "conversations. Return ONLY a JSON array; each item is "
     '{"content": "<fact>", "category": "<one of: '
-    f"{_CATEGORY_VALUES}>\"}}.\n\n"
+    f'{_CATEGORY_VALUES}>"}}.\n\n'
     "Write each fact as a concise, standalone statement about the user, in the "
     "third person, the way it would read on a profile — NOT as a description of "
     "the conversation.\n"
-    "  GOOD: \"Lives in Vizag\"\n"
-    "  GOOD: \"Favorite football player is Cristiano Ronaldo\"\n"
-    "  GOOD: \"Building GUMMY, a personal AI operating system\"\n"
-    "  BAD:  \"User is asking about Vizag\"  (a one-time question)\n"
-    "  BAD:  \"User wants information\"  (generic assistant observation)\n"
-    "  BAD:  \"The user said hello\"  (small talk / transient)\n\n"
+    '  GOOD: "Lives in Vizag"\n'
+    '  GOOD: "Favorite football player is Cristiano Ronaldo"\n'
+    '  GOOD: "Building GUMMY, a personal AI operating system"\n'
+    '  BAD:  "User is asking about Vizag"  (a one-time question)\n'
+    '  BAD:  "User wants information"  (generic assistant observation)\n'
+    '  BAD:  "The user said hello"  (small talk / transient)\n\n'
     "ONLY store: personal facts (profile), preferences, goals, projects, "
     "career information, skills being learned, and recurring interests.\n"
     "NEVER store: one-time questions, requests, or tasks; temporary "
@@ -182,9 +182,7 @@ async def extract_and_store(
     # commits below, persisting this too; on an LLM failure the whole unit of work
     # rolls back, so the window is retried rather than silently skipped.
     target_seq = delta[-1].seq
-    await conv_repo.set_extraction_watermark(
-        session, conversation, seq=target_seq
-    )
+    await conv_repo.set_extraction_watermark(session, conversation, seq=target_seq)
 
     transcript = "\n".join(f"{m.role.value}: {m.content}" for m in delta)
     response = await llm.generate(
@@ -201,6 +199,11 @@ async def extract_and_store(
             user_id=user_id,
             payload=MemoryCreate(category=category, content=content),
         )
+        # Anchor events in time when the fact says when it happened. Only set
+        # it once: a reinforced existing memory keeps its original date, since
+        # restating something does not move when it occurred.
+        if memory.occurred_at is None:
+            memory.occurred_at = timeline.parse_occurred_at(content)
         await src_repo.link_source(
             session,
             user_id=user_id,
@@ -209,4 +212,9 @@ async def extract_and_store(
             source_kind=SourceKind.CONVERSATION,
         )
         created.append(memory)
+
+    if created:
+        # New facts may change who GUMMY thinks this person is. Re-derived here,
+        # off the turn's critical path, so the hot path never pays for it.
+        await user_profile_service.refresh_traits(session, user_id=user_id)
     return created

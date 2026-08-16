@@ -74,9 +74,7 @@ def upgrade() -> None:
             server_default=sa.text("false"),
             nullable=False,
         ),
-        sa.Column(
-            "last_message_at", sa.DateTime(timezone=True), nullable=True
-        ),
+        sa.Column("last_message_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column(
             "message_count",
             sa.Integer(),
@@ -149,8 +147,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        "DROP POLICY IF EXISTS conversations_tenant_isolation ON conversations"
-    )
+    op.execute("DROP POLICY IF EXISTS conversations_tenant_isolation ON conversations")
     op.execute("ALTER TABLE conversations DISABLE ROW LEVEL SECURITY")
     op.drop_table("conversations")

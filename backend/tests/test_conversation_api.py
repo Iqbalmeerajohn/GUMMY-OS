@@ -116,9 +116,7 @@ async def test_patch_empty_is_400(
     assert resp.status_code == 400
 
 
-async def test_delete_then_404(
-    api_client: AsyncClient, seed_user: uuid.UUID
-) -> None:
+async def test_delete_then_404(api_client: AsyncClient, seed_user: uuid.UUID) -> None:
     created = (
         await api_client.post(
             "/api/v1/conversations", params=_params(seed_user), json={}
@@ -144,9 +142,7 @@ async def test_conversation_is_tenant_isolated(
     ).json()
     other_user = uuid.uuid4()
     # A different tenant cannot see it (list empty, get 404).
-    listing = await api_client.get(
-        "/api/v1/conversations", params=_params(other_user)
-    )
+    listing = await api_client.get("/api/v1/conversations", params=_params(other_user))
     assert listing.json()["total"] == 0
     get_resp = await api_client.get(
         f"/api/v1/conversations/{created['id']}", params=_params(other_user)

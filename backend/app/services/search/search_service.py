@@ -12,7 +12,8 @@ Responsibilities (the brief, B3):
   * **query** the active provider (best-effort; the provider never raises).
   * **normalize / dedupe / rank / limit** the hits into supplemental context.
   * **observe** — Langfuse spans (``search.query`` / ``search.rank`` /
-    ``search.summarize``) + PostHog (``SearchPerformed`` / ``SearchResultsReturned``).
+    ``search.summarize``) + local analytics events (``SearchPerformed`` /
+    ``SearchResultsReturned``).
 
 Best-effort by contract: every entrypoint returns ``[]`` rather than raising, so
 a search outage never costs the user a reply (B10).
@@ -34,9 +35,7 @@ logger = logging.getLogger(__name__)
 
 # Specialists allowed to spend on live search (B4/B5/B6). Memory/Planner/General
 # answer from the user's own knowledge and never hit the network.
-SEARCH_ELIGIBLE_AGENTS: frozenset[str] = frozenset(
-    {"research", "career", "learning"}
-)
+SEARCH_ELIGIBLE_AGENTS: frozenset[str] = frozenset({"research", "career", "learning"})
 
 # Query cues that mark a turn as search-worthy. Substring match on the lowered
 # query (kept broad but cheap); pairs the recency/lookup intent the brief lists
@@ -165,8 +164,8 @@ async def maybe_search(
 ) -> list[SearchResult]:
     """Gate then search: ``[]`` when ineligible/disabled, else ranked results.
 
-    The single entrypoint the reply paths call. Emits the PostHog search events
-    (best-effort) so search volume + hit rate are observable.
+    The single entrypoint the reply paths call. Emits the search analytics
+    events (best-effort) so search volume + hit rate are observable.
     """
     if not is_search_eligible(agent_key, query):
         return []

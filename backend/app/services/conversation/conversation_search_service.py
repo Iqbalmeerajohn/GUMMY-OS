@@ -48,9 +48,7 @@ def _fold_keyword(
     if not best:
         return {}
     max_rank = max(rank for rank, _ in best.values()) or 1.0
-    return {
-        cid: (rank / max_rank, msg_id) for cid, (rank, msg_id) in best.items()
-    }
+    return {cid: (rank / max_rank, msg_id) for cid, (rank, msg_id) in best.items()}
 
 
 def _fold_semantic(

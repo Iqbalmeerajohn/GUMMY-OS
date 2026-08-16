@@ -241,7 +241,7 @@ async def test_file_search_failure_degrades_to_memory_and_goals(
     assert SOURCE_FILE not in ctx.sources_used
 
 
-# ── PostHog analytics (M7 event family) ───────────────────────────────────────
+# ── Analytics (M7 event family) ───────────────────────────────────────────────
 
 
 async def test_emits_knowledge_analytics_events(

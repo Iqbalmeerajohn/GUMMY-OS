@@ -99,9 +99,7 @@ async def close_step_failure(
     error: str,
 ) -> None:
     """Finish one step as ``failed`` (the run's fate is decided separately)."""
-    await step_repo.finish_step(
-        session, step, status=StepStatus.FAILED, error=error
-    )
+    await step_repo.finish_step(session, step, status=StepStatus.FAILED, error=error)
 
 
 async def close_run_success(session: AsyncSession, run: AgentRun) -> None:
@@ -113,9 +111,7 @@ async def close_run_failure(
     session: AsyncSession, run: AgentRun, *, error: str
 ) -> None:
     """Move an open run to ``failed`` with its error recorded."""
-    await run_repo.set_status(
-        session, run, status=RunStatus.FAILED, error=error
-    )
+    await run_repo.set_status(session, run, status=RunStatus.FAILED, error=error)
 
 
 # ── Single-step convenience wrappers (the M3 recording path) ──────────────────
@@ -166,12 +162,8 @@ async def finish_success(
         cost_tokens=cost_tokens,
         cost_usd=cost_usd,
     )
-    await run_repo.add_cost(
-        session, recording.run, tokens=cost_tokens, usd=cost_usd
-    )
-    await run_repo.set_status(
-        session, recording.run, status=RunStatus.SUCCEEDED
-    )
+    await run_repo.add_cost(session, recording.run, tokens=cost_tokens, usd=cost_usd)
+    await run_repo.set_status(session, recording.run, status=RunStatus.SUCCEEDED)
 
 
 async def finish_failure(

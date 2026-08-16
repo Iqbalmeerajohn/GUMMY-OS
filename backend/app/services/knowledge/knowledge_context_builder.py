@@ -92,9 +92,7 @@ def _render_search(item: KnowledgeItem) -> str:
     """Render a web-search hit with source/title/url/snippet (B8)."""
     title = item.metadata.get("title", item.content)
     url = item.metadata.get("url", "")
-    snippet = str(item.metadata.get("snippet", ""))[
-        :KNOWLEDGE_SEARCH_SNIPPET_CHAR_CAP
-    ]
+    snippet = str(item.metadata.get("snippet", ""))[:KNOWLEDGE_SEARCH_SNIPPET_CHAR_CAP]
     provider = item.metadata.get("provider", "web")
     line = f"- [search:{provider}] {title} ({url})"
     return f"{line}\n  {snippet}" if snippet else line

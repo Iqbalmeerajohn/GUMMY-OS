@@ -35,9 +35,7 @@ def _embeddings() -> EmbeddingService:
     return EmbeddingService(FakeEmbeddingProvider())
 
 
-async def _seed_memories(
-    session: AsyncSession, user_id: uuid.UUID, count: int
-) -> None:
+async def _seed_memories(session: AsyncSession, user_id: uuid.UUID, count: int) -> None:
     for index in range(count):
         await mem_repo.create_memory(
             session,
@@ -134,9 +132,7 @@ async def test_pack_surfaces_active_goals_and_open_tasks(
     closed = await task_service.create_task(
         db_session, user_id=seed_user, payload=TaskCreate(title="closed")
     )
-    await task_service.complete_task(
-        db_session, user_id=seed_user, task_id=closed.id
-    )
+    await task_service.complete_task(db_session, user_id=seed_user, task_id=closed.id)
 
     pack = await context_builder.build(
         db_session,

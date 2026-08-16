@@ -70,7 +70,7 @@ export function useGoal(id: string | null): GoalItem | undefined {
 /**
  * Goal + milestone write actions, backed by the API and stable across renders.
  * Each successful mutation invalidates the goals queries and fires the matching
- * PostHog event through the shared analytics seam.
+ * event through the shared analytics seam.
  */
 export function useGoalActions() {
   const qc = useQueryClient();
@@ -194,7 +194,7 @@ export function useGoalActions() {
  * Accept / dismiss actions for a conversation-detected goal candidate (M5.5).
  *
  * Accepting creates the goal via the conversation endpoint, fires the matching
- * PostHog events, and invalidates the goals queries so the dashboard and Goals
+ * analytics events, and invalidates the goals queries so the dashboard and Goals
  * page update automatically (no refresh). Dismissing records the rejection.
  */
 export function useGoalFromConversation() {

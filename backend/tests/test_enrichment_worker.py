@@ -82,7 +82,9 @@ async def test_worker_runs_title_and_summary(
         assert conv is not None
         assert conv.title == "Generated Text"  # title consumer ran
         summary = await sum_repo.latest_summary(
-            session, conversation_id=conv_id, user_id=seed_user,
+            session,
+            conversation_id=conv_id,
+            user_id=seed_user,
             summary_type=SummaryType.ROLLING,
         )
         assert summary is not None  # rolling-summary consumer ran
@@ -167,8 +169,12 @@ async def test_worker_extracts_single_short_exchange(
     conv_id = await _seed_conversation(sessionmaker_fixture, seed_user, messages=2)
 
     candidate = json.dumps(
-        [{"content": "Favorite football player is Cristiano Ronaldo",
-          "category": "preference"}]
+        [
+            {
+                "content": "Favorite football player is Cristiano Ronaldo",
+                "category": "preference",
+            }
+        ]
     )
     worker = EnrichmentWorker()
     worker.configure(
@@ -215,9 +221,7 @@ async def test_worker_sets_tenant_context_for_consumers(
     ) -> None:
         captured["user_id"] = get_current_user_id()
 
-    monkeypatch.setattr(
-        "app.workers.enrichment_worker.ENRICHMENT_CONSUMERS", (_probe,)
-    )
+    monkeypatch.setattr("app.workers.enrichment_worker.ENRICHMENT_CONSUMERS", (_probe,))
     conv_id = await _seed_conversation(sessionmaker_fixture, seed_user, messages=2)
     worker = EnrichmentWorker()
     worker.configure(

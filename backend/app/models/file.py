@@ -57,7 +57,7 @@ class File(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     # Opaque storage key resolved by the storage backend (local path today,
-    # an object key under Supabase Storage / R2 / S3 tomorrow). Nullable until
+    # an object key under R2 / S3 tomorrow). Nullable until
     # the bytes are persisted.
     storage_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     upload_status: Mapped[UploadStatus] = mapped_column(

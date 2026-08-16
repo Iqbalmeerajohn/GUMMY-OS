@@ -62,13 +62,9 @@ def upgrade() -> None:
     # ── status: re-map legacy values, then swap the CHECK ─────────────────────
     op.execute("UPDATE goals SET status = 'completed' WHERE status = 'done'")
     op.execute("UPDATE goals SET status = 'active' WHERE status = 'paused'")
-    op.execute(
-        "UPDATE goals SET status = 'archived' WHERE status = 'abandoned'"
-    )
+    op.execute("UPDATE goals SET status = 'archived' WHERE status = 'abandoned'")
     op.drop_constraint("status_valid", "goals", type_="check")
-    op.create_check_constraint(
-        "status_valid", "goals", f"status IN ({_STATUS_VALUES})"
-    )
+    op.create_check_constraint("status_valid", "goals", f"status IN ({_STATUS_VALUES})")
 
     # ── priority: int (0–100) → enum (low/medium/high) ────────────────────────
     op.execute("ALTER TABLE goals ALTER COLUMN priority DROP DEFAULT")

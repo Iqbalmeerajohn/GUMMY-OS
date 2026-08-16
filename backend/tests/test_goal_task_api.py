@@ -36,9 +36,7 @@ async def test_goal_crud_roundtrip(api_client: AsyncClient) -> None:
     assert listed.status_code == 200
     assert listed.json()["total"] == 1
 
-    fetched = await api_client.get(
-        f"/api/v1/goals/{goal['id']}", params=_q()
-    )
+    fetched = await api_client.get(f"/api/v1/goals/{goal['id']}", params=_q())
     assert fetched.status_code == 200
 
     patched = await api_client.patch(
@@ -61,13 +59,9 @@ async def test_goal_invalid_priority_422(api_client: AsyncClient) -> None:
 
 
 async def test_goal_empty_update_400(api_client: AsyncClient) -> None:
-    created = await api_client.post(
-        "/api/v1/goals", params=_q(), json={"title": "g"}
-    )
+    created = await api_client.post("/api/v1/goals", params=_q(), json={"title": "g"})
     goal_id = created.json()["id"]
-    response = await api_client.patch(
-        f"/api/v1/goals/{goal_id}", params=_q(), json={}
-    )
+    response = await api_client.patch(f"/api/v1/goals/{goal_id}", params=_q(), json={})
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "empty_update"
 
@@ -84,9 +78,7 @@ async def test_goal_foreign_tenant_404(api_client: AsyncClient) -> None:
         "/api/v1/goals", params=_q(), json={"title": "mine"}
     )
     goal_id = created.json()["id"]
-    response = await api_client.get(
-        f"/api/v1/goals/{goal_id}", params=_q(_OTHER)
-    )
+    response = await api_client.get(f"/api/v1/goals/{goal_id}", params=_q(_OTHER))
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "goal_not_found"
     listed = await api_client.get("/api/v1/goals", params=_q(_OTHER))
@@ -97,9 +89,7 @@ async def test_task_crud_and_transition_guard(
     api_client: AsyncClient,
 ) -> None:
     goal = (
-        await api_client.post(
-            "/api/v1/goals", params=_q(), json={"title": "g"}
-        )
+        await api_client.post("/api/v1/goals", params=_q(), json={"title": "g"})
     ).json()
     created = await api_client.post(
         "/api/v1/tasks",
@@ -130,18 +120,14 @@ async def test_task_crud_and_transition_guard(
 
 async def test_task_list_filters(api_client: AsyncClient) -> None:
     goal = (
-        await api_client.post(
-            "/api/v1/goals", params=_q(), json={"title": "g"}
-        )
+        await api_client.post("/api/v1/goals", params=_q(), json={"title": "g"})
     ).json()
     await api_client.post(
         "/api/v1/tasks",
         params=_q(),
         json={"title": "a", "goal_id": goal["id"]},
     )
-    await api_client.post(
-        "/api/v1/tasks", params=_q(), json={"title": "b"}
-    )
+    await api_client.post("/api/v1/tasks", params=_q(), json={"title": "b"})
     by_goal = await api_client.get(
         "/api/v1/tasks", params={**_q(), "goal_id": goal["id"]}
     )
@@ -157,18 +143,14 @@ async def test_task_foreign_tenant_404(api_client: AsyncClient) -> None:
         "/api/v1/tasks", params=_q(), json={"title": "mine"}
     )
     task_id = created.json()["id"]
-    response = await api_client.get(
-        f"/api/v1/tasks/{task_id}", params=_q(_OTHER)
-    )
+    response = await api_client.get(f"/api/v1/tasks/{task_id}", params=_q(_OTHER))
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "task_not_found"
 
 
 async def test_task_foreign_goal_link_404(api_client: AsyncClient) -> None:
     goal = (
-        await api_client.post(
-            "/api/v1/goals", params=_q(), json={"title": "mine"}
-        )
+        await api_client.post("/api/v1/goals", params=_q(), json={"title": "mine"})
     ).json()
     response = await api_client.post(
         "/api/v1/tasks",

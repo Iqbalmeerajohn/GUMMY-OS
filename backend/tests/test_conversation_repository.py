@@ -118,15 +118,21 @@ async def test_list_conversations_filters(
     await db_session.commit()
 
     archived, total = await conv_repo.list_conversations(
-        db_session, user_id=seed_user, status=ConversationStatus.ARCHIVED,
-        limit=10, offset=0,
+        db_session,
+        user_id=seed_user,
+        status=ConversationStatus.ARCHIVED,
+        limit=10,
+        offset=0,
     )
     assert total == 1
     assert archived[0].id == a.id
 
     career, _ = await conv_repo.list_conversations(
-        db_session, user_id=seed_user, agent_context=AgentContext.CAREER,
-        limit=10, offset=0,
+        db_session,
+        user_id=seed_user,
+        agent_context=AgentContext.CAREER,
+        limit=10,
+        offset=0,
     )
     assert [c.id for c in career] == [a.id]
 
@@ -147,7 +153,9 @@ async def test_soft_delete_excludes_conversation(
     )
     assert (
         await conv_repo.get_conversation(
-            db_session, conversation_id=conv.id, user_id=seed_user,
+            db_session,
+            conversation_id=conv.id,
+            user_id=seed_user,
             include_deleted=True,
         )
         is not None
@@ -240,13 +248,19 @@ async def test_messages_are_tenant_scoped(
 ) -> None:
     conv_id = await _new_conv(db_session, seed_user)
     await msg_repo.append_message(
-        db_session, conversation_id=conv_id, user_id=seed_user,
-        role=MessageRole.USER, content="secret",
+        db_session,
+        conversation_id=conv_id,
+        user_id=seed_user,
+        role=MessageRole.USER,
+        content="secret",
     )
     await db_session.commit()
     _, total = await msg_repo.list_messages(
-        db_session, conversation_id=conv_id, user_id=uuid.uuid4(),
-        limit=10, offset=0,
+        db_session,
+        conversation_id=conv_id,
+        user_id=uuid.uuid4(),
+        limit=10,
+        offset=0,
     )
     assert total == 0
 
@@ -276,16 +290,28 @@ async def test_latest_summary_by_type(
 ) -> None:
     conv_id = await _new_conv(db_session, seed_user)
     await sum_repo.add_summary(
-        db_session, conversation_id=conv_id, user_id=seed_user,
-        summary_type=SummaryType.ROLLING, content="r1", version_number=1,
+        db_session,
+        conversation_id=conv_id,
+        user_id=seed_user,
+        summary_type=SummaryType.ROLLING,
+        content="r1",
+        version_number=1,
     )
     await sum_repo.add_summary(
-        db_session, conversation_id=conv_id, user_id=seed_user,
-        summary_type=SummaryType.ROLLING, content="r2", version_number=2,
+        db_session,
+        conversation_id=conv_id,
+        user_id=seed_user,
+        summary_type=SummaryType.ROLLING,
+        content="r2",
+        version_number=2,
     )
     await sum_repo.add_summary(
-        db_session, conversation_id=conv_id, user_id=seed_user,
-        summary_type=SummaryType.CLOSING, content="closing", version_number=3,
+        db_session,
+        conversation_id=conv_id,
+        user_id=seed_user,
+        summary_type=SummaryType.CLOSING,
+        content="closing",
+        version_number=3,
     )
     await db_session.commit()
 
@@ -295,7 +321,9 @@ async def test_latest_summary_by_type(
     assert latest_any is not None and latest_any.content == "closing"
 
     latest_rolling = await sum_repo.latest_summary(
-        db_session, conversation_id=conv_id, user_id=seed_user,
+        db_session,
+        conversation_id=conv_id,
+        user_id=seed_user,
         summary_type=SummaryType.ROLLING,
     )
     assert latest_rolling is not None and latest_rolling.content == "r2"
@@ -314,8 +342,12 @@ async def test_summary_embedding_crud(
 ) -> None:
     conv_id = await _new_conv(db_session, seed_user)
     summary = await sum_repo.add_summary(
-        db_session, conversation_id=conv_id, user_id=seed_user,
-        summary_type=SummaryType.ROLLING, content="s", version_number=1,
+        db_session,
+        conversation_id=conv_id,
+        user_id=seed_user,
+        summary_type=SummaryType.ROLLING,
+        content="s",
+        version_number=1,
     )
     await db_session.flush()
     created = await emb_repo.create_embedding(
@@ -335,7 +367,10 @@ async def test_summary_embedding_crud(
     assert fetched is not None and fetched.id == created.id
 
     await emb_repo.update_embedding(
-        db_session, fetched, embedding_vector=_VECTOR, content_hash="h2",
+        db_session,
+        fetched,
+        embedding_vector=_VECTOR,
+        content_hash="h2",
         embedding_dimension=384,
     )
     await db_session.commit()
@@ -353,12 +388,19 @@ async def test_memory_source_link_and_lookup(
 ) -> None:
     conv_id = await _new_conv(db_session, seed_user)
     msg = await msg_repo.append_message(
-        db_session, conversation_id=conv_id, user_id=seed_user,
-        role=MessageRole.USER, content="I target Qualcomm",
+        db_session,
+        conversation_id=conv_id,
+        user_id=seed_user,
+        role=MessageRole.USER,
+        content="I target Qualcomm",
     )
     memory = await mem_repo.create_memory(
-        db_session, user_id=seed_user, category=MemoryCategory.CAREER,
-        content="Targeting Qualcomm", importance_score=0.8, confidence_score=0.9,
+        db_session,
+        user_id=seed_user,
+        category=MemoryCategory.CAREER,
+        content="Targeting Qualcomm",
+        importance_score=0.8,
+        confidence_score=0.9,
     )
     await db_session.flush()
     await src_repo.link_source(
@@ -389,12 +431,18 @@ async def test_memory_source_is_tenant_scoped(
 ) -> None:
     conv_id = await _new_conv(db_session, seed_user)
     memory = await mem_repo.create_memory(
-        db_session, user_id=seed_user, category=MemoryCategory.PROFILE,
-        content="x", importance_score=0.5, confidence_score=0.5,
+        db_session,
+        user_id=seed_user,
+        category=MemoryCategory.PROFILE,
+        content="x",
+        importance_score=0.5,
+        confidence_score=0.5,
     )
     await db_session.flush()
     await src_repo.link_source(
-        db_session, user_id=seed_user, memory_id=memory.id,
+        db_session,
+        user_id=seed_user,
+        memory_id=memory.id,
         conversation_id=conv_id,
     )
     await db_session.commit()

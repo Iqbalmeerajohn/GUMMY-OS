@@ -47,9 +47,7 @@ def test_agent_manifest_rejects_invalid() -> None:
 
 
 def test_agent_task_defaults() -> None:
-    task = AgentTask(
-        run_id=uuid.uuid4(), agent_key="general", intent="hello"
-    )
+    task = AgentTask(run_id=uuid.uuid4(), agent_key="general", intent="hello")
     assert task.inputs == {}
     assert task.context_pack == ContextPack()
     assert task.permission_scope == PermissionTier.GREEN

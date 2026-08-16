@@ -1,6 +1,6 @@
 """Shared FastAPI dependencies.
 
-Tenancy is resolved from a verified Supabase JWT (`get_current_user`). The
+Tenancy is resolved from a verified GUMMY JWT (`get_current_user`). The
 ``CurrentUserId`` alias keeps the **same name and type** it had under the legacy
 query-parameter seam, so every endpoint and service is unchanged — only the
 dependency behind it changed.
@@ -21,6 +21,7 @@ from app.core.security import CurrentUser, verify_access_token
 from app.core.tenant_context import set_current_user_id
 from app.database.session import get_auth_sessionmaker, get_db
 from app.repositories import user_repository
+from app.services.auth import auth_service
 from app.services.embeddings.embedding_service import EmbeddingService
 from app.services.embeddings.factory import get_embedding_service
 from app.services.llm.base import LLMProvider
@@ -70,11 +71,30 @@ async def get_current_user(
                 session, user_id=claims.sub, email=claims.email
             )
             await session.commit()
-        # Name comes from the verified JWT (Supabase user_metadata), not the DB,
-        # so identity is available without persisting profile server-side.
-        return CurrentUser(
-            id=user.id, email=user.email, display_name=claims.name
-        )
+        # Name comes from the verified JWT (user_metadata), not the DB, so
+        # identity is available without a second read on the request path.
+        return CurrentUser(id=user.id, email=user.email, display_name=claims.name)
+
+    # Owner mode: a single-user local install runs without a login wall. Unlike
+    # auth_dev_bypass this resolves a REAL persisted account, so anything Gummy
+    # learns while running open stays owned by that account once sign-in is
+    # enabled. Refused in production by assert_auth_safe.
+    if settings.gummy_owner_mode:
+        if sessionmaker is None:
+            raise AppError(
+                "Database is not configured.",
+                code="database_unavailable",
+                status_code=503,
+            )
+        async with sessionmaker() as session:
+            owner = await auth_service.get_or_create_owner(
+                session, email=settings.gummy_owner_email
+            )
+            profile = CurrentUser(
+                id=owner.id, email=owner.email, display_name=owner.display_name
+            )
+        set_current_user_id(profile.id)
+        return profile
 
     if settings.auth_dev_bypass:
         if user_id is not None:

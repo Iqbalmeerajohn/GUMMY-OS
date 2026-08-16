@@ -98,35 +98,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
+      # npm, not pnpm: the repo is committed with package-lock.json and has no
+      # pnpm-lock.yaml, so `pnpm install --frozen-lockfile` could never succeed
+      # here — this job was failing on every run for a packaging reason.
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: npm ci
 
       - name: Lint (ESLint)
-        run: pnpm run lint
+        run: npm run lint
 
       - name: Format check (Prettier)
-        run: pnpm run format:check
+        run: npm run format:check
 
       - name: Type check (tsc)
-        run: pnpm run typecheck
+        run: npm run typecheck
 
       - name: Test
-        run: pnpm run test --if-present
+        run: npm test --if-present
 
       - name: Build
-        run: pnpm run build
+        run: npm run build
 
   # ── Aggregate gate: a single required check for branch protection ───────────
   ci-ok:

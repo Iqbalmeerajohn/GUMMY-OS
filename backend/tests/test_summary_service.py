@@ -6,6 +6,7 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.constants import EMBEDDING_DIMENSION
 from app.models.enums import MessageRole, SummaryType
 from app.repositories import conversation_summary_embedding_repository as emb_repo
 from app.repositories import conversation_summary_repository as sum_repo
@@ -78,7 +79,7 @@ async def test_message_count_cap_triggers_refresh(
     # Its embedding was generated.
     embeddings = await emb_repo.list_embeddings(db_session, summary_id=summary.id)
     assert len(embeddings) == 1
-    assert embeddings[0].embedding_dimension == 384
+    assert embeddings[0].embedding_dimension == EMBEDDING_DIMENSION
 
 
 async def test_token_pressure_triggers_refresh(
@@ -105,8 +106,11 @@ async def test_second_refresh_summarizes_delta_only(
 ) -> None:
     conv_id = await _conv_with_messages(db_session, seed_user, count=6)
     first = await summary_service.maybe_refresh_rolling_summary(
-        db_session, user_id=seed_user, conversation_id=conv_id,
-        llm=FakeLLMProvider(reply="S1"), embedding_service=_embeddings(),
+        db_session,
+        user_id=seed_user,
+        conversation_id=conv_id,
+        llm=FakeLLMProvider(reply="S1"),
+        embedding_service=_embeddings(),
     )
     assert first is not None
     await db_session.commit()
@@ -114,15 +118,21 @@ async def test_second_refresh_summarizes_delta_only(
     # Append more messages, then refresh again.
     for _ in range(6):
         await msg_repo.append_message(
-            db_session, conversation_id=conv_id, user_id=seed_user,
-            role=MessageRole.USER, content="more",
+            db_session,
+            conversation_id=conv_id,
+            user_id=seed_user,
+            role=MessageRole.USER,
+            content="more",
         )
     await db_session.commit()
 
     llm = FakeLLMProvider(reply="S2")
     second = await summary_service.maybe_refresh_rolling_summary(
-        db_session, user_id=seed_user, conversation_id=conv_id,
-        llm=llm, embedding_service=_embeddings(),
+        db_session,
+        user_id=seed_user,
+        conversation_id=conv_id,
+        llm=llm,
+        embedding_service=_embeddings(),
     )
     assert second is not None
     assert second.version_number == 2

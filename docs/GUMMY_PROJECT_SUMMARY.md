@@ -47,7 +47,7 @@ Client ─(JWT)─▶ FastAPI ─▶ Services ─▶ Repositories ─▶ Postgre
   no business logic, fully unit-testable.
 - **Workers**: in-process asyncio queues run embedding and enrichment off the request
   path, each job in its own isolated DB session.
-- **Database**: PostgreSQL (Supabase) with the `pgvector` extension (HNSW ANN index),
+- **Database**: local PostgreSQL 16 with the `pgvector` extension (HNSW ANN index),
   GIN full-text indexes, and Row-Level Security on every tenant table.
 
 **Engineering principles enforced throughout:** strict layering (no logic in routes,
@@ -64,10 +64,10 @@ LLM/embeddings, schema-validated I/O (no ORM leakage), and "scalable from day ze
 | **Language** | Python 3.12+ (fully type-annotated, `mypy`-clean) |
 | **API** | FastAPI, Pydantic v2, pydantic-settings |
 | **Data** | SQLAlchemy 2.0 (async) · Alembic migrations · asyncpg |
-| **Database** | PostgreSQL (Supabase) · **pgvector** (HNSW cosine) · GIN full-text · **Row-Level Security** |
-| **AI / LLM** | Anthropic **Claude** (gateway behind a provider protocol) |
-| **Embeddings** | `sentence-transformers` (all-MiniLM-L6-v2, 384-dim); deterministic fake provider for tests |
-| **Auth** | Supabase **JWT** (HS256) via PyJWT; per-request tenant context |
+| **Database** | Local PostgreSQL 16 · **pgvector** (HNSW cosine) · GIN full-text · **Row-Level Security** |
+| **AI / LLM** | **Ollama** `qwen2.5:3b` local by default; Claude/OpenAI switchable behind a provider protocol |
+| **Embeddings** | Ollama `nomic-embed-text` (768-dim, local); deterministic fake provider for tests |
+| **Auth** | GUMMY-issued **JWT** (HS256, single issuer) + Google OAuth; per-request tenant context |
 | **Async** | asyncio in-process workers (no external broker) |
 | **Testing** | pytest, pytest-asyncio, httpx (ASGI), aiosqlite (hermetic suite) + Postgres-gated RLS/search tests |
 | **Quality** | `ruff` (lint), `mypy` (types), `black` profile; CI-ready |
@@ -115,7 +115,7 @@ Security and privacy were treated as architecture, not an afterthought.
 - **Non-bypass application role.** The app connects as a dedicated
   `NOSUPERUSER / NOBYPASSRLS` role so RLS actually applies (table owners/superusers
   bypass policies); the privileged connection is used only for migrations.
-- **JWT verification at the edge.** HS256 Supabase tokens verified (signature +
+- **JWT verification at the edge.** HS256 tokens verified (signature +
   audience) before any DB work; the tenant is published to the request context *before*
   the user row is even upserted, so RLS covers that write too.
 - **Defense in depth.** Queries are tenant-scoped in SQL *and* under RLS; `WITH CHECK`
@@ -226,8 +226,8 @@ stand on. With that foundation shipped, the roadmap layers capability:
 - Designed a **consent-gated conversation→memory extraction pipeline** running on async
   background workers, reusing the core memory engine and writing full provenance, with
   a watermark for exactly-once-style processing.
-- Delivered across **8 incremental milestones** with **200+ automated tests**,
-  `ruff`/`mypy`-clean, 11 Alembic migrations, and live verification on Supabase
+- Delivered across **9 incremental milestones** with **655 automated tests**,
+  `ruff`/`mypy`-clean, 23 Alembic migrations, and live verification on local
   Postgres.
 
 ## Interview talking points

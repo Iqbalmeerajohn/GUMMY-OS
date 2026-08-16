@@ -1,36 +1,40 @@
 # GUMMY OS — Backend
 
-FastAPI service for the memory engine and (later) the agent runtime. See the
-[Phase 1 build plan](../docs/phase-1-build-plan.md) for scope and the
-[tech stack](../architecture/tech-stack.md) for the locked decisions.
+FastAPI service for the memory engine, conversations, goals, files, and the
+agent runtime. Canonical description of the current system:
+[M9 — Local-First GUMMY](../docs/10_RELEASE_NOTES_M9_LOCAL_FIRST.md).
 
-> **Status:** Phase 1, Day 1 — scaffold only (app boots, config, health probes).
-> No Memory Engine code yet.
+> **Status:** M9 — runs entirely on one machine. Local Postgres, local models,
+> local auth. Every hosted service is optional and off unless keyed.
 
 ---
 
 ## Requirements
 
 - Python **3.12+**
+- Docker (for Postgres 16 + pgvector) — `docker compose up -d db` from the repo root
+- [Ollama](https://ollama.com) with `qwen2.5:3b` and `nomic-embed-text` pulled
 - [`uv`](https://docs.astral.sh/uv/) (recommended) — or plain `pip`
 
-## Quick start (uv — recommended)
+## Quick start
 
 ```bash
 cd backend
 cp ../.env.example .env          # PowerShell: Copy-Item ..\.env.example .env
-uv sync --all-extras             # install runtime + dev dependencies
+uv sync --all-extras
+uv run alembic upgrade head
 uv run uvicorn app.main:app --reload --port 8000
 ```
 
 Then open:
-- Health:  http://localhost:8000/health
-- Docs (Swagger UI):  http://localhost:8000/docs
+- Health: http://localhost:8000/health
+- Swagger UI: http://localhost:8000/docs
 
-> Day 1 runs **without a database**. The readiness probe reports
-> `"database": "not_configured"` until a real `DATABASE_URL` is set (Day 2).
+Set `GUMMY_OWNER_MODE=true` in `.env` to skip the login wall on a single-user
+machine. For a login flow instead, `POST /api/v1/auth/signup`.
 
-## Quick start (pip alternative)
+<details>
+<summary>pip alternative</summary>
 
 ```bash
 cd backend
@@ -40,6 +44,7 @@ pip install -r requirements-dev.txt
 cp ../.env.example .env
 uvicorn app.main:app --reload --port 8000
 ```
+</details>
 
 ## Quality checks (must pass — mirrors CI)
 
@@ -47,16 +52,17 @@ uvicorn app.main:app --reload --port 8000
 uv run ruff check .
 uv run black --check .
 uv run mypy .
-uv run pytest
+uv run pytest                    # 655 passed, 4 skipped (Postgres-gated)
 ```
+
+Tests run on in-memory SQLite and need no database or model server.
 
 ## Database migrations (Alembic)
 
-Migrations need a real Postgres connection. Set `DATABASE_URL` (and ideally
-`DIRECT_DATABASE_URL`, the non-pooled Supabase connection) in `.env`, then:
+Migrations need a real Postgres connection. Set `DATABASE_URL` and
+`DIRECT_DATABASE_URL` in `.env`, then:
 
 ```bash
-cd backend
 uv run alembic upgrade head            # apply all migrations
 uv run alembic current                 # show the applied revision
 uv run alembic downgrade -1            # roll back one revision
@@ -69,9 +75,10 @@ Preview the SQL without touching a database (works offline):
 uv run alembic upgrade head --sql
 ```
 
-> Alembic reads the database URL from app settings (`migrations/env.py`), not from
-> `alembic.ini`. It prefers `DIRECT_DATABASE_URL` so schema changes bypass the
-> connection pooler.
+> Alembic reads the database URL from app settings (`migrations/env.py`), not
+> from `alembic.ini`. It prefers `DIRECT_DATABASE_URL`, which connects as the
+> owner role; the app itself connects as `gummy_app`, which is `NOBYPASSRLS`, so
+> an application bug cannot read across tenants.
 
 ## Run with Docker
 
@@ -81,32 +88,35 @@ docker build -t gummy-os-backend .
 docker run --rm -p 8000:8000 --env-file .env gummy-os-backend
 ```
 
-## Project layout (Day 1)
+## Project layout
 
 ```
 backend/
 ├── app/
 │   ├── main.py              # app factory + entrypoint (uvicorn app.main:app)
-│   ├── api/
-│   │   ├── deps.py          # shared dependencies (settings; auth/db added Day 2)
-│   │   ├── router.py        # /api/v1 aggregate router
-│   │   └── v1/health.py     # /health + /health/ready
-│   ├── core/
-│   │   ├── config.py        # pydantic-settings, loaded from .env
-│   │   ├── logging.py       # structured JSON logging
-│   │   └── exceptions.py    # error envelope + handlers
-│   ├── database/session.py  # async engine + readiness ping (ORM lands Day 2)
-│   ├── schemas/health.py    # health response models
-│   ├── models/ repositories/ services/ utils/ workers/   # placeholder packages
-├── tests/                   # health smoke tests
-├── pyproject.toml           # deps + Ruff/Black/mypy/pytest config
-├── requirements*.txt        # pip fallback
-└── Dockerfile
+│   ├── api/v1/              # auth, conversations, memories, goals, files,
+│   │                        #   agents, search, connectors, health
+│   ├── core/                # config, security (JWT), logging, exceptions
+│   ├── database/            # async session, RLS GUC, Alembic migrations
+│   ├── models/ schemas/     # SQLAlchemy 2.0 ORM + Pydantic v2
+│   ├── repositories/        # data access, user-scoped
+│   ├── services/
+│   │   ├── auth/            # local token issuer, Google OAuth
+│   │   ├── memory/          # instant recall, consolidation, timeline, profile
+│   │   ├── conversation/    # turn service, summaries, emotion
+│   │   ├── agents/          # router, orchestrator, policy, tools
+│   │   ├── llm/ embeddings/ # Ollama (default), OpenAI, Claude, fake
+│   │   └── connectors/      # iCal import
+│   ├── observability/       # local analytics + optional Langfuse tracing
+│   └── workers/             # background enrichment (memory extraction)
+├── tests/
+└── pyproject.toml           # deps + Ruff/Black/mypy/pytest config
 ```
 
 ## Environment
 
-Configuration is loaded from `.env` (see the root [`.env.example`](../.env.example)).
-Day 1 uses only the core/backend keys; database, Supabase, and Anthropic keys are
-read on the days those integrations land. Unknown keys are ignored, so the shared
-`.env.example` is safe to copy wholesale.
+Configuration is loaded from `.env` (see the root [`.env.example`](../.env.example),
+which documents every key). Unknown keys are ignored, so copying it wholesale is
+safe. The defaults are fully local: Ollama for chat and embeddings, local
+Postgres, GUMMY-issued JWTs. OpenAI and Anthropic keys are read only when
+`LLM_PROVIDER` selects them.

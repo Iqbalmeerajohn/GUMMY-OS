@@ -15,6 +15,8 @@ from fastapi import APIRouter
 from app.api.v1 import (
     actions,
     agents,
+    auth,
+    connectors,
     conversations,
     files,
     goals,
@@ -25,6 +27,7 @@ from app.api.v1 import (
 )
 
 api_router = APIRouter()
+api_router.include_router(auth.router)
 api_router.include_router(memories.router)
 api_router.include_router(conversations.router)
 api_router.include_router(goals.router)
@@ -34,3 +37,4 @@ api_router.include_router(actions.router)
 api_router.include_router(files.router)
 api_router.include_router(knowledge.router)
 api_router.include_router(agents.router)
+api_router.include_router(connectors.router)

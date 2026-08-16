@@ -176,17 +176,25 @@ async def test_backfill_title_sets_title_from_first_message(
         db_session, user_id=seed_user, payload=ConversationCreate()
     )
     await msg_repo.append_message(
-        db_session, conversation_id=conv.id, user_id=seed_user,
-        role=MessageRole.USER, content="Help me plan a Qualcomm interview",
+        db_session,
+        conversation_id=conv.id,
+        user_id=seed_user,
+        role=MessageRole.USER,
+        content="Help me plan a Qualcomm interview",
     )
     await msg_repo.append_message(
-        db_session, conversation_id=conv.id, user_id=seed_user,
-        role=MessageRole.ASSISTANT, content="Sure!",
+        db_session,
+        conversation_id=conv.id,
+        user_id=seed_user,
+        role=MessageRole.ASSISTANT,
+        content="Sure!",
     )
     await db_session.commit()
 
     title = await svc.backfill_title(
-        db_session, user_id=seed_user, conversation_id=conv.id,
+        db_session,
+        user_id=seed_user,
+        conversation_id=conv.id,
         llm=FakeLLMProvider(reply="Qualcomm Interview Prep"),
     )
     assert title == "Qualcomm Interview Prep"
@@ -205,13 +213,18 @@ async def test_backfill_title_falls_back_when_llm_empty(
         db_session, user_id=seed_user, payload=ConversationCreate()
     )
     await msg_repo.append_message(
-        db_session, conversation_id=conv.id, user_id=seed_user,
-        role=MessageRole.USER, content="where do i live?",
+        db_session,
+        conversation_id=conv.id,
+        user_id=seed_user,
+        role=MessageRole.USER,
+        content="where do i live?",
     )
     await db_session.commit()
 
     title = await svc.backfill_title(
-        db_session, user_id=seed_user, conversation_id=conv.id,
+        db_session,
+        user_id=seed_user,
+        conversation_id=conv.id,
         llm=FakeLLMProvider(reply="   "),
     )
     assert title == "Where do i live"
@@ -221,17 +234,23 @@ async def test_backfill_title_is_idempotent(
     db_session: AsyncSession, seed_user: uuid.UUID
 ) -> None:
     conv = await svc.create_conversation(
-        db_session, user_id=seed_user,
+        db_session,
+        user_id=seed_user,
         payload=ConversationCreate(title="Existing"),
     )
     await msg_repo.append_message(
-        db_session, conversation_id=conv.id, user_id=seed_user,
-        role=MessageRole.USER, content="hello",
+        db_session,
+        conversation_id=conv.id,
+        user_id=seed_user,
+        role=MessageRole.USER,
+        content="hello",
     )
     await db_session.commit()
 
     title = await svc.backfill_title(
-        db_session, user_id=seed_user, conversation_id=conv.id,
+        db_session,
+        user_id=seed_user,
+        conversation_id=conv.id,
         llm=FakeLLMProvider(reply="New Title"),
     )
     assert title is None  # already titled → no-op
@@ -249,7 +268,9 @@ async def test_backfill_title_no_messages_returns_none(
     )
     await db_session.commit()
     title = await svc.backfill_title(
-        db_session, user_id=seed_user, conversation_id=conv.id,
+        db_session,
+        user_id=seed_user,
+        conversation_id=conv.id,
         llm=FakeLLMProvider(reply="X"),
     )
     assert title is None

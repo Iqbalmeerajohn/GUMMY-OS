@@ -75,9 +75,7 @@ async def _fake_search(
     include_archived: bool = False,
     category: MemoryCategory | None = None,
 ) -> list[tuple[Memory, float]]:
-    items, _ = await repo.list_memories(
-        session, user_id=user_id, limit=limit, offset=0
-    )
+    items, _ = await repo.list_memories(session, user_id=user_id, limit=limit, offset=0)
     return [(memory, 0.1 * index) for index, memory in enumerate(items)]
 
 

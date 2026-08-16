@@ -31,8 +31,11 @@ logger = logging.getLogger(__name__)
 
 _engine: AsyncEngine | None = None
 _sessionmaker: async_sessionmaker[AsyncSession] | None = None
+# Separate pool for pre-tenant authentication queries (see get_auth_engine).
+_auth_engine: AsyncEngine | None = None
+_auth_sessionmaker: async_sessionmaker[AsyncSession] | None = None
 
-# asyncpg + PgBouncer (Supabase transaction pooler, DATABASE_URL on :6543) safety.
+# asyncpg + PgBouncer (transaction pooling) safety.
 #
 # In transaction pooling, consecutive transactions on one client connection can
 # land on different physical Postgres backends. asyncpg names prepared statements
@@ -43,7 +46,7 @@ _sessionmaker: async_sessionmaker[AsyncSession] | None = None
 #     prepared statement "__asyncpg_stmt_a__" does not exist
 # This broke the per-transaction RLS call `SELECT set_config('app.current_user_id', …)`.
 #
-# Fix (no Railway/Supabase/RLS changes): disable both prepared-statement caches so
+# Fix (no RLS changes): disable both prepared-statement caches so
 # each statement is prepared and used within a single transaction (same backend),
 # and give every prepared statement a unique name so names are never reused across
 # backends. This is SQLAlchemy's documented asyncpg-behind-PgBouncer remedy.
@@ -61,8 +64,8 @@ def _set_tenant_guc(session: Session, transaction: Any, connection: Connection) 
     Read by RLS policies as ``current_setting('app.current_user_id', true)``.
     No-op on non-PostgreSQL backends (e.g. the SQLite test database), so the
     fast suite is unaffected. Runs once per transaction, which is required —
-    services commit multiple times per request and Supabase's transaction
-    pooler does not carry session-level settings across transactions.
+    services commit multiple times per request and a transaction pooler does
+    not carry session-level settings across transactions.
     """
     if connection.dialect.name != "postgresql":
         return
@@ -108,14 +111,62 @@ def get_sessionmaker() -> async_sessionmaker[AsyncSession] | None:
     return _sessionmaker
 
 
+def get_auth_engine() -> AsyncEngine | None:
+    """Engine for authentication queries, bound to the owner connection.
+
+    Deliberately NOT the runtime engine. The app connects as ``gummy_app``
+    (NOBYPASSRLS), and the ``users`` policy is ``id = app.current_user_id`` —
+    so a sign-in, which must find an account by *email* before any tenant is
+    known, would match zero rows on that connection. Authentication is the one
+    genuinely pre-tenant operation, so it uses ``DIRECT_DATABASE_URL`` (the
+    owner/migration role, which bypasses RLS).
+
+    The safety property this relies on is enforced in ``services.auth``: every
+    query there filters explicitly by email, id, or google_sub and returns a
+    single row. Nothing on this engine may return an unfiltered row set.
+
+    Falls back to the runtime engine when no direct URL is configured, which
+    keeps single-role deployments and the test suite working.
+    """
+    global _auth_engine
+    settings = get_settings()
+    url = settings.migration_async_url
+    if url is None:
+        return get_engine()
+    if url == settings.async_database_url:
+        return get_engine()  # same role; no second pool needed
+    if _auth_engine is None:
+        # A small pool: auth traffic is a few queries per sign-in, not per request
+        # (access tokens are verified without touching the database).
+        _auth_engine = create_async_engine(
+            url,
+            pool_pre_ping=True,
+            pool_size=2,
+            max_overflow=2,
+            connect_args=_ASYNCPG_PGBOUNCER_CONNECT_ARGS,
+        )
+        logger.info("auth database engine initialized (owner connection)")
+    return _auth_engine
+
+
 def get_auth_sessionmaker() -> async_sessionmaker[AsyncSession] | None:
-    """Sessionmaker for the pre-request user upsert.
+    """Sessionmaker for authentication and the pre-request user upsert.
 
     Deliberately separate from ``get_db`` and never tenant-scoped: the auth
-    dependency resolves the user *before* the request's (future RLS-scoped)
-    session exists. Returns None when no database is configured.
+    dependency resolves the user *before* the request's RLS-scoped session
+    exists. Returns None when no database is configured.
     """
-    return get_sessionmaker()
+    global _auth_sessionmaker
+    engine = get_auth_engine()
+    if engine is None:
+        return None
+    if engine is get_engine():
+        return get_sessionmaker()
+    if _auth_sessionmaker is None:
+        _auth_sessionmaker = async_sessionmaker(
+            engine, expire_on_commit=False, class_=AsyncSession
+        )
+    return _auth_sessionmaker
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
@@ -160,8 +211,12 @@ async def check_database() -> tuple[str, str | None]:
 
 
 async def dispose_engine() -> None:
-    """Dispose the engine on shutdown (releases pooled connections)."""
-    global _engine, _sessionmaker
+    """Dispose both engines on shutdown (releases pooled connections)."""
+    global _engine, _sessionmaker, _auth_engine, _auth_sessionmaker
+    if _auth_engine is not None:
+        await _auth_engine.dispose()
+        _auth_engine = None
+        _auth_sessionmaker = None
     if _engine is not None:
         await _engine.dispose()
         _engine = None

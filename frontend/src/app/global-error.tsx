@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect } from "react";
-import * as Sentry from "@sentry/nextjs";
+
+import { analytics } from "@/lib/analytics";
 
 /**
  * Root error boundary. Next.js renders this when an error escapes the root
- * layout — the last line of defence for client/render crashes. We forward the
- * error to Sentry (a no-op when monitoring is disabled) and show a minimal,
- * recoverable fallback. `global-error` must render its own <html>/<body>.
+ * layout — the last line of defence for client/render crashes. The error is
+ * logged locally (GUMMY reports nothing off-device) and a minimal, recoverable
+ * fallback is shown. `global-error` must render its own <html>/<body>.
  */
 export default function GlobalError({
   error,
@@ -17,7 +18,7 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
-    Sentry.captureException(error);
+    analytics.captureException(error, { context: "global_error_boundary" });
   }, [error]);
 
   return (
@@ -42,8 +43,8 @@ export default function GlobalError({
           Something went wrong
         </h1>
         <p style={{ color: "#a1a1aa", maxWidth: "28rem" }}>
-          GUMMY hit an unexpected error. The issue has been reported. You can
-          try again.
+          GUMMY hit an unexpected error. Nothing left your machine. You can try
+          again.
         </p>
         <button
           onClick={reset}

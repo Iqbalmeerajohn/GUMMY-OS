@@ -131,9 +131,7 @@ def upgrade() -> None:
         ),
     )
     op.create_index("ix_agent_runs_user_id", "agent_runs", ["user_id"])
-    op.create_index(
-        "ix_agent_runs_conversation_id", "agent_runs", ["conversation_id"]
-    )
+    op.create_index("ix_agent_runs_conversation_id", "agent_runs", ["conversation_id"])
     op.create_index(
         "ix_agent_runs_user_id_created_at",
         "agent_runs",
@@ -219,9 +217,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     for table in ("agent_steps", "agent_runs"):
-        op.execute(
-            f"DROP POLICY IF EXISTS {table}_tenant_isolation ON {table}"
-        )
+        op.execute(f"DROP POLICY IF EXISTS {table}_tenant_isolation ON {table}")
         op.execute(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY")
     op.drop_table("agent_steps")
     op.drop_table("agent_runs")

@@ -113,6 +113,37 @@ async def update_memory(
     return memory
 
 
+async def list_events(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    since: datetime,
+    until: datetime,
+    limit: int,
+) -> list[Memory]:
+    """Return time-anchored memories inside a window, newest first.
+
+    Only memories carrying ``occurred_at`` participate — the timeline is about
+    what happened, not about when a timeless fact was written down. Served by
+    the partial index on ``(user_id, occurred_at)``.
+    """
+    stmt = (
+        select(Memory)
+        .where(
+            Memory.user_id == user_id,
+            Memory.deleted_at.is_(None),
+            Memory.status == MemoryStatus.ACTIVE,
+            Memory.occurred_at.is_not(None),
+            Memory.occurred_at >= since,
+            Memory.occurred_at < until,
+        )
+        .order_by(Memory.occurred_at.desc(), Memory.id.desc())
+        .limit(limit)
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+    return list(rows)
+
+
 async def apply_recall(
     session: AsyncSession,
     memory: Memory,

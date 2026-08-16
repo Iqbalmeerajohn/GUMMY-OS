@@ -5,7 +5,7 @@ Parser libraries (``pypdf``, ``python-docx``, ``openpyxl``) are imported lazily
 inside their branch — exactly like the optional embeddings providers — so they
 are only required when a user actually uploads that format. Any extraction
 failure is raised as :class:`ExtractionError` (an ``AppError``) so the service
-layer can mark the file ``failed`` and report to Sentry.
+layer can mark the file ``failed`` and capture the error.
 """
 
 from __future__ import annotations

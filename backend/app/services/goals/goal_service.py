@@ -85,9 +85,7 @@ async def create_goal_from_conversation(
         "goal.create_from_conversation",
         metadata={
             "goal_source": "conversation",
-            "conversation_id": (
-                str(conversation_id) if conversation_id else None
-            ),
+            "conversation_id": (str(conversation_id) if conversation_id else None),
             "title": payload.title,
             "priority": payload.priority.value,
             "target_date": (
@@ -143,9 +141,7 @@ def reject_goal_candidate(
             "accepted": False,
             "title": title,
             "priority": priority.value,
-            "target_date": (
-                target_date.isoformat() if target_date else None
-            ),
+            "target_date": (target_date.isoformat() if target_date else None),
         },
     ):
         pass
@@ -155,9 +151,7 @@ async def get_goal(
     session: AsyncSession, *, user_id: uuid.UUID, goal_id: uuid.UUID
 ) -> Goal:
     """Fetch one goal or raise 404 (foreign tenants see 404, never 403)."""
-    with langfuse_obs.observe_operation(
-        "goal.get", metadata={"goal_id": str(goal_id)}
-    ):
+    with langfuse_obs.observe_operation("goal.get", metadata={"goal_id": str(goal_id)}):
         goal = await repo.get_goal(session, goal_id=goal_id, user_id=user_id)
     if goal is None:
         raise GoalNotFoundError(goal_id)

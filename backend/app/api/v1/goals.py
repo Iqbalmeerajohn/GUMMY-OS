@@ -136,9 +136,7 @@ async def goal_stats(
     )
 
 
-@router.get(
-    "/{goal_id}", response_model=GoalResponse, summary="Get a goal by id"
-)
+@router.get("/{goal_id}", response_model=GoalResponse, summary="Get a goal by id")
 async def get_goal(
     goal_id: uuid.UUID,
     user_id: CurrentUserId,
@@ -188,9 +186,7 @@ async def complete_goal(
     user_id: CurrentUserId,
     db: DbSession,
 ) -> GoalResponse:
-    goal = await goal_service.complete_goal(
-        db, user_id=user_id, goal_id=goal_id
-    )
+    goal = await goal_service.complete_goal(db, user_id=user_id, goal_id=goal_id)
     return GoalResponse.model_validate(goal)
 
 
@@ -204,9 +200,7 @@ async def archive_goal(
     user_id: CurrentUserId,
     db: DbSession,
 ) -> GoalResponse:
-    goal = await goal_service.archive_goal(
-        db, user_id=user_id, goal_id=goal_id
-    )
+    goal = await goal_service.archive_goal(db, user_id=user_id, goal_id=goal_id)
     return GoalResponse.model_validate(goal)
 
 

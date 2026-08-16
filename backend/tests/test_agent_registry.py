@@ -75,20 +75,14 @@ def test_duplicate_key_rejected() -> None:
 
 def test_unknown_tool_rejected() -> None:
     with pytest.raises(ManifestValidationError, match="unknown tool"):
-        AgentRegistry(
-            (_manifest(tools=("nonexistent_tool",)),), known_tools={}
-        )
+        AgentRegistry((_manifest(tools=("nonexistent_tool",)),), known_tools={})
 
 
 def test_ceiling_below_tool_tier_rejected() -> None:
     known = {"web_publish": PermissionTier.RED}
     with pytest.raises(ManifestValidationError, match="below tool"):
         AgentRegistry(
-            (
-                _manifest(
-                    tools=("web_publish",), ceiling=PermissionTier.GREEN
-                ),
-            ),
+            (_manifest(tools=("web_publish",), ceiling=PermissionTier.GREEN),),
             known_tools=known,
         )
 

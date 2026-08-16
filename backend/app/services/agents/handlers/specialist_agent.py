@@ -71,9 +71,7 @@ async def handle(
     if web_results:
         ctx = dataclasses.replace(
             ctx,
-            search=knowledge_retrieval_service.search_items_from_results(
-                web_results
-            ),
+            search=knowledge_retrieval_service.search_items_from_results(web_results),
         )
     ranked = knowledge_ranker.rank(ctx)
     compiled = knowledge_context_builder.build(ranked, inventory=ctx.inventory)

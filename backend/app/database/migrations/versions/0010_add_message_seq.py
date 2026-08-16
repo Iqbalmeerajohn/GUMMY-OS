@@ -37,7 +37,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_constraint(
-        "uq_messages_conversation_id_seq", "messages", type_="unique"
-    )
+    op.drop_constraint("uq_messages_conversation_id_seq", "messages", type_="unique")
     op.drop_column("messages", "seq")

@@ -88,12 +88,8 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
     )
-    op.create_index(
-        "ix_goal_milestones_user_id", "goal_milestones", ["user_id"]
-    )
-    op.create_index(
-        "ix_goal_milestones_goal_id", "goal_milestones", ["goal_id"]
-    )
+    op.create_index("ix_goal_milestones_user_id", "goal_milestones", ["user_id"])
+    op.create_index("ix_goal_milestones_goal_id", "goal_milestones", ["goal_id"])
 
     op.execute("ALTER TABLE goal_milestones ENABLE ROW LEVEL SECURITY")
     op.execute(
@@ -106,8 +102,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute(
-        "DROP POLICY IF EXISTS goal_milestones_tenant_isolation "
-        "ON goal_milestones"
+        "DROP POLICY IF EXISTS goal_milestones_tenant_isolation " "ON goal_milestones"
     )
     op.execute("ALTER TABLE goal_milestones DISABLE ROW LEVEL SECURITY")
     op.drop_table("goal_milestones")

@@ -2,79 +2,71 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
-  useEffect,
   useMemo,
-  useState,
   type ReactNode,
 } from "react";
-import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { setAuthTokenProvider } from "@/lib/api/client";
+import {
+  clearSession,
+  fetchProfile,
+  getAccessToken,
+  signOut as revokeSession,
+  type AuthUser,
+} from "@/lib/auth/session";
 
 interface AuthContextValue {
-  user: User | null;
-  session: Session | null;
+  user: AuthUser | null;
   loading: boolean;
   signOut: () => Promise<void>;
+  /** Re-read the session from the backend (after login or OAuth callback). */
+  refresh: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+const SESSION_KEY = ["auth", "session"] as const;
+
+// Feed the API client a token getter once, at module scope. It is stateless and
+// reads storage on each call, so it never goes stale — doing this in an effect
+// would leave the first render's requests unauthenticated.
+setAuthTokenProvider(() => getAccessToken());
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const supabase = getSupabaseBrowserClient();
-  const [session, setSession] = useState<Session | null>(null);
-  // Only "loading" if there's a client whose session we must await.
-  const [loading, setLoading] = useState(() => supabase !== null);
+  const queryClient = useQueryClient();
 
-  // Feed the API client the current access token so backend calls are authed.
-  useEffect(() => {
-    if (!supabase) return;
-    setAuthTokenProvider(async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      return session?.access_token ?? null;
-    });
-  }, [supabase]);
+  // The session is server state, so it is fetched like server state. A 200 with
+  // owner mode on means the backend signed us in without a token, which is the
+  // intended local single-user experience.
+  const { data, isPending, refetch } = useQuery({
+    queryKey: SESSION_KEY,
+    queryFn: () => fetchProfile().catch(() => null),
+    staleTime: Infinity,
+    retry: false,
+  });
 
-  useEffect(() => {
-    if (!supabase) return;
-    let active = true;
-    supabase.auth
-      .getSession()
-      .then(({ data }: { data: { session: Session | null } }) => {
-        if (!active) return;
-        setSession(data.session);
-        setLoading(false);
-      });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(
-      (_event: AuthChangeEvent, next: Session | null) => {
-        setSession(next);
-        setLoading(false);
-      },
-    );
-
-    return () => {
-      active = false;
-      subscription.unsubscribe();
-    };
-  }, [supabase]);
+  const refresh = useCallback(async () => {
+    await refetch();
+  }, [refetch]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
-      user: session?.user ?? null,
-      session,
-      loading,
+      user: data ?? null,
+      loading: isPending,
+      refresh,
       signOut: async () => {
-        await supabase?.auth.signOut();
+        await revokeSession();
+        clearSession();
+        // Anything cached under the old identity is no longer ours to show —
+        // cleared first, so the session we write next survives.
+        queryClient.clear();
+        queryClient.setQueryData(SESSION_KEY, null);
       },
     }),
-    [session, loading, supabase],
+    [data, isPending, refresh, queryClient],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

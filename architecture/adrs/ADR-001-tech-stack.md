@@ -3,7 +3,13 @@
 > **Status:** Accepted
 > **Date:** Phase 0
 > **Deciders:** Founder / CTO, GUMMY OS
-> **Supersedes:** —  **Superseded by:** —
+> **Supersedes:** —  **Superseded by:** hosting rows superseded by
+> [M9 — Local-First GUMMY](../../docs/10_RELEASE_NOTES_M9_LOCAL_FIRST.md)
+
+> **M9 note:** the language, framework, database, and vector-store choices below
+> still hold. The *hosting* choices do not: Supabase, Vercel, Railway, Sentry,
+> and PostHog were all removed in M9 in favour of a machine-local stack. Read
+> those rows as history.
 > **Re-evaluation trigger:** start of Phase 6, first paying SaaS customer, or sustained
 > infra cost > ₹2,000/month.
 

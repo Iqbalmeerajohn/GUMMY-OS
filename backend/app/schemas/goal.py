@@ -73,9 +73,7 @@ class GoalCreate(BaseModel):
 
     title: str = Field(min_length=1, max_length=GOAL_TITLE_MAX_LENGTH)
     description: str | None = Field(default=None, max_length=4000)
-    category: str | None = Field(
-        default=None, max_length=GOAL_CATEGORY_MAX_LENGTH
-    )
+    category: str | None = Field(default=None, max_length=GOAL_CATEGORY_MAX_LENGTH)
     agent_context: AgentContext = AgentContext.GENERAL
     priority: GoalPriority = GoalPriority.MEDIUM
     progress_percentage: int = Field(default=0, ge=0, le=100)
@@ -102,9 +100,7 @@ class GoalUpdate(BaseModel):
         default=None, min_length=1, max_length=GOAL_TITLE_MAX_LENGTH
     )
     description: str | None = Field(default=None, max_length=4000)
-    category: str | None = Field(
-        default=None, max_length=GOAL_CATEGORY_MAX_LENGTH
-    )
+    category: str | None = Field(default=None, max_length=GOAL_CATEGORY_MAX_LENGTH)
     status: GoalStatus | None = None
     agent_context: AgentContext | None = None
     priority: GoalPriority | None = None

@@ -202,9 +202,9 @@ async def test_personal_fact_survives_the_full_lifecycle(
         limit=5,
         reinforce=False,
     )
-    assert any(r.memory.content == fact for r in ranked), (
-        f"{label}: fact was stored but not retrievable"
-    )
+    assert any(
+        r.memory.content == fact for r in ranked
+    ), f"{label}: fact was stored but not retrievable"
 
     # Prompt injection — the fact reaches the model.
     package = context_assembly_service.assemble_context(
@@ -218,9 +218,9 @@ async def test_personal_fact_survives_the_full_lifecycle(
         ]
     )
     payload = prompt_builder.build_prompt(context=package, query=question)
-    assert expected in payload.system, (
-        f"{label}: fact was retrieved but not injected into the prompt"
-    )
+    assert (
+        expected in payload.system
+    ), f"{label}: fact was retrieved but not injected into the prompt"
 
 
 async def test_birthday_scenario(
@@ -257,9 +257,7 @@ async def test_birthday_scenario(
             for r in ranked
         ]
     )
-    payload = prompt_builder.build_prompt(
-        context=package, query="When is my birthday?"
-    )
+    payload = prompt_builder.build_prompt(context=package, query="When is my birthday?")
     assert "July 1st" in payload.system
 
 

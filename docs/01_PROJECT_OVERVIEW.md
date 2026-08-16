@@ -1,5 +1,10 @@
 # 01 — Project Overview
 
+> **Current state is M9, not M4.** The "what it is", "goals", and stack sections
+> below are maintained; the M4 capability list is kept as history. GUMMY now runs
+> entirely on the user's machine — see
+> [M9 — Local-First GUMMY](10_RELEASE_NOTES_M9_LOCAL_FIRST.md).
+
 ## What GUMMY OS is
 
 GUMMY OS is a personal, memory-first AI operating layer. At its center is **Gummy**,
@@ -35,9 +40,11 @@ stable, shippable memory-and-chat core**.
                                                        │
                                   ┌────────────────────┼─────────────────────┐
                                   │                     │                     │
-                          PostgreSQL + pgvector   Background workers     Supabase Auth
-                          (RLS tenant isolation)  (embeddings,           (JWT bearer)
-                                                   enrichment)
+                          PostgreSQL + pgvector   Background workers     Local auth
+                          (local, RLS isolation)  (embeddings,           (GUMMY-issued
+                                                   enrichment)            JWT + Google)
+                                  │
+                          Ollama (qwen2.5:3b · nomic-embed-text) — on the same machine
 ```
 
 ## Tech stack
@@ -46,14 +53,15 @@ stable, shippable memory-and-chat core**.
 - Next.js 16 (App Router) · React 19 · TypeScript
 - TanStack Query (server state) · Zustand (light UI state)
 - Tailwind CSS v4 · framer-motion · three / @react-three/fiber (the living orb)
-- Supabase SSR auth client · sonner (toasts)
+- sonner (toasts) · no auth, error-tracking, or analytics SDK
 
 **Backend**
 - FastAPI · async SQLAlchemy 2.x · Pydantic v2
-- PostgreSQL + **pgvector** (semantic search) · Alembic (18 migrations)
-- Supabase-issued JWT verification · Row-Level Security for tenant isolation
+- Local PostgreSQL 16 + **pgvector** (semantic search) · Alembic (23 migrations)
+- GUMMY-issued JWTs (HS256) + Google OAuth · Row-Level Security for tenant isolation
+- Ollama for chat and embeddings by default; OpenAI/Claude keys switchable
 - Background workers for embedding + enrichment
-- pytest (355 passing / 4 Postgres-only skipped)
+- pytest (655 passing / 4 Postgres-only skipped)
 
 ## Current capabilities (M4)
 

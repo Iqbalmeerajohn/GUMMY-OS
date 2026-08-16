@@ -156,9 +156,7 @@ def test_memory_source_indexes_present() -> None:
 def test_summary_unique_constraint() -> None:
     table = Base.metadata.tables["conversation_summaries"]
     names = {c.name for c in table.constraints}
-    assert (
-        "uq_conversation_summaries_conversation_id_version_number" in names
-    )
+    assert "uq_conversation_summaries_conversation_id_version_number" in names
 
 
 def test_all_identifier_names_within_postgres_limit() -> None:

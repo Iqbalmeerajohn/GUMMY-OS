@@ -86,9 +86,7 @@ async def test_recall_delegates_to_hybrid_retrieval(
 # ── propose: consent gate ─────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize(
-    "mode", [ConsentMode.ASSISTED, ConsentMode.EXPLICIT]
-)
+@pytest.mark.parametrize("mode", [ConsentMode.ASSISTED, ConsentMode.EXPLICIT])
 async def test_propose_persists_nothing_without_autonomous_consent(
     db_session: AsyncSession, seed_user: uuid.UUID, mode: ConsentMode
 ) -> None:
@@ -110,9 +108,7 @@ async def test_propose_autonomous_writes_with_agent_provenance(
     created = await agent_memory.propose(
         db_session,
         user_id=seed_user,
-        candidates=[
-            {"content": "Prefers morning workouts", "category": "preference"}
-        ],
+        candidates=[{"content": "Prefers morning workouts", "category": "preference"}],
         agent_key="recall",
         conversation_id=None,
         consent_mode=ConsentMode.AUTONOMOUS,
@@ -122,14 +118,10 @@ async def test_propose_autonomous_writes_with_agent_provenance(
     # Routed through the Memory Engine: default scores + version 1 snapshot.
     assert memory.importance_score == DEFAULT_IMPORTANCE_SCORE
     assert memory.confidence_score == DEFAULT_CONFIDENCE_SCORE
-    versions = (
-        (await db_session.execute(select(MemoryVersion))).scalars().all()
-    )
+    versions = (await db_session.execute(select(MemoryVersion))).scalars().all()
     assert len(versions) == 1
     # Provenance: source_kind='agent' (the widened bus).
-    sources = (
-        (await db_session.execute(select(MemorySource))).scalars().all()
-    )
+    sources = (await db_session.execute(select(MemorySource))).scalars().all()
     assert len(sources) == 1
     assert sources[0].source_kind == SourceKind.AGENT
     assert sources[0].memory_id == memory.id

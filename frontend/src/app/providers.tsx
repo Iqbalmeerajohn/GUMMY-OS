@@ -6,13 +6,11 @@ import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { ThemeProvider } from "next-themes";
 
 import { AuthProvider } from "@/components/auth/AuthProvider";
-import { PostHogProvider } from "@/components/analytics/PostHogProvider";
-import { UpdatesProvider } from "@/components/updates/UpdatesProvider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 /**
- * App-wide client providers: theme (dark-first), server-state cache, tooltips.
- * Auth/session provider is added in M1.
+ * App-wide client providers: theme (dark-first), server-state cache, session,
+ * tooltips. Nothing here talks to a hosted service — GUMMY runs local-first.
  */
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(
@@ -37,11 +35,7 @@ export function Providers({ children }: { children: ReactNode }) {
     >
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <PostHogProvider>
-            <TooltipProvider delay={200}>
-              <UpdatesProvider>{children}</UpdatesProvider>
-            </TooltipProvider>
-          </PostHogProvider>
+          <TooltipProvider delay={200}>{children}</TooltipProvider>
         </AuthProvider>
         <ReactQueryDevtools initialIsOpen={false} />
       </QueryClientProvider>

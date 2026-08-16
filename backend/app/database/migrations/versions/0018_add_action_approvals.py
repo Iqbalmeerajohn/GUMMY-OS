@@ -100,17 +100,13 @@ def upgrade() -> None:
             name="tier_valid",
         ),
     )
-    op.create_index(
-        "ix_action_approvals_user_id", "action_approvals", ["user_id"]
-    )
+    op.create_index("ix_action_approvals_user_id", "action_approvals", ["user_id"])
     op.create_index(
         "ix_action_approvals_user_id_status",
         "action_approvals",
         ["user_id", "status"],
     )
-    op.create_index(
-        "ix_action_approvals_run_id", "action_approvals", ["run_id"]
-    )
+    op.create_index("ix_action_approvals_run_id", "action_approvals", ["run_id"])
 
     op.execute("ALTER TABLE action_approvals ENABLE ROW LEVEL SECURITY")
     op.execute(
@@ -123,8 +119,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute(
-        "DROP POLICY IF EXISTS action_approvals_tenant_isolation "
-        "ON action_approvals"
+        "DROP POLICY IF EXISTS action_approvals_tenant_isolation " "ON action_approvals"
     )
     op.execute("ALTER TABLE action_approvals DISABLE ROW LEVEL SECURITY")
     op.drop_table("action_approvals")

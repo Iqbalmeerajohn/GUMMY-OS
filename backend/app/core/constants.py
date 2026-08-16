@@ -52,11 +52,28 @@ CONVERSATION_SEARCH_SEMANTIC_WEIGHT = 0.5
 INITIAL_VERSION_NUMBER = 1
 
 # ── Embeddings & semantic search ──────────────────────────────────────────────
-# Lightweight, CPU-friendly sentence encoder. 384-dim, strong retrieval quality,
-# zero per-call cost. The DB vector column dimension is fixed to this value, so
-# changing it requires a migration.
+# Lightweight, CPU-friendly sentence encoder. Retained as the HF provider's
+# default; it is 384-dim, so switching EMBEDDINGS_PROVIDER=hf now also requires
+# EMBEDDING_DIMENSION=384 and a rebuilt database.
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-EMBEDDING_DIMENSION = 384
+
+# The width of every stored vector. pgvector columns are declared as
+# ``Vector(EMBEDDING_DIMENSION)``, so this value IS the schema: changing it means
+# rebuilding the database (locally: `docker compose down -v && alembic upgrade head`).
+#
+# 768 = nomic-embed-text, the local Ollama default. It measurably out-retrieves
+# 384-dim MiniLM, and recall accuracy is the core of this product, so the wider
+# column is worth its storage.
+EMBEDDING_DIMENSION = 768
+
+# ── Ollama (local inference; LLM_PROVIDER/EMBEDDINGS_PROVIDER=ollama) ─────────
+# nomic-embed-text: 768-dim, 274MB, runs on CPU or GPU in milliseconds.
+DEFAULT_OLLAMA_EMBEDDING_MODEL = "nomic-embed-text"
+# How long Ollama keeps a model resident after its last request. The default is
+# 5 minutes, which means a user returning after a coffee break pays a multi-second
+# cold load on their first message. 30m keeps the model warm through normal use,
+# which is what makes sub-second first-token latency reachable.
+DEFAULT_OLLAMA_KEEP_ALIVE = "30m"
 
 # Default (production) embedding provider model. OpenAI's text-embedding-3-small
 # supports the `dimensions` request param, so we ask for EMBEDDING_DIMENSION (384)

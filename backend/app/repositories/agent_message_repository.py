@@ -19,9 +19,7 @@ from app.models.enums import AgentMessageRole
 async def next_seq(session: AsyncSession, run_id: uuid.UUID) -> int:
     """Return the next monotonic hop ordinal for a run (1-based)."""
     current = await session.scalar(
-        select(func.max(AgentMessage.seq)).where(
-            AgentMessage.run_id == run_id
-        )
+        select(func.max(AgentMessage.seq)).where(AgentMessage.run_id == run_id)
     )
     return int(current or 0) + 1
 

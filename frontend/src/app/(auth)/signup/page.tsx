@@ -1,111 +1,119 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
 import { AuthShell } from "@/components/auth/AuthShell";
-import { SupabaseNotice } from "@/components/auth/SupabaseNotice";
+import { GoogleButton } from "@/components/auth/GoogleButton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { buttonVariants } from "@/components/ui/button";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import { resolvePostAuthDestination } from "@/lib/auth/post-auth";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { signUp } from "@/lib/auth/session";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
-import { env } from "@/lib/env";
 import { cn } from "@/lib/utils";
 
-function SignupForm() {
+// Mirrors the backend's SignUpRequest bound, so the user is told before the
+// round-trip rather than by a 422.
+const MIN_PASSWORD_LENGTH = 8;
+
+function SignUpForm() {
   const router = useRouter();
-  const supabase = getSupabaseBrowserClient();
+  const params = useSearchParams();
+  const next = params.get("next");
+  const { refresh } = useAuth();
+
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [sent, setSent] = useState(false);
-
-  if (!supabase) return <SupabaseNotice />;
-
-  if (sent) {
-    return (
-      <p className="text-muted-foreground text-center text-sm text-balance">
-        We sent a confirmation link to{" "}
-        <span className="text-foreground">{email}</span>. Click it to verify and
-        you&apos;ll come straight back into GUMMY.
-      </p>
-    );
-  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setSubmitting(true);
-    const { data, error } = await supabase!.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: `${env.appUrl}/auth/callback?next=/onboarding`,
-      },
-    });
-    setSubmitting(false);
-    if (error) {
-      toast.error(error.message);
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      toast.error(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
       return;
     }
-    analytics.track(AnalyticsEvent.UserSignedUp, {
-      method: "password",
-      requires_email_verification: !data.session,
-    });
-    if (data.session) {
-      // Auto-confirmed → straight into the onboarding journey.
-      router.replace(resolvePostAuthDestination("/onboarding"));
-    } else {
-      setSent(true);
+    setSubmitting(true);
+    try {
+      await signUp(email, password, name);
+      await refresh();
+      analytics.track(AnalyticsEvent.UserSignedUp, { method: "password" });
+      router.replace(next?.startsWith("/") ? next : "/");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not create your account.",
+      );
+    } finally {
+      setSubmitting(false);
     }
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="email">Email</Label>
-        <Input
-          id="email"
-          type="email"
-          autoComplete="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="you@example.com"
-        />
+    <div className="space-y-5">
+      <GoogleButton next={next ?? "/"} label="Sign up with Google" />
+
+      <div className="flex items-center gap-3">
+        <span className="h-px flex-1 bg-white/10" />
+        <span className="text-muted-foreground text-xs">or</span>
+        <span className="h-px flex-1 bg-white/10" />
       </div>
-      <div className="space-y-2">
-        <Label htmlFor="password">Password</Label>
-        <Input
-          id="password"
-          type="password"
-          autoComplete="new-password"
-          required
-          minLength={8}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="At least 8 characters"
-        />
-      </div>
-      <button
-        type="submit"
-        disabled={submitting}
-        className={cn(buttonVariants({ size: "lg" }), "h-11 w-full text-base")}
-      >
-        {submitting ? "Creating account…" : "Create account"}
-      </button>
-    </form>
+
+      <form onSubmit={onSubmit} className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="name">Name</Label>
+          <Input
+            id="name"
+            autoComplete="name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="What should Gummy call you?"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
+            type="email"
+            autoComplete="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="password">Password</Label>
+          <Input
+            id="password"
+            type="password"
+            autoComplete="new-password"
+            required
+            minLength={MIN_PASSWORD_LENGTH}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="At least 8 characters"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={submitting}
+          className={cn(buttonVariants({ size: "lg" }), "h-11 w-full text-base")}
+        >
+          {submitting ? "Creating account…" : "Create account"}
+        </button>
+      </form>
+    </div>
   );
 }
 
-export default function SignupPage() {
+export default function SignUpPage() {
   return (
     <AuthShell
-      title="Create your GUMMY"
-      subtitle="Start building memory, goals, and a team of agents."
+      title="Create your account"
+      subtitle="Gummy learns you as you talk. Everything stays on your machine."
       footer={
         <>
           Already have an account?{" "}
@@ -115,7 +123,9 @@ export default function SignupPage() {
         </>
       }
     >
-      <SignupForm />
+      <Suspense fallback={null}>
+        <SignUpForm />
+      </Suspense>
     </AuthShell>
   );
 }

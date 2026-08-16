@@ -37,14 +37,10 @@ def merge_parallel(results: list[tuple[str, AgentResult]]) -> str:
         return ""
     if len(contributions) == 1:
         return contributions[0][1]
-    return "\n\n".join(
-        f"[{agent_key}]\n{reply}" for agent_key, reply in contributions
-    )
+    return "\n\n".join(f"[{agent_key}]\n{reply}" for agent_key, reply in contributions)
 
 
-def compose_reply(
-    plan_shape: PlanShape, results: list[tuple[str, AgentResult]]
-) -> str:
+def compose_reply(plan_shape: PlanShape, results: list[tuple[str, AgentResult]]) -> str:
     """Produce the final reply for a run; Personality voice applied last."""
     if plan_shape == PlanShape.PARALLEL:
         reply = merge_parallel(results)

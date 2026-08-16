@@ -54,9 +54,7 @@ class SearchResult:
 class SearchProvider(Protocol):
     """Returns ranked results for a query (read-only, never raises)."""
 
-    async def search(
-        self, query: str, *, limit: int = 5
-    ) -> list[SearchResult]: ...
+    async def search(self, query: str, *, limit: int = 5) -> list[SearchResult]: ...
 
 
 class DummySearchProvider:
@@ -66,9 +64,7 @@ class DummySearchProvider:
     a real provider is configured. Never raises.
     """
 
-    async def search(
-        self, query: str, *, limit: int = 5
-    ) -> list[SearchResult]:
+    async def search(self, query: str, *, limit: int = 5) -> list[SearchResult]:
         cleaned = query.strip()
         count = max(0, min(limit, 5))
         return [
@@ -98,9 +94,7 @@ class BraveSearchProvider:
         self._api_key = api_key
         self._timeout = timeout
 
-    async def search(
-        self, query: str, *, limit: int = 5
-    ) -> list[SearchResult]:
+    async def search(self, query: str, *, limit: int = 5) -> list[SearchResult]:
         cleaned = query.strip()
         if not cleaned or not self._api_key:
             return []

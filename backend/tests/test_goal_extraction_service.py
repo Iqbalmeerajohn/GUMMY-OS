@@ -42,9 +42,7 @@ def test_acceptance_example_ai_engineer_job() -> None:
         ("I am trying to run a marathon", "Run a marathon"),
     ],
 )
-def test_detects_goal_and_strips_trigger_and_date(
-    message: str, title: str
-) -> None:
+def test_detects_goal_and_strips_trigger_and_date(message: str, title: str) -> None:
     candidate = extract.detect_goal(message, now=_NOW)
     assert candidate is not None
     assert candidate.title == title
@@ -57,9 +55,7 @@ def test_my_goal_is_without_to() -> None:
 
 
 def test_trigger_mid_sentence_after_comma() -> None:
-    candidate = extract.detect_goal(
-        "Honestly, I want to launch my startup", now=_NOW
-    )
+    candidate = extract.detect_goal("Honestly, I want to launch my startup", now=_NOW)
     assert candidate is not None
     assert candidate.title == "Launch my startup"
 
@@ -68,9 +64,7 @@ def test_trigger_mid_sentence_after_comma() -> None:
 
 
 def test_month_day_with_explicit_year() -> None:
-    candidate = extract.detect_goal(
-        "I plan to ship the app by March 5, 2027", now=_NOW
-    )
+    candidate = extract.detect_goal("I plan to ship the app by March 5, 2027", now=_NOW)
     assert candidate is not None
     assert candidate.target_date is not None
     assert candidate.target_date.date().isoformat() == "2027-03-05"
@@ -92,9 +86,7 @@ def test_this_year_maps_to_year_end() -> None:
 
 
 def test_relative_in_n_weeks() -> None:
-    candidate = extract.detect_goal(
-        "I plan to launch the beta in 2 weeks", now=_NOW
-    )
+    candidate = extract.detect_goal("I plan to launch the beta in 2 weeks", now=_NOW)
     assert candidate is not None
     assert candidate.target_date is not None
     assert candidate.target_date.date().isoformat() == "2026-07-07"
@@ -110,17 +102,13 @@ def test_goal_without_date_has_no_target() -> None:
 
 
 def test_urgency_marker_forces_high() -> None:
-    candidate = extract.detect_goal(
-        "I need to finish the deck asap", now=_NOW
-    )
+    candidate = extract.detect_goal("I need to finish the deck asap", now=_NOW)
     assert candidate is not None
     assert candidate.priority is GoalPriority.HIGH
 
 
 def test_someday_marker_forces_low() -> None:
-    candidate = extract.detect_goal(
-        "I want to visit Japan someday", now=_NOW
-    )
+    candidate = extract.detect_goal("I want to visit Japan someday", now=_NOW)
     assert candidate is not None
     assert candidate.priority is GoalPriority.LOW
 

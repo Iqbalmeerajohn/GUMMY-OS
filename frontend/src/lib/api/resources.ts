@@ -623,3 +623,21 @@ export async function* streamTurn(
     }
   }
 }
+
+// ── Connectors ────────────────────────────────────────────────────────────────
+
+export interface CalendarImportResult {
+  imported: number;
+  preview: string[];
+}
+
+/**
+ * Import past events from a Google Calendar secret iCal address (or any .ics
+ * feed). Re-importing is safe — the backend reinforces facts it already holds.
+ */
+export function importCalendar(icsUrl: string) {
+  return apiFetch<CalendarImportResult>("/api/v1/connectors/calendar", {
+    method: "POST",
+    json: { ics_url: icsUrl },
+  });
+}

@@ -154,14 +154,10 @@ async def test_get_run_is_tenant_scoped(
     other = await _second_user(db_session)
     run = await agent_run_repository.create_run(db_session, user_id=seed_user)
     assert (
-        await agent_run_repository.get_run(
-            db_session, run_id=run.id, user_id=seed_user
-        )
+        await agent_run_repository.get_run(db_session, run_id=run.id, user_id=seed_user)
     ) is not None
     assert (
-        await agent_run_repository.get_run(
-            db_session, run_id=run.id, user_id=other
-        )
+        await agent_run_repository.get_run(db_session, run_id=run.id, user_id=other)
     ) is None
 
 
@@ -221,9 +217,7 @@ async def test_append_step_assigns_monotonic_seq(
     db_session: AsyncSession, seed_user: uuid.UUID
 ) -> None:
     run = await agent_run_repository.create_run(db_session, user_id=seed_user)
-    other_run = await agent_run_repository.create_run(
-        db_session, user_id=seed_user
-    )
+    other_run = await agent_run_repository.create_run(db_session, user_id=seed_user)
     s1 = await agent_step_repository.append_step(
         db_session, run_id=run.id, user_id=seed_user, agent_key="general"
     )

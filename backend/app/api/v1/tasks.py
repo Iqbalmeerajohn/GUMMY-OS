@@ -61,9 +61,7 @@ async def list_tasks(
     )
 
 
-@router.get(
-    "/{task_id}", response_model=TaskResponse, summary="Get a task by id"
-)
+@router.get("/{task_id}", response_model=TaskResponse, summary="Get a task by id")
 async def get_task(
     task_id: uuid.UUID,
     user_id: CurrentUserId,

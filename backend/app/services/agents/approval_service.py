@@ -116,17 +116,13 @@ async def _decide(
     approval_id: uuid.UUID,
     status: ApprovalStatus,
 ) -> ActionApproval:
-    approval = await get_approval(
-        session, user_id=user_id, approval_id=approval_id
-    )
+    approval = await get_approval(session, user_id=user_id, approval_id=approval_id)
     if approval.status is not ApprovalStatus.PENDING:
         raise ApprovalAlreadyDecidedError(approval.status)
     if _aware(approval.expires_at) <= datetime.now(UTC):
         # Stale previews must never be approvable: flip to expired, persist,
         # and reject the decision.
-        await repo.set_decision(
-            session, approval, status=ApprovalStatus.EXPIRED
-        )
+        await repo.set_decision(session, approval, status=ApprovalStatus.EXPIRED)
         await session.commit()
         raise ApprovalExpiredError()
     await repo.set_decision(session, approval, status=status)

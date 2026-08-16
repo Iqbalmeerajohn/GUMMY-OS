@@ -34,16 +34,16 @@ def test_ineligible_agent_never_searches(_search_on: None) -> None:
 def test_eligible_agent_with_search_cue(_search_on: None) -> None:
     assert search_service.is_search_eligible("research", "latest AI news") is True
     assert search_service.is_search_eligible("career", "find AI jobs") is True
-    assert search_service.is_search_eligible(
-        "learning", "best transformer tutorials"
-    ) is True
+    assert (
+        search_service.is_search_eligible("learning", "best transformer tutorials")
+        is True
+    )
 
 
 def test_eligible_agent_without_cue_is_skipped(_search_on: None) -> None:
     # Eligible agent, but the query has no recency/lookup cue.
     assert (
-        search_service.is_search_eligible("research", "explain my situation")
-        is False
+        search_service.is_search_eligible("research", "explain my situation") is False
     )
 
 
@@ -58,9 +58,7 @@ def test_disabled_settings_blocks_all(monkeypatch: pytest.MonkeyPatch) -> None:
 
 async def test_search_normalizes_dedupes_and_limits() -> None:
     class _Stub:
-        async def search(
-            self, query: str, *, limit: int = 5
-        ) -> list[SearchResult]:
+        async def search(self, query: str, *, limit: int = 5) -> list[SearchResult]:
             return [
                 SearchResult("  A  ", "https://x.com/a", " s ", "stub"),
                 SearchResult("A dup", "https://x.com/a/", "s", "stub"),  # dup url

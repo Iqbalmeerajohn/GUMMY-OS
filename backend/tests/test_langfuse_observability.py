@@ -77,13 +77,14 @@ async def test_generation_decorator_passthrough_when_disabled() -> None:
     calls: list[dict[str, Any]] = []
 
     @lf.observe_generation
-    async def generate(
-        self: Any, *, system: str, messages: list[dict]
-    ) -> LLMResponse:
+    async def generate(self: Any, *, system: str, messages: list[dict]) -> LLMResponse:
         calls.append({"system": system})
         return LLMResponse(
-            text="hi", model="claude-opus-4-8", input_tokens=5,
-            output_tokens=2, stop_reason="end_turn",
+            text="hi",
+            model="claude-opus-4-8",
+            input_tokens=5,
+            output_tokens=2,
+            stop_reason="end_turn",
         )
 
     gateway = SimpleNamespace(name="claude")
@@ -159,12 +160,13 @@ async def test_generation_decorator_records_usage_and_cost() -> None:
     _enable(fake)
 
     @lf.observe_generation
-    async def generate(
-        self: Any, *, system: str, messages: list[dict]
-    ) -> LLMResponse:
+    async def generate(self: Any, *, system: str, messages: list[dict]) -> LLMResponse:
         return LLMResponse(
-            text="answer", model="claude-opus-4-8", input_tokens=1_000_000,
-            output_tokens=1_000_000, stop_reason="end_turn",
+            text="answer",
+            model="claude-opus-4-8",
+            input_tokens=1_000_000,
+            output_tokens=1_000_000,
+            stop_reason="end_turn",
         )
 
     gateway = SimpleNamespace(name="claude")
@@ -193,9 +195,7 @@ async def test_generation_decorator_records_error() -> None:
     _enable(fake)
 
     @lf.observe_generation
-    async def generate(
-        self: Any, *, system: str, messages: list[dict]
-    ) -> LLMResponse:
+    async def generate(self: Any, *, system: str, messages: list[dict]) -> LLMResponse:
         raise RuntimeError("boom")
 
     gateway = SimpleNamespace(name="openai")

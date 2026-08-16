@@ -64,9 +64,7 @@ async def list_tasks(
         filters.append(Task.status == status)
     if goal_id is not None:
         filters.append(Task.goal_id == goal_id)
-    total = await session.scalar(
-        select(func.count()).select_from(Task).where(*filters)
-    )
+    total = await session.scalar(select(func.count()).select_from(Task).where(*filters))
     stmt = (
         select(Task)
         .where(*filters)

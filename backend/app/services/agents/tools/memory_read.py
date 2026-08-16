@@ -14,9 +14,7 @@ async def execute(context: ToolContext, args: dict) -> dict:
     query = str(args.get("query", "")).strip()
     if not query:
         raise ValueError("memory_read requires a non-empty 'query'")
-    limit = min(
-        int(args.get("limit", DEFAULT_RETRIEVAL_LIMIT)), MAX_RETRIEVAL_LIMIT
-    )
+    limit = min(int(args.get("limit", DEFAULT_RETRIEVAL_LIMIT)), MAX_RETRIEVAL_LIMIT)
     ranked = await memory_retrieval_service.retrieve_memories(
         context.session,
         user_id=context.user_id,

@@ -34,9 +34,7 @@ def _task(intent: str) -> AgentTask:
 
 async def test_career_agent_grounds_and_uses_persona() -> None:
     llm = FakeLLMProvider(reply="Here are roles to target.")
-    result = await handlers.dispatch(
-        _task("What jobs should I apply for?"), llm=llm
-    )
+    result = await handlers.dispatch(_task("What jobs should I apply for?"), llm=llm)
     assert result.output["reply"] == "Here are roles to target."
     system = str(llm.calls[0]["system"])
     # Persona present (agent isolation) …

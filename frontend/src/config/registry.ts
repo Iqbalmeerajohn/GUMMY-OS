@@ -1,13 +1,11 @@
 /**
  * GUMMY Feature Registry — the SINGLE SOURCE OF TRUTH for capabilities.
  *
- * Every feature surface consumes this: Future Vision, Command Center dashboard,
- * Agent Directory, Updates/changelog, What's New, and the onboarding roadmap.
- * Change a feature's status or released_at here and ALL of those update — there
- * are no duplicated feature lists elsewhere.
- *
- * NOTE: this is data + selectors only. No functionality is implemented for any
- * non-released feature — they are registry items / extension points.
+ * Consumed by the Agent Directory panel and the shared status badge, so a
+ * capability's status is stated in exactly one place. Statuses here mirror the
+ * backend: an agent is "released" only if the router can actually reach it —
+ * everything else carries "planned" so the directory never implies a capability
+ * the server does not have.
  */
 
 export type FeatureStatus =
@@ -215,9 +213,10 @@ export const FEATURES: Feature[] = [
   },
   {
     id: "goal-agent",
-    title: "Goal Agent",
+    title: "Planner Agent",
     description: "Breaks goals into steps and tracks progress.",
-    status: "in-development",
+    status: "released",
+    released_at: "2026-06-10",
     category: "agent",
     icon: "Target",
     show_in_tour: false,
@@ -229,7 +228,7 @@ export const FEATURES: Feature[] = [
     id: "workflow-agent",
     title: "Workflow Agent",
     description: "Learns how you work and automates the repetitive.",
-    status: "in-development",
+    status: "planned",
     category: "agent",
     icon: "Workflow",
     show_in_tour: false,
@@ -241,7 +240,8 @@ export const FEATURES: Feature[] = [
     id: "learning-agent",
     title: "Learning Agent",
     description: "Builds personalized learning paths.",
-    status: "planned",
+    status: "released",
+    released_at: "2026-06-10",
     category: "agent",
     icon: "GraduationCap",
     show_in_tour: false,
@@ -253,7 +253,8 @@ export const FEATURES: Feature[] = [
     id: "research-agent",
     title: "Research Agent",
     description: "Conducts deep research and organizes findings.",
-    status: "planned",
+    status: "released",
+    released_at: "2026-06-24",
     category: "agent",
     icon: "Telescope",
     show_in_tour: false,
@@ -265,7 +266,8 @@ export const FEATURES: Feature[] = [
     id: "career-agent",
     title: "Career Agent",
     description: "Helps with applications, interviews, and growth.",
-    status: "planned",
+    status: "released",
+    released_at: "2026-06-10",
     category: "agent",
     icon: "Briefcase",
     show_in_tour: false,
@@ -462,7 +464,12 @@ export function getByStatus(status: FeatureStatus): Feature[] {
 }
 
 export function getAgents(): Feature[] {
-  return FEATURES.filter((f) => f.category === "agent");
+  // Live agents first: the directory should read as "here is what answers you
+  // today", with the plan phase below it rather than mixed through it.
+  return FEATURES.filter((f) => f.category === "agent").sort(
+    (a, b) =>
+      Number(b.status === "released") - Number(a.status === "released"),
+  );
 }
 
 /** Released features, newest first (the changelog timeline). */

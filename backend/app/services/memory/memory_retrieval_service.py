@@ -202,9 +202,7 @@ async def retrieve_memories(
         )
 
         if reinforce and top:
-            await reinforce_memories(
-                session, [item.memory for item in top], now=now
-            )
+            await reinforce_memories(session, [item.memory for item in top], now=now)
             await session.commit()
             # `updated_at` is expired by the server-side onupdate; reload eagerly
             # so callers never trigger a lazy load outside the async session.

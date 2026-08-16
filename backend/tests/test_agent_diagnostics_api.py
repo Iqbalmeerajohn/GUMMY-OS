@@ -63,12 +63,8 @@ async def test_diagnostics_rejects_blank_query(
     assert resp.status_code == 422
 
 
-async def test_list_agents(
-    api_client: AsyncClient, seed_user: uuid.UUID
-) -> None:
-    resp = await api_client.get(
-        "/api/v1/agents", params={"user_id": str(seed_user)}
-    )
+async def test_list_agents(api_client: AsyncClient, seed_user: uuid.UUID) -> None:
+    resp = await api_client.get("/api/v1/agents", params={"user_id": str(seed_user)})
     assert resp.status_code == 200
     agents = resp.json()
     names = {a["name"] for a in agents}

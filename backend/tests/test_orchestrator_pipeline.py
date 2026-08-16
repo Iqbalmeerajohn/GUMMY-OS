@@ -116,9 +116,7 @@ async def test_pipeline_hands_off_recall_digest_to_general(
     assert run.route_plan["shape"] == PlanShape.PIPELINE.value
     assert run.route_plan["steps"] == [RECALL_AGENT_KEY, GENERAL_AGENT_KEY]
 
-    steps = await step_repo.list_for_run(
-        db_session, run_id=run.id, user_id=seed_user
-    )
+    steps = await step_repo.list_for_run(db_session, run_id=run.id, user_id=seed_user)
     assert [(s.agent_key, s.seq, s.status) for s in steps] == [
         (RECALL_AGENT_KEY, 1, StepStatus.SUCCEEDED),
         (GENERAL_AGENT_KEY, 2, StepStatus.SUCCEEDED),
@@ -160,9 +158,7 @@ async def test_loop_guard_halts_injected_cycle(
         "app.services.agents.orchestrator_service.router.route", _cycle_route
     )
     conv_id = await _new_conv(db_session, seed_user)
-    with pytest.raises(
-        orchestrator_service.RunBudgetExceededError, match="step cap"
-    ):
+    with pytest.raises(orchestrator_service.RunBudgetExceededError, match="step cap"):
         await orchestrator_service.orchestrate(
             db_session,
             user_id=seed_user,

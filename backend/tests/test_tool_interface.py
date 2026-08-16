@@ -50,9 +50,7 @@ async def _fake_search(
     return [(memory, 0.8) for memory in items]
 
 
-def _context(
-    session: AsyncSession, user_id: uuid.UUID
-) -> ToolContext:
+def _context(session: AsyncSession, user_id: uuid.UUID) -> ToolContext:
     return ToolContext(
         session=session,
         user_id=user_id,
@@ -139,12 +137,8 @@ async def test_green_memory_read_executes_and_audits(
     assert result.decision == ToolDecision.ALLOWED
     assert result.status == ToolRunStatus.SUCCEEDED
     assert result.output is not None
-    assert result.output["memories"][0]["content"] == (
-        "Qualcomm interview prep"
-    )
-    rows = await audit_repo.list_for_run(
-        db_session, run_id=run_id, user_id=seed_user
-    )
+    assert result.output["memories"][0]["content"] == ("Qualcomm interview prep")
+    rows = await audit_repo.list_for_run(db_session, run_id=run_id, user_id=seed_user)
     assert len(rows) == 1
     row = rows[0]
     assert row.tool_key == "memory_read"
@@ -171,9 +165,7 @@ async def test_tool_not_in_manifest_blocked_and_audited(
     assert result.decision == ToolDecision.BLOCKED
     assert result.status == ToolRunStatus.NOT_EXECUTED
     assert result.output is None
-    rows = await audit_repo.list_for_run(
-        db_session, run_id=run_id, user_id=seed_user
-    )
+    rows = await audit_repo.list_for_run(db_session, run_id=run_id, user_id=seed_user)
     assert [r.decision for r in rows] == [ToolDecision.BLOCKED]
 
 
@@ -194,9 +186,7 @@ async def test_yellow_red_never_execute(
         ceiling=PermissionTier.RED,
         tools=("email_send", "social_publish"),
     )
-    monkeypatch.setattr(
-        registry_module, "_registry", AgentRegistry((powerful,))
-    )
+    monkeypatch.setattr(registry_module, "_registry", AgentRegistry((powerful,)))
 
     run_id = await _run(db_session, seed_user)
     for tool_key, tier in (
@@ -217,9 +207,7 @@ async def test_yellow_red_never_execute(
         assert result.status == ToolRunStatus.NOT_EXECUTED
         assert result.output is None
 
-    rows = await audit_repo.list_for_run(
-        db_session, run_id=run_id, user_id=seed_user
-    )
+    rows = await audit_repo.list_for_run(db_session, run_id=run_id, user_id=seed_user)
     assert len(rows) == 2
     assert all(r.status == ToolRunStatus.NOT_EXECUTED for r in rows)
 
@@ -241,9 +229,7 @@ async def test_yellow_with_standing_allowance_still_not_executed(
         ceiling=PermissionTier.YELLOW,
         tools=("email_send",),
     )
-    monkeypatch.setattr(
-        registry_module, "_registry", AgentRegistry((powerful,))
-    )
+    monkeypatch.setattr(registry_module, "_registry", AgentRegistry((powerful,)))
     run_id = await _run(db_session, seed_user)
     result = await interface.invoke(
         db_session,
@@ -292,9 +278,7 @@ async def test_green_failure_recorded(
     )
     assert result.decision == ToolDecision.ALLOWED
     assert result.status == ToolRunStatus.FAILED
-    rows = (
-        (await db_session.execute(select(ToolInvocation))).scalars().all()
-    )
+    rows = (await db_session.execute(select(ToolInvocation))).scalars().all()
     assert rows[0].error is not None
 
 
@@ -315,14 +299,10 @@ async def test_web_search_delegates_to_search_seam(
         ceiling=PermissionTier.GREEN,
         tools=("web_search",),
     )
-    monkeypatch.setattr(
-        registry_module, "_registry", AgentRegistry((searcher,))
-    )
+    monkeypatch.setattr(registry_module, "_registry", AgentRegistry((searcher,)))
 
     class _Stub:
-        async def search(
-            self, query: str, *, limit: int = 5
-        ) -> list[SearchResult]:
+        async def search(self, query: str, *, limit: int = 5) -> list[SearchResult]:
             return [
                 SearchResult(
                     title="Gummy OS",

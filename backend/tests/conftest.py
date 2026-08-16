@@ -18,10 +18,19 @@ import os
 os.environ["DATABASE_URL"] = ""
 os.environ["DIRECT_DATABASE_URL"] = ""
 # Auth in tests: enable the dev bypass so existing API tests keep passing the
-# tenant via the legacy `user_id` query param, and provide a fixed JWT secret so
-# token-path tests can mint and verify HS256 tokens hermetically.
+# tenant via the legacy `user_id` query param. Token-path tests mint HS256 tokens
+# against GUMMY_JWT_SECRET below, hermetically.
 os.environ["AUTH_DEV_BYPASS"] = "true"
-os.environ["SUPABASE_JWT_SECRET"] = "test-jwt-secret"
+# Owner mode signs EVERY request in as the local owner. Left on, it would make
+# the tenant-isolation and "requires authentication" tests pass vacuously, which
+# is the opposite of what they exist to prove — so it is forced off here
+# regardless of the developer's `.env`.
+os.environ["GUMMY_OWNER_MODE"] = "false"
+os.environ["GUMMY_JWT_SECRET"] = "test-local-jwt-secret"
+# Never reach a live model from the suite: the developer `.env` selects Ollama,
+# which would make tests depend on a running daemon.
+os.environ["EMBEDDINGS_PROVIDER"] = "fake"
+os.environ["LLM_PROVIDER"] = "fake"
 
 import uuid
 from collections.abc import AsyncIterator

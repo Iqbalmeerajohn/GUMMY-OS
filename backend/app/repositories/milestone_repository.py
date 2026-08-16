@@ -104,9 +104,7 @@ async def max_order_index(
     )
 
 
-async def delete_milestone(
-    session: AsyncSession, *, milestone: GoalMilestone
-) -> None:
+async def delete_milestone(session: AsyncSession, *, milestone: GoalMilestone) -> None:
     """Delete a milestone (caller owns the commit)."""
     await session.delete(milestone)
     await session.flush()

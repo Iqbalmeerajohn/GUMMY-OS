@@ -2,7 +2,7 @@
  * Minimal typed fetch wrapper over the GUMMY FastAPI backend.
  *
  * M0: transport + error normalization only. The bearer-token provider is wired
- * in M1 (Supabase auth) via `setAuthTokenProvider` so this module stays
+ * by the auth layer via `setAuthTokenProvider` so this module stays
  * framework-agnostic and easy to test. All domain calls go through the
  * per-resource modules in `lib/api/resources/*` (added per feature milestone).
  */
@@ -33,7 +33,7 @@ type TokenProvider = () => Promise<string | null> | string | null;
 
 let tokenProvider: TokenProvider = () => null;
 
-/** Wired in M1 so requests carry the Supabase access token. */
+/** Wired by the auth layer so requests carry the access token. */
 export function setAuthTokenProvider(provider: TokenProvider): void {
   tokenProvider = provider;
 }

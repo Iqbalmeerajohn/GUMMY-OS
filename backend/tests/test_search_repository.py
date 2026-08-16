@@ -2,7 +2,7 @@
 
 pgvector's ``<=>`` runs only on PostgreSQL, so these tests validate the *generated
 SQL* by compiling against the PostgreSQL dialect (no database connection). Live
-ranking is verified against Supabase (see the Day 4 verification steps).
+ranking is verified against Postgres (see the Day 4 verification steps).
 """
 
 from __future__ import annotations

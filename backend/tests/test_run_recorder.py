@@ -103,9 +103,7 @@ async def test_finish_failure_records_error(
     recording = await run_recorder.start_run(
         db_session, user_id=seed_user, agent_key=GENERAL_AGENT_KEY
     )
-    await run_recorder.finish_failure(
-        db_session, recording, error="llm timeout"
-    )
+    await run_recorder.finish_failure(db_session, recording, error="llm timeout")
     assert recording.step.status == StepStatus.FAILED
     assert recording.step.error == "llm timeout"
     assert recording.run.status == RunStatus.FAILED
@@ -126,9 +124,7 @@ async def test_flag_off_turn_writes_no_trace(
     )
     # This suite tests the M3 recording branch, which only runs when the
     # (M11 default-on) orchestrated branch is disabled.
-    monkeypatch.setattr(
-        get_settings(), "agents_orchestration_enabled", False
-    )
+    monkeypatch.setattr(get_settings(), "agents_orchestration_enabled", False)
     monkeypatch.setattr(get_settings(), "agents_run_recording", False)
     conv_id = await _new_conv(db_session, seed_user)
     await turn_svc.run_turn(
@@ -151,9 +147,7 @@ async def test_flag_on_turn_writes_one_run_one_step(
         "app.repositories.search_repository.search_similar_memories",
         _fake_search,
     )
-    monkeypatch.setattr(
-        get_settings(), "agents_orchestration_enabled", False
-    )
+    monkeypatch.setattr(get_settings(), "agents_orchestration_enabled", False)
     monkeypatch.setattr(get_settings(), "agents_run_recording", True)
     conv_id = await _new_conv(db_session, seed_user)
     result = await turn_svc.run_turn(
@@ -172,9 +166,7 @@ async def test_flag_on_turn_writes_one_run_one_step(
     assert run.status == RunStatus.SUCCEEDED
     assert run.cost_tokens == result.input_tokens + result.output_tokens
 
-    steps = await step_repo.list_for_run(
-        db_session, run_id=run.id, user_id=seed_user
-    )
+    steps = await step_repo.list_for_run(db_session, run_id=run.id, user_id=seed_user)
     assert len(steps) == 1
     step = steps[0]
     assert step.agent_key == GENERAL_AGENT_KEY

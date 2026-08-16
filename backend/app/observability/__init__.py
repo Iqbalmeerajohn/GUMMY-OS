@@ -1,6 +1,7 @@
-"""Observability integrations for GUMMY OS.
+"""Observability for GUMMY OS.
 
-Houses the Langfuse LLM/agent tracing layer. Sentry error monitoring lives in
-``app.core.observability`` (kept there for historical reasons); both are
-best-effort and fully disabled when their credentials are absent.
+Two layers: local product-event logging (:mod:`analytics`) and optional LLM/agent
+tracing (:mod:`langfuse`, off unless keys are set — point it at a self-hosted
+instance to keep traces on the machine). Error reporting lives in
+``app.core.observability``. All three are best-effort and never fail a request.
 """

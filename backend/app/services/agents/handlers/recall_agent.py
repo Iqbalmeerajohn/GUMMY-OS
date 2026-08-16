@@ -18,10 +18,7 @@ async def handle(task: AgentTask) -> AgentResult:
     """Digest the pack's memory candidates into a findings block."""
     memories = task.context_pack.memories[:_MAX_DIGEST_MEMORIES]
     if memories:
-        lines = [
-            f"- ({m['category']}) {m['content']}"
-            for m in memories
-        ]
+        lines = [f"- ({m['category']}) {m['content']}" for m in memories]
         digest = "Relevant stored memories:\n" + "\n".join(lines)
     else:
         digest = "No stored memories matched this question."

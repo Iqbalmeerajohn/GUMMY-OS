@@ -1,6 +1,7 @@
 """Auth unit tests: JWT verification + the production safety guard.
 
-Hermetic — tokens are minted locally with PyJWT against a test secret; no network.
+Hermetic — tokens are minted locally with PyJWT against the test secret, exactly
+as ``token_service`` mints them at runtime; no network, no database.
 """
 
 from __future__ import annotations
@@ -14,15 +15,18 @@ import pytest
 from app.core.config import Settings
 from app.core.exceptions import AppError
 from app.core.security import assert_auth_safe, verify_access_token
+from app.services.auth.token_service import TOKEN_AUDIENCE
 
-_SECRET = "test-jwt-secret"
+_SECRET = "test-local-jwt-secret"
 
 
 def _settings(**overrides: object) -> Settings:
     base: dict[str, object] = {
-        "supabase_jwt_secret": _SECRET,
-        "supabase_jwt_aud": "authenticated",
-        "supabase_jwt_algorithms": "HS256",
+        "gummy_jwt_secret": _SECRET,
+        # assert_auth_safe refuses to start in production with owner mode on, so
+        # without this every production-mode case here would fail on owner mode
+        # rather than on what it means to test.
+        "gummy_owner_mode": False,
         **overrides,
     }
     return Settings().model_copy(update=base)
@@ -32,7 +36,7 @@ def _token(
     *,
     secret: str = _SECRET,
     sub: str | None = None,
-    aud: str = "authenticated",
+    aud: str = TOKEN_AUDIENCE,
     email: str | None = "user@example.com",
     expires_in: int = 3600,
     algorithm: str = "HS256",
@@ -62,6 +66,22 @@ def test_token_without_email_yields_none() -> None:
     assert claims.email is None
 
 
+def test_display_name_comes_from_the_token() -> None:
+    """The name rides in the token, so no DB read is needed to greet the user."""
+    now = datetime.now(UTC)
+    token = jwt.encode(
+        {
+            "sub": str(uuid.uuid4()),
+            "aud": TOKEN_AUDIENCE,
+            "exp": now + timedelta(hours=1),
+            "user_metadata": {"full_name": "Iqbal"},
+        },
+        _SECRET,
+        algorithm="HS256",
+    )
+    assert verify_access_token(token, _settings()).name == "Iqbal"
+
+
 def test_expired_token_raises_401() -> None:
     # Well beyond the 30s clock-skew leeway.
     with pytest.raises(AppError) as exc:
@@ -77,9 +97,27 @@ def test_bad_signature_raises_401() -> None:
     assert exc.value.code == "invalid_token"
 
 
-def test_wrong_audience_raises_401() -> None:
+def test_foreign_audience_raises_401() -> None:
+    """A token signed for another product must not authenticate here."""
     with pytest.raises(AppError) as exc:
-        verify_access_token(_token(aud="some-other-aud"), _settings())
+        verify_access_token(_token(aud="authenticated"), _settings())
+    assert exc.value.code == "invalid_token"
+
+
+def test_unsigned_token_raises_401() -> None:
+    """`alg: none` is the classic forgery; only HS256 is accepted."""
+    now = datetime.now(UTC)
+    token = jwt.encode(
+        {
+            "sub": str(uuid.uuid4()),
+            "aud": TOKEN_AUDIENCE,
+            "exp": now + timedelta(hours=1),
+        },
+        key="",
+        algorithm="none",
+    )
+    with pytest.raises(AppError) as exc:
+        verify_access_token(token, _settings())
     assert exc.value.code == "invalid_token"
 
 
@@ -97,7 +135,7 @@ def test_non_uuid_subject_raises_401() -> None:
 
 def test_missing_secret_raises_503() -> None:
     with pytest.raises(AppError) as exc:
-        verify_access_token(_token(), _settings(supabase_jwt_secret=None))
+        verify_access_token(_token(), _settings(gummy_jwt_secret=None, secret_key=""))
     assert exc.value.status_code == 503
     assert exc.value.code == "auth_misconfigured"
 

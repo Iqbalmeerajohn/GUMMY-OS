@@ -15,9 +15,7 @@ def _q(user: uuid.UUID = _TENANT) -> dict[str, str]:
 
 
 async def _create_goal(api_client: AsyncClient, title: str = "g") -> dict:
-    res = await api_client.post(
-        "/api/v1/goals", params=_q(), json={"title": title}
-    )
+    res = await api_client.post("/api/v1/goals", params=_q(), json={"title": title})
     assert res.status_code == 201
     return res.json()
 
@@ -33,9 +31,7 @@ async def test_complete_and_archive_actions(api_client: AsyncClient) -> None:
     assert body["status"] == "completed"
     assert body["completed_at"] is not None
 
-    archived = await api_client.post(
-        f"/api/v1/goals/{goal['id']}/archive", params=_q()
-    )
+    archived = await api_client.post(f"/api/v1/goals/{goal['id']}/archive", params=_q())
     assert archived.status_code == 200
     assert archived.json()["status"] == "archived"
     assert archived.json()["completed_at"] is None
@@ -43,13 +39,9 @@ async def test_complete_and_archive_actions(api_client: AsyncClient) -> None:
 
 async def test_delete_goal(api_client: AsyncClient) -> None:
     goal = await _create_goal(api_client)
-    deleted = await api_client.delete(
-        f"/api/v1/goals/{goal['id']}", params=_q()
-    )
+    deleted = await api_client.delete(f"/api/v1/goals/{goal['id']}", params=_q())
     assert deleted.status_code == 204
-    missing = await api_client.get(
-        f"/api/v1/goals/{goal['id']}", params=_q()
-    )
+    missing = await api_client.get(f"/api/v1/goals/{goal['id']}", params=_q())
     assert missing.status_code == 404
 
 
@@ -104,20 +96,14 @@ async def test_milestone_lifecycle_and_progress(
     assert done.json()["completed"] is True
     assert done.json()["completed_at"] is not None
 
-    fetched = await api_client.get(
-        f"/api/v1/goals/{goal['id']}", params=_q()
-    )
+    fetched = await api_client.get(f"/api/v1/goals/{goal['id']}", params=_q())
     assert fetched.json()["progress_percentage"] == 50
     assert len(fetched.json()["milestones"]) == 2
 
     # Deleting the incomplete milestone → 1 of 1 done → 100%.
-    deleted = await api_client.delete(
-        f"/api/v1/milestones/{m2['id']}", params=_q()
-    )
+    deleted = await api_client.delete(f"/api/v1/milestones/{m2['id']}", params=_q())
     assert deleted.status_code == 204
-    fetched = await api_client.get(
-        f"/api/v1/goals/{goal['id']}", params=_q()
-    )
+    fetched = await api_client.get(f"/api/v1/goals/{goal['id']}", params=_q())
     assert fetched.json()["progress_percentage"] == 100
 
 

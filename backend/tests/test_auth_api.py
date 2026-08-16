@@ -1,6 +1,6 @@
 """End-to-end auth tests over HTTP: bearer-token tenancy, rejection, override.
 
-Tokens are minted locally (HS256, the test secret set in conftest) — no network.
+Tokens are minted locally (HS256, GUMMY_JWT_SECRET from conftest) — no network.
 The token-path user upsert hits the same in-memory SQLite as the request session.
 """
 
@@ -14,8 +14,9 @@ import pytest
 from httpx import AsyncClient
 
 from app.core.config import get_settings
+from app.services.auth.token_service import TOKEN_AUDIENCE
 
-_SECRET = "test-jwt-secret"  # matches SUPABASE_JWT_SECRET in conftest
+_SECRET = "test-local-jwt-secret"  # matches GUMMY_JWT_SECRET in conftest
 
 
 def _bearer(token: str) -> dict[str, str]:
@@ -25,7 +26,7 @@ def _bearer(token: str) -> dict[str, str]:
 def _token(
     *,
     sub: str | None = None,
-    aud: str = "authenticated",
+    aud: str = TOKEN_AUDIENCE,
     email: str | None = "user@example.com",
     expires_in: int = 3600,
 ) -> str:

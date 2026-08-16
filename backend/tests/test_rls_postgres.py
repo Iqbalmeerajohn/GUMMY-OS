@@ -255,9 +255,7 @@ async def test_conversation_tables_isolation_under_rls() -> None:
                 text("DELETE FROM memories WHERE user_id = :u"),
                 {"u": str(alice)},
             )
-            await s.execute(
-                text("DELETE FROM users WHERE id = :u"), {"u": str(alice)}
-            )
+            await s.execute(text("DELETE FROM users WHERE id = :u"), {"u": str(alice)})
             await s.commit()
         await engine.dispose()
 
@@ -505,15 +503,11 @@ async def test_agent_tables_isolation_under_rls() -> None:
                 text("DELETE FROM agent_runs WHERE user_id = :u"),
                 {"u": str(alice)},
             )
-            await s.execute(
-                text("DELETE FROM users WHERE id = :u"), {"u": str(alice)}
-            )
+            await s.execute(text("DELETE FROM users WHERE id = :u"), {"u": str(alice)})
             await s.commit()
         async with maker() as s:
             await _set_tenant(s, None)
-            await s.execute(
-                text("DELETE FROM agents WHERE key = :k"), {"k": agent_key}
-            )
+            await s.execute(text("DELETE FROM agents WHERE key = :k"), {"k": agent_key})
             await s.commit()
         await engine.dispose()
 

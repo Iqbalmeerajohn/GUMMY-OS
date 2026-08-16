@@ -504,17 +504,13 @@ async def orchestrate(
                 )
                 if not results:  # defensive: an empty route plan is a bug
                     raise RuntimeError("router produced an empty route plan")
-                exec_span.update(
-                    metadata={"steps": [k for k, _ in results]}
-                )
+                exec_span.update(metadata={"steps": [k for k, _ in results]})
         except Exception as exc:
             await run_recorder.close_run_failure(session, run, error=str(exc))
             raise
 
         await run_recorder.close_run_success(session, run)
-        _emit_execute_analytics(
-            user_id=user_id, decision=decision, results=results
-        )
+        _emit_execute_analytics(user_id=user_id, decision=decision, results=results)
 
         reply = compose.compose_reply(decision.plan_shape, results)
         last_result = results[-1][1]

@@ -179,9 +179,7 @@ async def test_turn_orchestrated_writes_trace_and_persists_messages(
         "app.repositories.search_repository.search_similar_memories",
         _fake_search,
     )
-    monkeypatch.setattr(
-        get_settings(), "agents_orchestration_enabled", True
-    )
+    monkeypatch.setattr(get_settings(), "agents_orchestration_enabled", True)
     conv_id = await _new_conv(db_session, seed_user)
     result = await turn_svc.run_turn(
         db_session,
@@ -207,9 +205,7 @@ async def test_turn_fallback_on_orchestrator_failure(
         "app.repositories.search_repository.search_similar_memories",
         _fake_search,
     )
-    monkeypatch.setattr(
-        get_settings(), "agents_orchestration_enabled", True
-    )
+    monkeypatch.setattr(get_settings(), "agents_orchestration_enabled", True)
 
     async def _boom(task: object, *, llm: object) -> object:
         raise RuntimeError("handler exploded")
@@ -294,9 +290,7 @@ async def test_foreign_tenant_turn_still_404s_with_flag_on(
         "app.repositories.search_repository.search_similar_memories",
         _fake_search,
     )
-    monkeypatch.setattr(
-        get_settings(), "agents_orchestration_enabled", True
-    )
+    monkeypatch.setattr(get_settings(), "agents_orchestration_enabled", True)
     conv_id = await _new_conv(db_session, seed_user)
     with pytest.raises(ConversationNotFoundError):
         await turn_svc.run_turn(

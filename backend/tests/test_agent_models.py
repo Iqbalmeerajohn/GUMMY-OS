@@ -123,9 +123,7 @@ def test_agent_message_columns() -> None:
 def test_seq_unique_constraints() -> None:
     steps = {c.name for c in Base.metadata.tables["agent_steps"].constraints}
     assert "uq_agent_steps_run_id_seq" in steps
-    msgs = {
-        c.name for c in Base.metadata.tables["agent_messages"].constraints
-    }
+    msgs = {c.name for c in Base.metadata.tables["agent_messages"].constraints}
     assert "uq_agent_messages_run_id_seq" in msgs
 
 
@@ -175,10 +173,7 @@ def test_fk_wiring() -> None:
 
 def test_run_conversation_fk_set_null() -> None:
     # The audit trail must survive thread deletion.
-    fks = {
-        fk.parent.name: fk
-        for fk in Base.metadata.tables["agent_runs"].foreign_keys
-    }
+    fks = {fk.parent.name: fk for fk in Base.metadata.tables["agent_runs"].foreign_keys}
     assert fks["conversation_id"].ondelete == "SET NULL"
 
 

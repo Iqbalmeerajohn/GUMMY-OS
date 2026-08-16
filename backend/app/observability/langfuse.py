@@ -2,7 +2,7 @@
 
 Every LLM call, memory retrieval, and agent orchestration can be traced to
 Langfuse so latency, token usage, and cost are observable in production. The
-integration is built on three principles, mirroring the Sentry module
+integration is built on three principles, mirroring the local capture module
 (``app.core.observability``):
 
 * **Disabled by default.** Tracing is a no-op until BOTH ``LANGFUSE_PUBLIC_KEY``
@@ -287,9 +287,13 @@ def observe_operation(
 # ── LLM generation decorator ──────────────────────────────────────────────────
 
 
-def observe_generation[**P](
+def observe_generation[
+    **P
+](
     fn: Callable[P, Awaitable[LLMResponse]],
-) -> Callable[P, Coroutine[Any, Any, LLMResponse]]:
+) -> Callable[
+    P, Coroutine[Any, Any, LLMResponse]
+]:
     """Wrap an LLM gateway ``generate`` coroutine to emit a Langfuse generation.
 
     Captures the prompt, resolved model, token usage, latency, and cost. The

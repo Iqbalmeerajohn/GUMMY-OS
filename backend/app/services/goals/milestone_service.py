@@ -72,12 +72,8 @@ async def add_milestone(
 
     Commits and returns the refreshed parent goal's freshly-created milestone.
     """
-    goal = await goal_service.get_goal(
-        session, user_id=user_id, goal_id=goal_id
-    )
-    highest = await repo.max_order_index(
-        session, goal_id=goal.id, user_id=user_id
-    )
+    goal = await goal_service.get_goal(session, user_id=user_id, goal_id=goal_id)
+    highest = await repo.max_order_index(session, goal_id=goal.id, user_id=user_id)
     milestone = await repo.create_milestone(
         session,
         user_id=user_id,
@@ -85,9 +81,7 @@ async def add_milestone(
         title=payload.title,
         order_index=(highest + 1) if highest is not None else 0,
     )
-    await goal_service.recompute_progress(
-        session, user_id=user_id, goal=goal
-    )
+    await goal_service.recompute_progress(session, user_id=user_id, goal=goal)
     await session.commit()
     await session.refresh(milestone)
     return milestone
@@ -129,9 +123,7 @@ async def update_milestone(
         goal = await goal_service.get_goal(
             session, user_id=user_id, goal_id=milestone.goal_id
         )
-        await goal_service.recompute_progress(
-            session, user_id=user_id, goal=goal
-        )
+        await goal_service.recompute_progress(session, user_id=user_id, goal=goal)
         await session.commit()
         await session.refresh(milestone)
     return milestone
@@ -144,15 +136,9 @@ async def delete_milestone(
     milestone_id: uuid.UUID,
 ) -> None:
     """Delete a milestone and recompute the parent goal's progress. Commits."""
-    milestone = await get_milestone(
-        session, user_id=user_id, milestone_id=milestone_id
-    )
+    milestone = await get_milestone(session, user_id=user_id, milestone_id=milestone_id)
     goal_id = milestone.goal_id
     await repo.delete_milestone(session, milestone=milestone)
-    goal = await goal_service.get_goal(
-        session, user_id=user_id, goal_id=goal_id
-    )
-    await goal_service.recompute_progress(
-        session, user_id=user_id, goal=goal
-    )
+    goal = await goal_service.get_goal(session, user_id=user_id, goal_id=goal_id)
+    await goal_service.recompute_progress(session, user_id=user_id, goal=goal)
     await session.commit()

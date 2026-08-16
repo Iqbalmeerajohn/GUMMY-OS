@@ -28,7 +28,7 @@ async def upsert_user(
     user_id: uuid.UUID,
     email: str | None,
 ) -> User:
-    """Ensure a local users row keyed by the Supabase auth id (JWT ``sub``).
+    """Ensure a users row keyed by the authenticated id (JWT ``sub``).
 
     Resolution order:
 

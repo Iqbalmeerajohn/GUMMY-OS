@@ -45,9 +45,9 @@ async def app_error_handler(_: Request, exc: Exception) -> JSONResponse:
 
 
 async def unhandled_error_handler(_: Request, exc: Exception) -> JSONResponse:
-    # Report to Sentry explicitly: registering an ``Exception`` handler means
-    # Starlette catches the error before the integration would, so the request
-    # would otherwise never be reported. No-op when monitoring is disabled.
+    # Capture explicitly: registering an ``Exception`` handler means Starlette
+    # catches the error here, so this is the only place it can be recorded with
+    # its component tag before the client gets a generic 500.
     capture_exception(exc, component="api")
     logger.exception("unhandled error: %s", exc)
     return JSONResponse(

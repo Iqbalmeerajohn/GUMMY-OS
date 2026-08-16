@@ -10,7 +10,7 @@ flow is a deterministic pipeline, each stage traced to Langfuse:
 The two status fields are independent: ``upload_status`` tracks the bytes,
 ``processing_status`` tracks the knowledge extraction. A *validation* failure
 (size / type) raises before anything is stored. A *processing* failure (a
-corrupt PDF, a missing parser) is captured to Sentry and recorded on the file
+corrupt PDF, a missing parser) is captured to the log and recorded on the file
 (``processing_status = failed`` + ``error_message``) — the upload itself still
 succeeds, so the bytes are never lost and processing can be retried later.
 """
@@ -169,7 +169,7 @@ async def _process_file(session: AsyncSession, *, file: File, data: bytes) -> No
     """Extract text and store chunks for a file (no commit).
 
     Transitions ``processing_status`` pending → processing → completed/failed.
-    Any failure is recorded on the file and reported to Sentry; it is **not**
+    Any failure is recorded on the file and captured to the log; it is **not**
     re-raised so the surrounding upload still succeeds.
     """
     file.processing_status = ProcessingStatus.PROCESSING

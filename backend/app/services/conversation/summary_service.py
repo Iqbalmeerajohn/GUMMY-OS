@@ -90,10 +90,7 @@ async def maybe_refresh_rolling_summary(
         return None
 
     delta_tokens = sum(estimate_tokens(m.content) for m in delta)
-    if (
-        delta_tokens < trigger_token_threshold
-        and len(delta) < trigger_message_count
-    ):
+    if delta_tokens < trigger_token_threshold and len(delta) < trigger_message_count:
         return None
 
     # Summarize previous summary + the delta into a fresh rolling summary.

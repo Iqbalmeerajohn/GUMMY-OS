@@ -49,11 +49,47 @@ class OllamaGateway:
         default_model: str,
         max_tokens: int,
         timeout: float,
+        keep_alive: str = "30m",
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._default_model = default_model
         self._max_tokens = max_tokens
         self._timeout = timeout
+        # Sent on every request, so the warm window is continuously extended
+        # while the user is active. Ollama's 5-minute default means a user who
+        # steps away pays a multi-second model reload on their next message.
+        self._keep_alive = keep_alive
+        self._client: httpx.AsyncClient | None = None
+
+    def _http(self) -> httpx.AsyncClient:
+        """The shared HTTP client.
+
+        Reused across calls so each turn skips connection setup. Creating a
+        client per request also discards the connection pool every time, which
+        on the chat path is pure added latency for no benefit.
+        """
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                base_url=self._base_url,
+                timeout=httpx.Timeout(self._timeout, connect=5.0),
+            )
+        return self._client
+
+    def _payload(
+        self,
+        chat_messages: list[dict[str, str]],
+        model: str,
+        num_predict: int,
+        *,
+        stream: bool,
+    ) -> dict:
+        return {
+            "model": model,
+            "messages": chat_messages,
+            "stream": stream,
+            "keep_alive": self._keep_alive,
+            "options": {"num_predict": num_predict},
+        }
 
     @observe_generation
     async def generate(
@@ -72,12 +108,7 @@ class OllamaGateway:
         model_name = model or self._default_model
         logger.info("Using provider=%s model=%s", self.name, model_name)
         num_predict = max_tokens or self._max_tokens
-        payload = {
-            "model": model_name,
-            "messages": chat_messages,
-            "stream": False,
-            "options": {"num_predict": num_predict},
-        }
+        payload = self._payload(chat_messages, model_name, num_predict, stream=False)
 
         # Non-streaming: the whole generation arrives in one body, so self._timeout
         # is effectively the read budget. Keep connect short so a dead server fails
@@ -92,15 +123,11 @@ class OllamaGateway:
             num_predict,
             self._timeout,
         )
-        timeout = httpx.Timeout(self._timeout, connect=5.0)
         start = time.perf_counter()
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.post(
-                    f"{self._base_url}/api/chat", json=payload
-                )
-                response.raise_for_status()
-                data = response.json()
+            response = await self._http().post("/api/chat", json=payload)
+            response.raise_for_status()
+            data = response.json()
         except httpx.TimeoutException as exc:
             logger.warning(
                 "ollama timed out after %.1fs (limit %.0fs, prompt_chars=%d, "
@@ -176,20 +203,16 @@ class OllamaGateway:
 
         used_model = model or self._default_model
         logger.info("Using provider=%s model=%s", self.name, used_model)
-        payload = {
-            "model": used_model,
-            "messages": chat_messages,
-            "stream": True,
-            "options": {"num_predict": max_tokens or self._max_tokens},
-        }
-        timeout = httpx.Timeout(self._timeout, connect=5.0)
+        payload = self._payload(
+            chat_messages,
+            used_model,
+            max_tokens or self._max_tokens,
+            stream=True,
+        )
         try:
-            async with (
-                httpx.AsyncClient(timeout=timeout) as client,
-                client.stream(
-                    "POST", f"{self._base_url}/api/chat", json=payload
-                ) as response,
-            ):
+            async with self._http().stream(
+                "POST", "/api/chat", json=payload
+            ) as response:
                 response.raise_for_status()
                 async for line in response.aiter_lines():
                     if not line.strip():
@@ -223,9 +246,34 @@ class OllamaGateway:
     async def health(self) -> str:
         """Probe the Ollama server. Returns 'ok' when reachable, else 'unavailable'."""
         try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                response = await client.get(f"{self._base_url}/api/tags")
-                response.raise_for_status()
+            response = await self._http().get("/api/tags")
+            response.raise_for_status()
         except Exception:
             return "unavailable"
         return "ok"
+
+    async def warm(self) -> None:
+        """Load the default model into memory ahead of the first user message.
+
+        Called at startup. An empty ``messages`` list makes Ollama load the model
+        and return immediately without generating, so the first real turn is a
+        warm one — this is what removes the multi-second cold-start penalty from
+        the user's very first message rather than merely from later ones.
+        Best-effort: a failure here must never block boot.
+        """
+        try:
+            await self._http().post(
+                "/api/chat",
+                json={
+                    "model": self._default_model,
+                    "messages": [],
+                    "stream": False,
+                    "keep_alive": self._keep_alive,
+                },
+            )
+            logger.info("ollama model %s warmed", self._default_model)
+        except Exception:
+            logger.info(
+                "ollama warm-up skipped (server not reachable yet); "
+                "the first turn will pay the model load"
+            )

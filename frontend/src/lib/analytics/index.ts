@@ -6,4 +6,3 @@ export {
   type AnalyticsProperties,
   type AnalyticsTraits,
 } from "./events";
-export { analyticsEnabled } from "./config";

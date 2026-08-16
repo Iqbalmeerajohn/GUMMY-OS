@@ -36,9 +36,7 @@ async def _fake_search(
 
 
 async def _new_conversation(client: AsyncClient, user_id: uuid.UUID) -> str:
-    resp = await client.post(
-        "/api/v1/conversations", params=_params(user_id), json={}
-    )
+    resp = await client.post("/api/v1/conversations", params=_params(user_id), json={})
     return resp.json()["id"]
 
 

@@ -32,9 +32,7 @@ def _task(intent: str) -> AgentTask:
 
 async def test_planner_agent_grounds_goals_and_uses_persona() -> None:
     llm = FakeLLMProvider(reply="Here is your 30-day plan.")
-    result = await handlers.dispatch(
-        _task("Create a 30-day roadmap"), llm=llm
-    )
+    result = await handlers.dispatch(_task("Create a 30-day roadmap"), llm=llm)
     assert result.output["reply"] == "Here is your 30-day plan."
     system = str(llm.calls[0]["system"])
     assert "Planner Agent" in system

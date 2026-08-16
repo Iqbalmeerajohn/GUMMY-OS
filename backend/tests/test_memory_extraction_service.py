@@ -89,7 +89,9 @@ async def test_explicit_mode_extracts_nothing(
 ) -> None:
     conv_id = await _conv_with_messages(db_session, seed_user, count=6)
     created = await extract_svc.extract_and_store(
-        db_session, user_id=seed_user, conversation_id=conv_id,
+        db_session,
+        user_id=seed_user,
+        conversation_id=conv_id,
         llm=_llm([{"content": "x", "category": "career"}]),
         consent_mode=ConsentMode.EXPLICIT,
     )
@@ -109,7 +111,9 @@ async def test_assisted_mode_does_not_auto_save(
 ) -> None:
     conv_id = await _conv_with_messages(db_session, seed_user, count=6)
     created = await extract_svc.extract_and_store(
-        db_session, user_id=seed_user, conversation_id=conv_id,
+        db_session,
+        user_id=seed_user,
+        conversation_id=conv_id,
         llm=_llm([{"content": "x", "category": "career"}]),
         consent_mode=ConsentMode.ASSISTED,
     )
@@ -127,7 +131,9 @@ async def test_single_short_exchange_is_extracted_per_turn(
     # (no token/message threshold), so one-line facts persist on the first turn.
     conv_id = await _conv_with_messages(db_session, seed_user, count=1)
     created = await extract_svc.extract_and_store(
-        db_session, user_id=seed_user, conversation_id=conv_id,
+        db_session,
+        user_id=seed_user,
+        conversation_id=conv_id,
         llm=_llm([{"content": "Targeting Qualcomm", "category": "career"}]),
         consent_mode=ConsentMode.AUTONOMOUS,
     )
@@ -144,15 +150,21 @@ async def test_watermark_prevents_reextraction(
     conv_id = await _conv_with_messages(db_session, seed_user, count=6)
     llm = _llm([{"content": "Targeting Qualcomm", "category": "career"}])
     first = await extract_svc.extract_and_store(
-        db_session, user_id=seed_user, conversation_id=conv_id,
-        llm=llm, consent_mode=ConsentMode.AUTONOMOUS,
+        db_session,
+        user_id=seed_user,
+        conversation_id=conv_id,
+        llm=llm,
+        consent_mode=ConsentMode.AUTONOMOUS,
     )
     assert len(first) == 1
 
     # No new messages → empty delta → nothing extracted again (no duplicate).
     second = await extract_svc.extract_and_store(
-        db_session, user_id=seed_user, conversation_id=conv_id,
-        llm=llm, consent_mode=ConsentMode.AUTONOMOUS,
+        db_session,
+        user_id=seed_user,
+        conversation_id=conv_id,
+        llm=llm,
+        consent_mode=ConsentMode.AUTONOMOUS,
     )
     assert second == []
     _, total = await mem_repo.list_memories(
@@ -166,7 +178,9 @@ async def test_invalid_category_is_skipped(
 ) -> None:
     conv_id = await _conv_with_messages(db_session, seed_user, count=6)
     created = await extract_svc.extract_and_store(
-        db_session, user_id=seed_user, conversation_id=conv_id,
+        db_session,
+        user_id=seed_user,
+        conversation_id=conv_id,
         llm=_llm([{"content": "x", "category": "not_a_real_category"}]),
         consent_mode=ConsentMode.AUTONOMOUS,
     )
@@ -185,13 +199,16 @@ async def test_low_quality_candidates_are_dropped(
     # even if the model returns them, while a real fact is kept.
     conv_id = await _conv_with_messages(db_session, seed_user, count=6)
     created = await extract_svc.extract_and_store(
-        db_session, user_id=seed_user, conversation_id=conv_id,
+        db_session,
+        user_id=seed_user,
+        conversation_id=conv_id,
         llm=_llm(
             [
-                {"content": "User is seeking information about Vizag",
-                 "category": "profile"},
-                {"content": "User wants to know the weather",
-                 "category": "profile"},
+                {
+                    "content": "User is seeking information about Vizag",
+                    "category": "profile",
+                },
+                {"content": "User wants to know the weather", "category": "profile"},
                 {"content": "Lives in Vizag", "category": "profile"},
             ]
         ),
@@ -206,7 +223,9 @@ async def test_unparseable_output_yields_nothing(
 ) -> None:
     conv_id = await _conv_with_messages(db_session, seed_user, count=6)
     created = await extract_svc.extract_and_store(
-        db_session, user_id=seed_user, conversation_id=conv_id,
+        db_session,
+        user_id=seed_user,
+        conversation_id=conv_id,
         llm=FakeLLMProvider(reply="sorry, I can't do that"),
         consent_mode=ConsentMode.AUTONOMOUS,
     )
@@ -223,7 +242,9 @@ async def test_code_fenced_json_is_parsed(
         + "\n```"
     )
     created = await extract_svc.extract_and_store(
-        db_session, user_id=seed_user, conversation_id=conv_id,
+        db_session,
+        user_id=seed_user,
+        conversation_id=conv_id,
         llm=FakeLLMProvider(reply=fenced),
         consent_mode=ConsentMode.AUTONOMOUS,
     )

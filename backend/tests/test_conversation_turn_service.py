@@ -110,8 +110,12 @@ async def test_run_turn_updates_conversation_lifecycle(
     llm = FakeLLMProvider(reply="ok")
 
     await turn_svc.run_turn(
-        db_session, user_id=seed_user, conversation_id=conv_id,
-        message="first", embedding_service=_embeddings(), llm=llm,
+        db_session,
+        user_id=seed_user,
+        conversation_id=conv_id,
+        message="first",
+        embedding_service=_embeddings(),
+        llm=llm,
     )
     conv = await conversation_service.get_conversation(
         db_session, user_id=seed_user, conversation_id=conv_id
@@ -121,8 +125,12 @@ async def test_run_turn_updates_conversation_lifecycle(
     first_activity = conv.last_message_at
 
     await turn_svc.run_turn(
-        db_session, user_id=seed_user, conversation_id=conv_id,
-        message="second", embedding_service=_embeddings(), llm=llm,
+        db_session,
+        user_id=seed_user,
+        conversation_id=conv_id,
+        message="second",
+        embedding_service=_embeddings(),
+        llm=llm,
     )
     conv = await conversation_service.get_conversation(
         db_session, user_id=seed_user, conversation_id=conv_id
@@ -144,12 +152,20 @@ async def test_run_turn_replays_history_into_prompt(
     llm = FakeLLMProvider(reply="ok")
 
     await turn_svc.run_turn(
-        db_session, user_id=seed_user, conversation_id=conv_id,
-        message="first", embedding_service=_embeddings(), llm=llm,
+        db_session,
+        user_id=seed_user,
+        conversation_id=conv_id,
+        message="first",
+        embedding_service=_embeddings(),
+        llm=llm,
     )
     await turn_svc.run_turn(
-        db_session, user_id=seed_user, conversation_id=conv_id,
-        message="second", embedding_service=_embeddings(), llm=llm,
+        db_session,
+        user_id=seed_user,
+        conversation_id=conv_id,
+        message="second",
+        embedding_service=_embeddings(),
+        llm=llm,
     )
 
     # The second turn's prompt replays the prior user+assistant turns as history.
@@ -169,16 +185,24 @@ async def test_run_turn_grounds_in_memory(
         "app.repositories.search_repository.search_similar_memories", _fake_search
     )
     await mem_repo.create_memory(
-        db_session, user_id=seed_user, category=MemoryCategory.CAREER,
-        content="Targeting Qualcomm", importance_score=0.5, confidence_score=0.5,
+        db_session,
+        user_id=seed_user,
+        category=MemoryCategory.CAREER,
+        content="Targeting Qualcomm",
+        importance_score=0.5,
+        confidence_score=0.5,
     )
     await db_session.commit()
     conv_id = await _new_conv(db_session, seed_user)
     llm = FakeLLMProvider(reply="noted")
 
     result = await turn_svc.run_turn(
-        db_session, user_id=seed_user, conversation_id=conv_id,
-        message="what am I targeting?", embedding_service=_embeddings(), llm=llm,
+        db_session,
+        user_id=seed_user,
+        conversation_id=conv_id,
+        message="what am I targeting?",
+        embedding_service=_embeddings(),
+        llm=llm,
     )
     assert result.memories_used == 1
     assert "Targeting Qualcomm" in str(llm.calls[0]["system"])
@@ -208,8 +232,12 @@ async def test_run_turn_injects_rolling_summary_into_prompt(
 
     llm = FakeLLMProvider(reply="ok")
     await turn_svc.run_turn(
-        db_session, user_id=seed_user, conversation_id=conv_id,
-        message="continue", embedding_service=_embeddings(), llm=llm,
+        db_session,
+        user_id=seed_user,
+        conversation_id=conv_id,
+        message="continue",
+        embedding_service=_embeddings(),
+        llm=llm,
     )
     # calls[0] is the reply generation; calls[1] (on this first turn) is the
     # inline title generation, whose prompt deliberately omits the summary.
@@ -249,8 +277,12 @@ async def test_run_turn_enqueues_enrichment_after_commit(
     conv_id = await _new_conv(db_session, seed_user)
 
     await turn_svc.run_turn(
-        db_session, user_id=seed_user, conversation_id=conv_id,
-        message="hi", embedding_service=_embeddings(), llm=FakeLLMProvider(reply="y"),
+        db_session,
+        user_id=seed_user,
+        conversation_id=conv_id,
+        message="hi",
+        embedding_service=_embeddings(),
+        llm=FakeLLMProvider(reply="y"),
     )
     assert recorded == [(conv_id, seed_user)]
 
@@ -259,10 +291,51 @@ async def test_extraction_consumer_is_still_a_noop(
     db_session: AsyncSession, seed_user: uuid.UUID
 ) -> None:
     # M6 will implement this; in M5 it must remain a no-op writing nothing.
-    job = enrichment.EnrichmentJob(
-        conversation_id=uuid.uuid4(), user_id=seed_user
-    )
+    job = enrichment.EnrichmentJob(conversation_id=uuid.uuid4(), user_id=seed_user)
     result = await enrichment.extract_memories(
         db_session, job, FakeLLMProvider(reply="x"), _embeddings()
     )
     assert result is None
+
+
+async def test_run_turn_answers_a_recall_question_without_the_model(
+    db_session: AsyncSession,
+    seed_user: uuid.UUID,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The non-streaming endpoint must take the fast path too.
+
+    Instant recall was wired into the streamed turn first; a client that posts a
+    message instead of streaming it would otherwise wait ~3 s for a model to
+    repeat a fact already on disk.
+    """
+    monkeypatch.setattr(
+        "app.repositories.search_repository.search_similar_memories", _fake_search
+    )
+    db_session.add(
+        Memory(
+            user_id=seed_user,
+            category=MemoryCategory.PROFILE,
+            content="Lives in Bangalore",
+            importance_score=0.5,
+            confidence_score=0.5,
+        )
+    )
+    await db_session.commit()
+    conv_id = await _new_conv(db_session, seed_user)
+
+    result = await turn_svc.run_turn(
+        db_session,
+        user_id=seed_user,
+        conversation_id=conv_id,
+        message="where do I live?",
+        embedding_service=_embeddings(),
+        llm=FakeLLMProvider(reply="THE MODEL RAN"),
+    )
+
+    assert result.reply == "Lives in Bangalore."
+    assert result.model != "fake-model"
+    items, _ = await msg_repo.list_messages(
+        db_session, conversation_id=conv_id, user_id=seed_user, limit=10, offset=0
+    )
+    assert (items[1].extra_metadata or {})["instant_recall"] is True

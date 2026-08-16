@@ -16,9 +16,7 @@ from app.models.enums import MessageRole
 from app.models.message import Message
 
 
-async def next_seq(
-    session: AsyncSession, conversation_id: uuid.UUID
-) -> int:
+async def next_seq(session: AsyncSession, conversation_id: uuid.UUID) -> int:
     """Return the next monotonic ordinal for a conversation (1-based).
 
     Flushed-but-uncommitted rows are visible within the session, so successive
@@ -27,9 +25,7 @@ async def next_seq(
     into an error rather than silent reordering.
     """
     current = await session.scalar(
-        select(func.max(Message.seq)).where(
-            Message.conversation_id == conversation_id
-        )
+        select(func.max(Message.seq)).where(Message.conversation_id == conversation_id)
     )
     return int(current or 0) + 1
 

@@ -59,9 +59,7 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("content", sa.Text(), nullable=False),
-        sa.Column(
-            "covers_through_message_id", sa.Uuid(), nullable=True
-        ),
+        sa.Column("covers_through_message_id", sa.Uuid(), nullable=True),
         sa.Column("version_number", sa.Integer(), nullable=False),
         sa.Column("model", sa.String(length=128), nullable=True),
         sa.Column(
@@ -127,18 +125,14 @@ def upgrade() -> None:
         sa.Column("embedding_model", sa.String(length=128), nullable=False),
         sa.Column("embedding_dimension", sa.Integer(), nullable=False),
         sa.Column("content_hash", sa.String(length=64), nullable=False),
-        sa.Column(
-            "embedding_vector", Vector(EMBEDDING_DIMENSION), nullable=False
-        ),
+        sa.Column("embedding_vector", Vector(EMBEDDING_DIMENSION), nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
             server_default=sa.text("now()"),
             nullable=False,
         ),
-        sa.PrimaryKeyConstraint(
-            "id", name="pk_conversation_summary_embeddings"
-        ),
+        sa.PrimaryKeyConstraint("id", name="pk_conversation_summary_embeddings"),
         sa.ForeignKeyConstraint(
             ["summary_id"],
             ["conversation_summaries.id"],
@@ -188,13 +182,9 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     for table in ("conversation_summary_embeddings", "conversation_summaries"):
-        op.execute(
-            f"DROP POLICY IF EXISTS {table}_tenant_isolation ON {table}"
-        )
+        op.execute(f"DROP POLICY IF EXISTS {table}_tenant_isolation ON {table}")
         op.execute(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY")
 
-    op.execute(
-        "DROP INDEX IF EXISTS ix_conversation_summary_embeddings_vector"
-    )
+    op.execute("DROP INDEX IF EXISTS ix_conversation_summary_embeddings_vector")
     op.drop_table("conversation_summary_embeddings")
     op.drop_table("conversation_summaries")

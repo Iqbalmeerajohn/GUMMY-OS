@@ -56,9 +56,7 @@ async def test_list_and_get_actions(
     assert body["items"][0]["id"] == str(approval_id)
     assert body["items"][0]["preview"]["tool_key"] == "email_send"
 
-    fetched = await api_client.get(
-        f"/api/v1/actions/{approval_id}", params=_q()
-    )
+    fetched = await api_client.get(f"/api/v1/actions/{approval_id}", params=_q())
     assert fetched.status_code == 200
     assert fetched.json()["status"] == "pending"
 
@@ -75,9 +73,7 @@ async def test_approve_then_conflict(
     assert approved.json()["status"] == "approved"
     assert approved.json()["decided_at"] is not None
 
-    again = await api_client.post(
-        f"/api/v1/actions/{approval_id}/reject", params=_q()
-    )
+    again = await api_client.post(f"/api/v1/actions/{approval_id}/reject", params=_q())
     assert again.status_code == 409
     assert again.json()["error"]["code"] == "approval_already_decided"
 
@@ -99,9 +95,7 @@ async def test_foreign_tenant_404(
     sessionmaker_fixture: async_sessionmaker[AsyncSession],
 ) -> None:
     approval_id = await _seed_pending(sessionmaker_fixture)
-    fetched = await api_client.get(
-        f"/api/v1/actions/{approval_id}", params=_q(_OTHER)
-    )
+    fetched = await api_client.get(f"/api/v1/actions/{approval_id}", params=_q(_OTHER))
     assert fetched.status_code == 404
     assert fetched.json()["error"]["code"] == "approval_not_found"
     decided = await api_client.post(
@@ -113,9 +107,7 @@ async def test_foreign_tenant_404(
 
 
 @pytest.mark.parametrize("verb", ["approve", "reject"])
-async def test_unknown_approval_404(
-    api_client: AsyncClient, verb: str
-) -> None:
+async def test_unknown_approval_404(api_client: AsyncClient, verb: str) -> None:
     response = await api_client.post(
         f"/api/v1/actions/{uuid.uuid4()}/{verb}", params=_q()
     )

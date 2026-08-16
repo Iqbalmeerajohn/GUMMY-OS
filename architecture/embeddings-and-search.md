@@ -112,8 +112,9 @@ pgvector's `<=>` is Postgres-only, so the suite splits cleanly:
 - **Search query correctness** — the cosine-ranking statement is **compiled to PostgreSQL
   SQL** and asserted to contain `<=>`, the tenant/`deleted_at`/model filters, `ORDER BY`,
   and `LIMIT` — no database required.
-- **Live ranking** — verified against Supabase (pgvector enabled) as a manual/integration
-  step; identical query text yields cosine distance ≈ 0 and ranks its memory first.
+- **Live ranking** — verified against local PostgreSQL 16 with pgvector as a
+  manual/integration step; identical query text yields cosine distance ≈ 0 and ranks
+  its memory first.
 
 ---
 
