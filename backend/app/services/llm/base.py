@@ -45,6 +45,34 @@ class LLMProvider(Protocol):
 
 
 @runtime_checkable
+class SupportsJsonMode(Protocol):
+    """A provider that can constrain its output to syntactically valid JSON.
+
+    Optional capability, detected with ``isinstance(llm, SupportsJsonMode)``.
+
+    This exists because asking a small local model for JSON in the prompt is not
+    enough. Observed from ``qwen2.5:3b`` on the memory-extraction prompt:
+
+        [{"content": "Iqbal lives in Bangalore", "category": "profile}]
+
+    — a missing closing quote, which fails ``json.loads`` and silently discards
+    the fact. Constrained decoding makes that class of error impossible at the
+    source rather than repairing it afterwards.
+    """
+
+    async def generate_json(
+        self,
+        *,
+        system: str,
+        messages: list[dict[str, str]],
+        model: str | None = None,
+        max_tokens: int | None = None,
+    ) -> LLMResponse:
+        """Produce a completion guaranteed to parse as JSON."""
+        ...
+
+
+@runtime_checkable
 class SupportsStreaming(Protocol):
     """A provider that can stream a completion as incremental text deltas.
 

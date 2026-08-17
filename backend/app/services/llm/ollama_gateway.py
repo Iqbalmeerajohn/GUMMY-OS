@@ -82,14 +82,43 @@ class OllamaGateway:
         num_predict: int,
         *,
         stream: bool,
+        json_mode: bool = False,
     ) -> dict:
-        return {
+        payload: dict = {
             "model": model,
             "messages": chat_messages,
             "stream": stream,
             "keep_alive": self._keep_alive,
             "options": {"num_predict": num_predict},
         }
+        if json_mode:
+            # Constrained decoding: Ollama restricts sampling to tokens that keep
+            # the output valid JSON. Without it, a 3B model reliably emits things
+            # like `"category": "profile}]` — a missing quote that fails to parse
+            # and silently loses the fact being extracted.
+            payload["format"] = "json"
+        return payload
+
+    async def generate_json(
+        self,
+        *,
+        system: str,
+        messages: list[dict[str, str]],
+        model: str | None = None,
+        max_tokens: int | None = None,
+    ) -> LLMResponse:
+        """Generate with constrained decoding, so the output always parses.
+
+        Implements ``SupportsJsonMode``. Same call as :meth:`generate` with
+        Ollama's ``format: json`` set.
+        """
+        return await self.generate(
+            system=system,
+            messages=messages,
+            model=model,
+            max_tokens=max_tokens,
+            json_mode=True,
+        )
 
     @observe_generation
     async def generate(
@@ -99,6 +128,7 @@ class OllamaGateway:
         messages: list[dict[str, str]],
         model: str | None = None,
         max_tokens: int | None = None,
+        json_mode: bool = False,
     ) -> LLMResponse:
         chat_messages: list[dict[str, str]] = []
         if system:
@@ -108,7 +138,9 @@ class OllamaGateway:
         model_name = model or self._default_model
         logger.info("Using provider=%s model=%s", self.name, model_name)
         num_predict = max_tokens or self._max_tokens
-        payload = self._payload(chat_messages, model_name, num_predict, stream=False)
+        payload = self._payload(
+            chat_messages, model_name, num_predict, stream=False, json_mode=json_mode
+        )
 
         # Non-streaming: the whole generation arrives in one body, so self._timeout
         # is effectively the read budget. Keep connect short so a dead server fails

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,7 +34,7 @@ from app.repositories import conversation_repository as conv_repo
 from app.repositories import memory_source_repository as src_repo
 from app.repositories import message_repository as msg_repo
 from app.schemas.memory import MemoryCreate
-from app.services.llm.base import LLMProvider
+from app.services.llm.base import LLMProvider, SupportsJsonMode
 from app.services.memory import memory_service, timeline, user_profile_service
 
 logger = logging.getLogger(__name__)
@@ -102,6 +103,29 @@ def _is_low_quality(content: str) -> bool:
     return any(marker in lowered for marker in _LOW_QUALITY_MARKERS)
 
 
+# Last-resort recovery for a malformed item. Small models drop a closing quote
+# often enough that discarding the whole batch loses real facts — observed from
+# qwen2.5:3b: `[{"content": "Iqbal lives in Bangalore", "category": "profile}]`.
+# Constrained decoding (SupportsJsonMode) prevents this at the source; this is
+# the net for providers that cannot constrain.
+_SALVAGE_ITEM = re.compile(
+    r'"content"\s*:\s*"(?P<content>(?:[^"\\]|\\.)*)"'
+    r'\s*,\s*"category"\s*:\s*"?(?P<category>[a-z_]+)',
+    re.IGNORECASE,
+)
+
+
+def _salvage(text: str) -> list[dict[str, str]]:
+    """Recover content/category pairs from JSON that failed to parse."""
+    items = [
+        {"content": m.group("content"), "category": m.group("category")}
+        for m in _SALVAGE_ITEM.finditer(text)
+    ]
+    if items:
+        logger.info("extraction: salvaged %d item(s) from malformed JSON", len(items))
+    return items
+
+
 def _parse_candidates(text: str) -> list[tuple[MemoryCategory, str]]:
     """Parse the LLM's JSON array into validated (category, content) pairs."""
     cleaned = text.strip()
@@ -111,11 +135,21 @@ def _parse_candidates(text: str) -> list[tuple[MemoryCategory, str]]:
         if cleaned.lower().startswith("json"):
             cleaned = cleaned[4:]
         cleaned = cleaned.strip()
+    raw: object
     try:
         raw = json.loads(cleaned)
     except (json.JSONDecodeError, ValueError):
-        logger.warning("extraction: could not parse LLM output as JSON")
-        return []
+        raw = _salvage(cleaned)
+        if not raw:
+            logger.warning("extraction: could not parse LLM output as JSON")
+            return []
+    # JSON mode yields an object, not a bare array, when the model wraps the list
+    # in a key ({"memories": [...]}) — accept the first list-valued field.
+    if isinstance(raw, dict):
+        raw = next(
+            (v for v in raw.values() if isinstance(v, list)),
+            [raw] if "content" in raw else [],
+        )
     if not isinstance(raw, list):
         return []
 
@@ -185,10 +219,20 @@ async def extract_and_store(
     await conv_repo.set_extraction_watermark(session, conversation, seq=target_seq)
 
     transcript = "\n".join(f"{m.role.value}: {m.content}" for m in delta)
-    response = await llm.generate(
-        system=_EXTRACTION_SYSTEM,
-        messages=[{"role": "user", "content": transcript}],
-    )
+    # Constrained decoding when the provider supports it. Free-form prompting for
+    # JSON is not reliable on a 3B local model, and an unparseable response
+    # silently discards every fact in the window — the failure that makes the
+    # product's central promise stop working with no visible error.
+    if isinstance(llm, SupportsJsonMode):
+        response = await llm.generate_json(
+            system=_EXTRACTION_SYSTEM,
+            messages=[{"role": "user", "content": transcript}],
+        )
+    else:
+        response = await llm.generate(
+            system=_EXTRACTION_SYSTEM,
+            messages=[{"role": "user", "content": transcript}],
+        )
     candidates = _parse_candidates(response.text)[:EXTRACTION_MAX_MEMORIES]
 
     created: list[Memory] = []
