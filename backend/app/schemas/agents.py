@@ -128,3 +128,7 @@ class OrchestrationResult(BaseModel):
     memories_used: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
+    # Contents of the memories that actually grounded the reply, so the client
+    # can render its "Memory Used" disclosure. Contents only — never embeddings
+    # or scores.
+    grounding_memories: list[str] = Field(default_factory=list)

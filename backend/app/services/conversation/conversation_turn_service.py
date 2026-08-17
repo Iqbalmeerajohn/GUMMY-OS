@@ -32,12 +32,13 @@ from app.core.constants import (
 )
 from app.core.observability import capture_exception
 from app.models.conversation import Conversation
-from app.models.enums import AgentContext, MessageRole, SummaryType
+from app.models.enums import MessageRole, SummaryType
 from app.models.message import Message
 from app.repositories import conversation_repository as conv_repo
 from app.repositories import conversation_summary_repository as sum_repo
 from app.repositories import message_repository as msg_repo
 from app.schemas.goal import GoalCandidate
+from app.services.agents.prompts.formatting import FORMATTING_RULES
 from app.services.conversation import (
     conversation_continuity_service,
     conversation_service,
@@ -51,7 +52,7 @@ from app.services.knowledge import (
     knowledge_retrieval_service,
 )
 from app.services.knowledge.knowledge_context_builder import CompiledKnowledge
-from app.services.llm.base import LLMProvider, SupportsStreaming
+from app.services.llm.base import LLMProvider
 from app.services.memory import (
     instant_recall,
     prompt_builder,
@@ -138,69 +139,6 @@ def _detect_goal_candidate(message: str) -> GoalCandidate | None:
     except Exception:
         logger.exception("goal detection failed; turn unaffected")
         return None
-
-
-async def _select_stream_agent(
-    *,
-    message: str,
-    agent_context: AgentContext | None,
-    agent_key: str | None,
-    knowledge_block: str,
-    llm: LLMProvider,
-) -> tuple[str | None, dict | None, str]:
-    """Route a streamed turn to an agent and resolve its persona (M8).
-
-    Mirrors the orchestrated path's routing for the streaming core: the
-    deterministic keyword Router (free; no LLM by default) picks the agent, and
-    the specialist's persona is prepended to the system prompt so the streamed
-    reply speaks in the right voice. Returns
-    ``(selected_agent, assistant_metadata, persona)``; a no-op
-    ``(None, None, "")`` when orchestration is disabled, leaving the legacy
-    stream byte-identical. Best-effort — any routing fault degrades to the
-    general grounded stream so a reply is never lost.
-    """
-    settings = get_settings()
-    if not settings.agents_orchestration_enabled:
-        return None, None, ""
-    try:
-        # Lazy imports keep the conversation domain free of a module-level
-        # agents dependency (same pattern as run_turn's orchestration branch).
-        from app.services.agents import router as agent_router
-        from app.services.agents.manifests import GENERAL_AGENT_KEY
-        from app.services.agents.prompts import PERSONA_BUILDERS
-        from app.services.agents.prompts.formatting import FORMATTING_RULES
-        from app.services.agents.registry import get_registry
-
-        decision = await agent_router.route(
-            intent=message,
-            registry=get_registry(),
-            agent_context=agent_context,
-            forced_agent_key=agent_key,
-            llm=llm if settings.agents_router_llm_fallback else None,
-            fast_model=settings.claude_model_fast,
-        )
-        selected_agent = decision.steps[-1].agent_key
-        persona = ""
-        persona_fn = PERSONA_BUILDERS.get(selected_agent)
-        if persona_fn is not None and selected_agent != GENERAL_AGENT_KEY:
-            persona = persona_fn(message, knowledge_block)
-        # The non-streamed specialist handler prepends FORMATTING_RULES; this
-        # path did not, so streamed replies could emit markdown tables that the
-        # incremental renderer cannot display correctly. Every reply the user
-        # actually sees comes through here, so the rules belong on this path
-        # more than on the one they were written for.
-        persona = f"{persona}\n\n{FORMATTING_RULES}" if persona else FORMATTING_RULES
-        metadata = {
-            "agent_key": selected_agent,
-            "route_shape": decision.plan_shape.value,
-            # A5: persist the routing explanation on the streamed reply too.
-            "confidence": decision.confidence,
-            "routing_reason": decision.rationale,
-        }
-        return selected_agent, metadata, persona
-    except Exception:
-        logger.exception("stream agent routing failed; streaming general reply")
-        return None, None, ""
 
 
 def _emit_stream_route_analytics(
@@ -491,7 +429,12 @@ async def generate_grounded_reply(
     prompt_build_ms = _ms(prompt_start)
 
     llm_start = time.perf_counter()
-    response = await llm.generate(system=payload.system, messages=payload.messages)
+    # The shared formatting rules lead here exactly as they do in the agent
+    # grounding path. This core is the orchestrator's fallback, so a reply that
+    # arrives through it must render the same way as one that does not —
+    # otherwise a fallback silently changes how the answer looks.
+    system = f"{FORMATTING_RULES}\n\n{payload.system}"
+    response = await llm.generate(system=system, messages=payload.messages)
     first_token_ms = _ms(llm_start)
 
     _log_turn_timing(
@@ -893,102 +836,120 @@ async def stream_turn(
             yield event
         return
 
-    # Build the grounded prompt (same pipeline as generate_grounded_reply).
-    # Embedding is timed separately from candidate retrieval/ranking by
-    # pre-embedding the query and handing the vector to the retriever.
-    embed_start = time.perf_counter()
-    query_vector = await embedding_service.embed_query(message)
-    embedding_ms = _ms(embed_start)
+    # The canonical reply path: routing, context, agent execution, and tracing
+    # all happen inside the orchestrator, streamed. This used to be a second,
+    # parallel implementation of routing + knowledge + prompt assembly living
+    # here, which is how the streamed path drifted from the orchestrated one
+    # (M8.5 shipped formatting rules to only one of them). There is now one
+    # pipeline; the non-streaming turn drains the same generator.
+    # Lazy import, as elsewhere in this module: the conversation domain carries
+    # no module-level dependency on the agent framework.
+    from app.schemas.agents import OrchestrationResult
+    from app.services.agents import orchestrator_service
 
-    # Multi-Agent Workforce (M8): pick the agent that answers *before* building
-    # knowledge, so M8.5 can gate live web search on the selected specialist.
-    # Deterministic + free (the keyword router runs without an LLM by default);
-    # ``None`` selected_agent on the legacy path leaves the prompt unchanged.
-    selected_agent, assistant_metadata, persona = await _select_stream_agent(
-        message=message,
-        agent_context=conversation.agent_context,
-        agent_key=agent_key,
-        knowledge_block="",
-        llm=llm,
-    )
+    chunks: list[str] = []
+    llm_start = time.perf_counter()
+    first_token_ms: float | None = None
+    orch: OrchestrationResult | None = None
+    stages: list[str] = []
 
-    retrieve_start = time.perf_counter()
-    knowledge, web_sources = await _build_knowledge(
-        session,
-        user_id=user_id,
-        message=message,
-        embedding_service=embedding_service,
-        attachment_file_ids=attachment_file_ids,
-        query_vector=query_vector,
-        agent_key=selected_agent,
-    )
-    retrieve_memories_ms = _ms(retrieve_start)
+    try:
+        async for event in orchestrator_service.orchestrate_stream(
+            session,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            message=message,
+            embedding_service=embedding_service,
+            llm=llm,
+            token_budget=token_budget,
+            max_memories=max_memories,
+            history=history,
+            summary=summary_text,
+            agent_context=conversation.agent_context,
+            agent_key=agent_key,
+            user_identity=identity,
+            attachment_file_ids=attachment_file_ids,
+        ):
+            kind = event["type"]
+            if kind == "delta":
+                if first_token_ms is None:
+                    first_token_ms = _ms(llm_start)
+                chunks.append(event["text"])
+                yield event
+            elif kind == "status":
+                # Safe progress only — a stage name and an agent key, never
+                # reasoning. Forwarded so the client can show what is happening.
+                stages.append(str(event["stage"]))
+                yield event
+            elif kind == "result":
+                orch = event["result"]
+    except Exception as exc:
+        logger.exception("orchestrated stream failed; falling back to the legacy core")
+        capture_exception(
+            exc,
+            component="agent_orchestration_stream",
+            conversation_id=str(conversation_id),
+        )
 
-    prompt_start = time.perf_counter()
-    # Continuity: when the user refers back to a past discussion, fold in the
-    # most relevant *other* conversations (best-effort; never blocks the reply).
-    prior_context = await conversation_continuity_service.gather_prior_context(
-        session,
-        user_id=user_id,
-        message=message,
-        embedding_service=embedding_service,
-        current_conversation_id=conversation_id,
-    )
-    payload = prompt_builder.build_prompt(
-        context=_EMPTY_CONTEXT,
-        query=message,
-        history=history,
-        summary=summary_text,
-        identity=identity,
-        prior_context=prior_context,
-        knowledge=knowledge.block,
-    )
-    # B11: carry the live web sources on the persisted metadata so the client can
-    # render the 🌐 Web Sources disclosure from the refetched message too.
-    if web_sources and assistant_metadata is not None:
-        assistant_metadata = {**assistant_metadata, "web_sources": web_sources}
-    system = f"{persona}\n\n{payload.system}" if persona else payload.system
+    if orch is not None:
+        reply_text = "".join(chunks) or orch.reply
+        model = orch.model
+        memories_used = orch.memories_used
+        assistant_metadata = orch.message_metadata
+        meta = assistant_metadata or {}
+        selected_agent = str(meta.get("agent_key", "")) or None
+        web_sources = [s for s in meta.get("web_sources", []) if isinstance(s, dict)]
+        input_tokens = orch.input_tokens
+        output_tokens = orch.output_tokens
+        proposed = orch.proposed_memories
+        grounding_memories = orch.grounding_memories
+    else:
+        # Guaranteed fallback: the user still gets a reply. Nothing has been
+        # emitted yet on this path (deltas only flow once orchestration
+        # succeeds far enough to produce them), so the stream stays coherent.
+        fallback = await generate_grounded_reply(
+            session,
+            user_id=user_id,
+            message=message,
+            embedding_service=embedding_service,
+            llm=llm,
+            token_budget=token_budget,
+            max_memories=max_memories,
+            history=history,
+            summary=summary_text,
+            identity=identity,
+            conversation_id=conversation_id,
+            attachment_file_ids=attachment_file_ids,
+        )
+        reply_text = fallback.reply
+        model = fallback.model
+        memories_used = fallback.memories_used
+        assistant_metadata = None
+        selected_agent = None
+        web_sources = []
+        input_tokens = fallback.input_tokens
+        output_tokens = fallback.output_tokens
+        proposed = []
+        grounding_memories = []
+        if not chunks:
+            yield {"type": "delta", "text": reply_text}
+
     if selected_agent is not None:
         _emit_stream_route_analytics(
             user_id=user_id,
             selected_agent=selected_agent,
             overridden=agent_key is not None,
         )
-    prompt_build_ms = _ms(prompt_start)
-
-    # Stream the reply, accumulating the full text for persistence. Record the
-    # latency to the FIRST emitted token — the metric that drives perceived speed.
-    chunks: list[str] = []
-    llm_start = time.perf_counter()
-    first_token_ms: float | None = None
-    if isinstance(llm, SupportsStreaming):
-        async for chunk in llm.stream(system=system, messages=payload.messages):
-            if first_token_ms is None:
-                first_token_ms = _ms(llm_start)
-            chunks.append(chunk)
-            yield {"type": "delta", "text": chunk}
-        model = getattr(llm, "_default_model", llm.name)
-    else:
-        response = await llm.generate(system=system, messages=payload.messages)
-        first_token_ms = _ms(llm_start)
-        chunks.append(response.text)
-        model = response.model
-        yield {"type": "delta", "text": response.text}
 
     _log_turn_timing(
         phase="stream",
         conversation_id=conversation_id,
         timings={
-            "embedding_ms": embedding_ms,
-            "retrieve_memories_ms": retrieve_memories_ms,
-            "prompt_build_ms": prompt_build_ms,
             "first_token_ms": first_token_ms,
             "total_turn_ms": _ms(turn_start),
         },
-        memories_used=knowledge.memories_used,
+        memories_used=memories_used,
     )
-
-    reply_text = "".join(chunks)
 
     assistant_message = await msg_repo.append_message(
         session,
@@ -998,8 +959,8 @@ async def stream_turn(
         content=reply_text,
         token_count=estimate_tokens(reply_text),
         model=model,
-        input_tokens=estimate_tokens(system),
-        output_tokens=estimate_tokens(reply_text),
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
         extra_metadata=assistant_metadata,
     )
 
@@ -1028,6 +989,24 @@ async def stream_turn(
 
     enrichment_worker.enqueue(conversation_id, user_id)
 
+    # Agent-proposed memories, post-commit and best-effort — the same handling
+    # ``run_turn`` gives them. The streamed path previously dropped these
+    # entirely, so anything an agent proposed was lost for the only turn type
+    # the UI actually runs.
+    if proposed:
+        from app.services.agents import agent_memory
+
+        try:
+            await agent_memory.propose(
+                session,
+                user_id=user_id,
+                candidates=proposed,
+                agent_key="orchestrator",
+                conversation_id=conversation_id,
+            )
+        except Exception:
+            logger.exception("agent memory proposal failed; reply unaffected")
+
     # Goal Intelligence (M5.5): a goal-like statement in the user's message is
     # surfaced as a candidate for the client to render a "Goal Detected" prompt.
     # It is never auto-created — confirmation is an explicit user action.
@@ -1039,21 +1018,20 @@ async def stream_turn(
         "user_message_id": str(user_message.id),
         "assistant_message_id": str(assistant_message.id),
         "model": model,
-        "memories_used": knowledge.memories_used,
+        "memories_used": memories_used,
         # Short contents of the grounding memories so the client can show a
         # "Memory Used" disclosure (never the embeddings/scores — just the fact).
-        "memories": [
-            i.content
-            for i in knowledge.items
-            if i.source == knowledge_retrieval_service.SOURCE_MEMORY
-        ],
+        "memories": grounding_memories,
         "message_count": message_count,
-        # M8: the agent that answered (Auto-routed or manually overridden), so
-        # the client badges the reply with the real backend decision. ``None``
-        # on the legacy path (orchestration disabled).
+        # The agent that answered (Auto-routed or manually overridden), so the
+        # client badges the reply with the real backend decision. ``None`` when
+        # the orchestrator failed and the legacy core produced the reply.
         "agent": selected_agent,
-        # M8.5: live web sources used to ground this reply (B11), or [].
+        # Live web sources used to ground this reply, or [].
         "web_sources": web_sources,
+        # The stages this turn passed through, for the orchestrator activity
+        # view. Stage names only — never reasoning.
+        "stages": stages,
         "goal_candidate": (
             goal_candidate.model_dump(mode="json") if goal_candidate else None
         ),

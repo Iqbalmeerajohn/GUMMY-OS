@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from collections.abc import AsyncIterator
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,6 +49,7 @@ from app.schemas.agents import (
     ContextPack,
     CostInfo,
     OrchestrationResult,
+    RouteStep,
     RoutingDecision,
 )
 from app.services.agents import (
@@ -57,10 +59,12 @@ from app.services.agents import (
     router,
     run_recorder,
 )
+from app.services.agents.handlers import grounding
 from app.services.agents.manifests import GENERAL_AGENT_KEY
 from app.services.agents.registry import get_registry
 from app.services.embeddings.embedding_service import EmbeddingService
-from app.services.llm.base import LLMProvider
+from app.services.llm.base import LLMProvider, LLMResponse, SupportsStreaming
+from app.utils.tokens import estimate_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -395,6 +399,104 @@ async def _run_parallel(
     return results
 
 
+async def _run_terminal_streaming(
+    session: AsyncSession,
+    *,
+    run: AgentRun,
+    route_step: RouteStep,
+    base_pack: ContextPack,
+    scratch: list[dict],
+    guard: _RunGuard,
+    message: str,
+    llm: LLMProvider,
+    token_budget: int,
+    max_memories: int,
+    user_identity: str | None,
+) -> AsyncIterator[dict]:
+    """Execute the LAST step of a plan, streaming the model's output.
+
+    Yields ``{"type": "delta", "text": ...}`` per chunk and finally
+    ``{"type": "step", "agent_key": ..., "result": AgentResult}``.
+
+    Only the terminal step streams: earlier pipeline steps produce findings that
+    are folded into the next step's prompt, so their text is never shown to the
+    user. Grounding is ``handlers.prepare`` — the same call the non-streaming
+    path makes — so a streamed reply and a generated reply are built from an
+    identical prompt. Agents that answer without a model (recall) have nothing to
+    stream and fall back to ``dispatch``.
+    """
+    guard.check_before_dispatch()
+    intent = route_step.intent or message
+    step = await run_recorder.open_step(
+        session,
+        run,
+        agent_key=route_step.agent_key,
+        input={
+            "message_preview": message[:AGENT_TRACE_PREVIEW_CHARS],
+            "intent": route_step.intent,
+            "streamed": True,
+        },
+    )
+    await _record_task_hop(session, run, agent_key=route_step.agent_key, intent=intent)
+    task = _make_task(
+        run_id=run.id,
+        agent_key=route_step.agent_key,
+        intent=intent,
+        base_pack=base_pack,
+        scratch=scratch,
+        token_budget=token_budget,
+        max_memories=max_memories,
+        user_identity=user_identity,
+    )
+
+    try:
+        prepared = await handlers.prepare(task)
+        if prepared is None or not isinstance(llm, SupportsStreaming):
+            # No model call to stream (recall), or a provider without streaming:
+            # produce the result normally and emit it as a single delta, so the
+            # client sees the same event shape either way.
+            result = await handlers.dispatch(task, llm=llm)
+            yield {"type": "delta", "text": str(result.output.get("reply", ""))}
+        else:
+            chunks: list[str] = []
+            async for chunk in llm.stream(
+                system=prepared.system, messages=prepared.messages
+            ):
+                chunks.append(chunk)
+                yield {"type": "delta", "text": chunk}
+            text = "".join(chunks)
+            result = grounding.finish(
+                prepared,
+                LLMResponse(
+                    text=text,
+                    model=getattr(llm, "_default_model", llm.name),
+                    input_tokens=estimate_tokens(prepared.system),
+                    output_tokens=estimate_tokens(text),
+                    stop_reason="end_turn",
+                ),
+            )
+    except Exception as exc:
+        await run_recorder.close_step_failure(session, step, error=str(exc))
+        await _record_error_hop(
+            session, run, agent_key=route_step.agent_key, error=str(exc)
+        )
+        raise
+
+    guard.record(result)
+    await run_recorder.close_step_success(
+        session,
+        run,
+        step,
+        output=result.output,
+        cost_tokens=result.cost.tokens,
+        cost_usd=result.cost.usd,
+    )
+    await _record_result_hop(
+        session, run, agent_key=route_step.agent_key, result=result
+    )
+    yield {"type": "step", "agent_key": route_step.agent_key, "result": result}
+
+
 async def orchestrate(
     session: AsyncSession,
     *,
@@ -412,13 +514,72 @@ async def orchestrate(
     user_identity: str | None = None,
     attachment_file_ids: list[uuid.UUID] | None = None,
 ) -> OrchestrationResult:
+    """Run one orchestrated turn and return the completed result.
+
+    A thin drain of :func:`orchestrate_stream` with streaming off, so there is
+    exactly one orchestration implementation rather than a streamed pipeline and
+    a non-streamed one that can drift apart.
+    """
+    result: OrchestrationResult | None = None
+    async for event in orchestrate_stream(
+        session,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        message=message,
+        embedding_service=embedding_service,
+        llm=llm,
+        token_budget=token_budget,
+        max_memories=max_memories,
+        history=history,
+        summary=summary,
+        agent_context=agent_context,
+        agent_key=agent_key,
+        user_identity=user_identity,
+        attachment_file_ids=attachment_file_ids,
+        stream=False,
+    ):
+        if event["type"] == "result":
+            result = event["result"]
+    if result is None:  # pragma: no cover - the generator always emits a result
+        raise RuntimeError("orchestration produced no result")
+    return result
+
+
+async def orchestrate_stream(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    message: str,
+    embedding_service: EmbeddingService,
+    llm: LLMProvider,
+    token_budget: int = DEFAULT_CONTEXT_TOKEN_BUDGET,
+    max_memories: int = DEFAULT_CONTEXT_MAX_MEMORIES,
+    history: list[dict] | None = None,
+    summary: str | None = None,
+    agent_context: AgentContext | None = None,
+    agent_key: str | None = None,
+    user_identity: str | None = None,
+    attachment_file_ids: list[uuid.UUID] | None = None,
+    stream: bool = True,
+) -> AsyncIterator[dict]:
     """Run one orchestrated turn (routed single | pipeline | parallel).
+
+    The single orchestration implementation. Yields, in order:
+
+    * ``{"type": "status", "stage": ..., "agent": ...}`` — safe progress the UI
+      can show. Never chain-of-thought: a stage name and an agent key only.
+    * ``{"type": "delta", "text": ...}`` — the reply, as it is produced.
+    * ``{"type": "result", "result": OrchestrationResult}`` — exactly once, last.
 
     ``agent_key`` is a manual override: when set, the Router is bypassed and that
     agent answers (Auto routing otherwise). Flush-only — the caller owns the
     commit, so the run/step/hop trace lands atomically with the conversation
-    messages. Raises on total failure; the caller falls back to the legacy
-    reply core.
+    messages. Raises on total failure; the caller falls back to the legacy reply
+    core.
+
+    ``stream=False`` runs the identical pipeline without incremental output; the
+    reply still arrives as one delta before the result.
     """
     settings = get_settings()
     with langfuse_obs.observe_agent_run(
@@ -426,6 +587,7 @@ async def orchestrate(
         input={"message": message[:AGENT_TRACE_PREVIEW_CHARS]},
         metadata={"conversation_id": str(conversation_id)},
     ) as span:
+        yield {"type": "status", "stage": "understanding", "agent": None}
         with langfuse_obs.observe_operation(
             "agent.route", input={"message": message[:AGENT_TRACE_PREVIEW_CHARS]}
         ) as route_span:
@@ -468,6 +630,7 @@ async def orchestrate(
         )
         guard = _RunGuard()
         try:
+            yield {"type": "status", "stage": "retrieving_context", "agent": None}
             base_pack = await context_builder.build(
                 session,
                 user_id=user_id,
@@ -478,11 +641,6 @@ async def orchestrate(
                 summary=summary,
                 attachment_file_ids=attachment_file_ids,
             )
-            runner = (
-                _run_parallel
-                if decision.plan_shape == PlanShape.PARALLEL
-                else _run_sequential
-            )
             with langfuse_obs.observe_operation(
                 "agent.execute",
                 metadata={
@@ -490,18 +648,87 @@ async def orchestrate(
                     "shape": decision.plan_shape.value,
                 },
             ) as exec_span:
-                results = await runner(
-                    session,
-                    run=run,
-                    decision=decision,
-                    base_pack=base_pack,
-                    guard=guard,
-                    message=message,
-                    llm=llm,
-                    token_budget=token_budget,
-                    max_memories=max_memories,
-                    user_identity=user_identity,
-                )
+                results: list[tuple[str, AgentResult]] = []
+                # Parallel branches are composed from several replies, so there
+                # is no single stream to follow; they run to completion and the
+                # composed answer is emitted as one delta.
+                streamable = decision.plan_shape != PlanShape.PARALLEL
+                if not streamable:
+                    yield {
+                        "type": "status",
+                        "stage": "delegating",
+                        "agent": selected_agent,
+                    }
+                    results = await _run_parallel(
+                        session,
+                        run=run,
+                        decision=decision,
+                        base_pack=base_pack,
+                        guard=guard,
+                        message=message,
+                        llm=llm,
+                        token_budget=token_budget,
+                        max_memories=max_memories,
+                        user_identity=user_identity,
+                    )
+                else:
+                    # Everything before the terminal step produces findings that
+                    # are folded into the next prompt, never shown — so only the
+                    # terminal step is streamed.
+                    head_steps = decision.steps[:-1]
+                    if head_steps:
+                        yield {
+                            "type": "status",
+                            "stage": "gathering",
+                            "agent": head_steps[0].agent_key,
+                        }
+                        head = decision.model_copy(update={"steps": head_steps})
+                        results = await _run_sequential(
+                            session,
+                            run=run,
+                            decision=head,
+                            base_pack=base_pack,
+                            guard=guard,
+                            message=message,
+                            llm=llm,
+                            token_budget=token_budget,
+                            max_memories=max_memories,
+                            user_identity=user_identity,
+                        )
+                    yield {
+                        "type": "status",
+                        "stage": "answering",
+                        "agent": selected_agent,
+                    }
+                    scratch = [
+                        {"agent_key": key, "output": r.output} for key, r in results
+                    ]
+                    async for event in _run_terminal_streaming(
+                        session,
+                        run=run,
+                        route_step=decision.steps[-1],
+                        base_pack=base_pack,
+                        scratch=scratch,
+                        guard=guard,
+                        message=message,
+                        llm=llm,
+                        token_budget=token_budget,
+                        max_memories=max_memories,
+                        user_identity=user_identity,
+                    ):
+                        if event["type"] == "step":
+                            results.append((event["agent_key"], event["result"]))
+                        elif stream:
+                            yield event
+                        else:
+                            # Not streaming: hold the text back and emit it once,
+                            # below, so a non-streaming caller sees one delta.
+                            pass
+                    if not stream and results:
+                        yield {
+                            "type": "delta",
+                            "text": str(results[-1][1].output.get("reply", "")),
+                        }
                 if not results:  # defensive: an empty route plan is a bug
                     raise RuntimeError("router produced an empty route plan")
                 exec_span.update(metadata={"steps": [k for k, _ in results]})
@@ -513,6 +740,10 @@ async def orchestrate(
         _emit_execute_analytics(user_id=user_id, decision=decision, results=results)
 
         reply = compose.compose_reply(decision.plan_shape, results)
+        # A parallel plan has no single stream to follow, so its composed answer
+        # is emitted here as one delta — the client sees the same event shape.
+        if decision.plan_shape == PlanShape.PARALLEL:
+            yield {"type": "delta", "text": reply}
         last_result = results[-1][1]
         total_cost = CostInfo(
             tokens=sum(r.cost.tokens for _, r in results),
@@ -560,7 +791,7 @@ async def orchestrate(
             output={"reply": reply[:AGENT_TRACE_PREVIEW_CHARS]},
             metadata=response_meta,
         )
-        return OrchestrationResult(
+        result = OrchestrationResult(
             reply=reply,
             run_id=run.id,
             proposed_actions=[
@@ -591,4 +822,10 @@ async def orchestrate(
             memories_used=memories_used,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            grounding_memories=[
+                str(m)
+                for _, r in results
+                for m in r.output.get("grounding_memories", [])
+            ],
         )
+        yield {"type": "result", "result": result}
