@@ -47,7 +47,8 @@ async def _fake_search(
     items, _ = await mem_repo.list_memories(
         session, user_id=user_id, limit=limit, offset=0
     )
-    return [(memory, 0.8) for memory in items]
+    # Cosine DISTANCE (similarity = 1 - distance), so 0.2 is a close match.
+    return [(memory, 0.2) for memory in items]
 
 
 def _context(session: AsyncSession, user_id: uuid.UUID) -> ToolContext:

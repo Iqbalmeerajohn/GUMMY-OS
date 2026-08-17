@@ -53,7 +53,9 @@ async def _fake_search(
     items, _ = await mem_repo.list_memories(
         session, user_id=user_id, limit=limit, offset=0
     )
-    return [(memory, 0.9 - 0.1 * index) for index, memory in enumerate(items)]
+    # Cosine DISTANCE ascending (similarity = 1 - distance), so every candidate
+    # clears the retrieval relevance floor while still ranking in order.
+    return [(memory, 0.1 + 0.1 * index) for index, memory in enumerate(items)]
 
 
 def _embeddings() -> EmbeddingService:

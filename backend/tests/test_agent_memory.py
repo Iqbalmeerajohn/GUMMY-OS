@@ -43,7 +43,12 @@ async def _fake_search(
     items, _ = await mem_repo.list_memories(
         session, user_id=user_id, limit=limit, offset=0
     )
-    return [(memory, 0.8) for memory in items]
+    # Cosine DISTANCE, not similarity: the retriever computes similarity as
+    # ``1 - distance``, so a close match is a SMALL number. 0.2 → similarity 0.8,
+    # comfortably above the relevance floor. (This previously returned 0.8, i.e.
+    # similarity 0.2 — a poor match — which only passed because retrieval had no
+    # relevance gate at the time.)
+    return [(memory, 0.2) for memory in items]
 
 
 def _embeddings() -> EmbeddingService:

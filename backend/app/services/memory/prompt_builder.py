@@ -94,7 +94,13 @@ _KNOWLEDGE_GUIDANCE = (
     "you — their memories, goals, and uploaded files — each item tagged with its "
     "source. Answer using it when relevant (cite a filename when you use file "
     "content); if the answer is not here, say you don't have that information yet "
-    "rather than guessing. When a file is attached, prefer it."
+    "rather than guessing. When a file is attached, prefer it.\n"
+    "Use this context silently. Draw on it only when it genuinely helps answer "
+    "what was asked, and let it shape the answer rather than becoming the "
+    "subject of one. Do not recite it, do not list what you know about the user, "
+    "and do not announce that you remembered something — no 'as you told me "
+    "before', 'I recall that', or 'based on your memories'. If none of it bears "
+    "on the request, ignore it entirely and answer normally."
 )
 
 

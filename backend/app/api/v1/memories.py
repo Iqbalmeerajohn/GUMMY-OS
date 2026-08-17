@@ -136,6 +136,10 @@ async def memory_diagnostics(
         embedding_service=embeddings,
         limit=limit,
         reinforce=False,
+        # Diagnostics exist to show what retrieval considered, including what it
+        # rejected — applying the production relevance floor here would hide
+        # exactly the candidates someone opens this endpoint to inspect.
+        min_semantic=0.0,
     )
     candidates = [
         ContextMemory(

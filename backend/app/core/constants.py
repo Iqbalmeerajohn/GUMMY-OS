@@ -104,6 +104,34 @@ MAX_RETRIEVAL_LIMIT = 50
 # Over-fetch this many × the final limit as candidates, then re-rank.
 RETRIEVAL_CANDIDATE_MULTIPLIER = 4
 
+# ── Relevance floor ───────────────────────────────────────────────────────────
+# The minimum SEMANTIC similarity a memory must reach before it may enter the
+# model's context. Applied to the raw similarity, deliberately — not to the
+# blended score — because importance, confidence, and recency together carry 45%
+# of the blend, which is enough to lift a memory with no topical relationship to
+# the question into the top N. Without this floor, "what is the capital of
+# France?" pulls in whatever the user's most important recent memories happen to
+# be, and the assistant volunteers them. That is the memory-spam failure mode.
+#
+# 0.45 is measured, not guessed. Against the live store (nomic-embed-text, the
+# same /api/embed call the provider makes) over 11 probe queries × 9 stored
+# memories — 12 relevant pairs, 87 irrelevant:
+#
+#     irrelevant pairs   mean 0.362   max 0.468
+#     relevant pairs     mean 0.533   min 0.429
+#
+#     floor   relevant kept   irrelevant kept
+#      0.45      11/12  (92%)     3/87  (3.4%)
+#      0.50       7/12  (58%)     0/87  (0%)
+#
+# The distributions overlap slightly, so no threshold is perfect. 0.45 sits just
+# above the bulk of the irrelevant mass while keeping nearly every real match;
+# 0.50 buys the last 3% of precision by discarding 42% of genuine recall, which
+# is the worse trade — a forgetful assistant is a more visible failure than an
+# occasional stray fact. Retune with scripts/calibrate_relevance.py if the
+# embedding model changes; this number is only valid for the model that produced it.
+RETRIEVAL_MIN_SEMANTIC_SIMILARITY = 0.45
+
 # ── Reinforcement (retrieving a memory makes it "stickier") ───────────────────
 # Diminishing steps: new = old + STEP * (1 - old), hard-capped at 1.0.
 IMPORTANCE_REINFORCEMENT_STEP = 0.05
