@@ -23,7 +23,7 @@ from __future__ import annotations
 import dataclasses
 from dataclasses import dataclass, field
 
-from app.schemas.agents import AgentResult, AgentTask, CostInfo
+from app.schemas.agents import AgentHandoff, AgentResult, AgentTask, CostInfo
 from app.services.agents.prompts import PersonaBuilder
 from app.services.agents.prompts.formatting import FORMATTING_RULES
 from app.services.knowledge import (
@@ -96,17 +96,28 @@ async def prepare(
     compiled = knowledge_context_builder.build(ranked, inventory=ctx.inventory)
 
     history = [{str(k): str(v) for k, v in entry.items()} for entry in pack.history]
-    # Pipeline hand-off: fold any prior agents' findings into the summary block.
-    # Empty scratch (the single-agent route) leaves the prompt unchanged.
+    # Pipeline hand-off: fold prior agents' findings into the summary block.
+    # Empty scratch (the single-agent route) leaves the prompt unchanged,
+    # which is what keeps the single-agent path byte-identical.
+    #
+    # Two shapes are accepted. A structured ``handoff`` is what a specialist
+    # produces (findings + a next action); a bare ``digest`` is what the
+    # deterministic recall agent produces. Before this, only ``digest`` was
+    # read — so a career->learning pipeline handed the learning agent nothing
+    # at all, and it answered as though the first step had never run.
     summary = pack.summary
-    findings = [
-        str(entry["output"].get("digest", ""))
-        for entry in pack.scratch
-        if isinstance(entry.get("output"), dict) and entry["output"].get("digest")
-    ]
+    findings: list[str] = []
+    for entry in pack.scratch:
+        handoff = entry.get("handoff")
+        if isinstance(handoff, dict) and handoff.get("relevant_findings"):
+            findings.append(AgentHandoff(**handoff).render())
+            continue
+        output = entry.get("output")
+        if isinstance(output, dict) and output.get("digest"):
+            findings.append(str(output["digest"]))
     if findings:
-        block = "\n\n".join(findings)
-        summary = f"{summary}\n\n{block}" if summary else block
+        block = (chr(10) * 2).join(findings)
+        summary = f"{summary}{chr(10)*2}{block}" if summary else block
 
     identity = task.inputs.get("user_identity")
     payload = prompt_builder.build_prompt(

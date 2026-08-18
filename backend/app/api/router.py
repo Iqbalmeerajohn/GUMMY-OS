@@ -24,6 +24,7 @@ from app.api.v1 import (
     knowledge,
     memories,
     milestones,
+    runs,
     tasks,
 )
 
@@ -40,3 +41,4 @@ api_router.include_router(knowledge.router)
 api_router.include_router(agents.router)
 api_router.include_router(connectors.router)
 api_router.include_router(automations.router)
+api_router.include_router(runs.router)

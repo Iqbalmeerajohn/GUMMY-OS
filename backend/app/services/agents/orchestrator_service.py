@@ -44,6 +44,7 @@ from app.observability import analytics
 from app.observability import langfuse as langfuse_obs
 from app.repositories import agent_message_repository as a2a_repo
 from app.schemas.agents import (
+    AgentHandoff,
     AgentResult,
     AgentTask,
     ContextPack,
@@ -77,6 +78,58 @@ logger = logging.getLogger(__name__)
 
 # The Orchestrator's name on the A2A trace (it is not an agent).
 ORCHESTRATOR_ACTOR = "orchestrator"
+
+# How many findings cross an agent boundary. A pipeline step is a summary, not
+# a transcript: pasting a full upstream reply into every downstream prompt is
+# how a three-step chain runs out of context.
+_MAX_HANDOFF_FINDINGS = 6
+_MAX_FINDING_CHARS = 220
+
+
+def _extract_findings(reply: str) -> list[str]:
+    """Pull an upstream agent's conclusions out of its reply.
+
+    Deliberately structural rather than a model call: the agents are already
+    instructed to answer in headings and bullets, so the bullets ARE the
+    findings. Asking a model to summarise its own answer would add a full
+    generation to every pipeline step to recover text it just wrote.
+
+    Falls back to the leading sentences when nothing is bulleted, so a prose
+    reply still hands something usable forward instead of nothing.
+    """
+    bullets: list[str] = []
+    for raw in reply.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        numbered = len(line) > 2 and line[0].isdigit() and line[1] in ")."
+        if line[0] in "-*•" or numbered:
+            cleaned = line.lstrip("-*•0123456789).").strip()
+            if len(cleaned) > 3:
+                bullets.append(cleaned[:_MAX_FINDING_CHARS])
+        if len(bullets) >= _MAX_HANDOFF_FINDINGS:
+            break
+    if bullets:
+        return bullets
+    sentences = [x.strip() for x in reply.split(". ") if len(x.strip()) > 20]
+    return [x[:_MAX_FINDING_CHARS] for x in sentences[:3]]
+
+
+def _build_handoff(
+    *, source_agent: str, target_agent: str, result: AgentResult
+) -> AgentHandoff:
+    """The structured package one agent passes to the next."""
+    reply = str(result.output.get("reply", ""))
+    return AgentHandoff(
+        source_agent=source_agent,
+        target_agent=target_agent,
+        purpose=f"{source_agent}_to_{target_agent}",
+        relevant_findings=_extract_findings(reply),
+        recommended_next_action=(
+            "Use these findings to answer the part of the request that is "
+            "yours. Do not repeat them back verbatim."
+        ),
+    )
 
 
 def _agent_tool_keys(agent_key: str) -> tuple[str, ...]:
@@ -278,7 +331,7 @@ async def _run_sequential(
     """
     results: list[tuple[str, AgentResult]] = []
     scratch: list[dict] = []
-    for route_step in decision.steps:
+    for index, route_step in enumerate(decision.steps):
         guard.check_before_dispatch()
         intent = route_step.intent or message
         step = await run_recorder.open_step(
@@ -323,7 +376,25 @@ async def _run_sequential(
         await _record_result_hop(
             session, run, agent_key=route_step.agent_key, result=result
         )
-        scratch.append({"agent_key": route_step.agent_key, "output": result.output})
+        # The hand-off: structured findings for the NEXT step, rather than the
+        # raw output blob. ``output`` is kept alongside for anything that still
+        # reads it (the recall agent's digest).
+        next_agent = (
+            decision.steps[index + 1].agent_key
+            if index + 1 < len(decision.steps)
+            else ""
+        )
+        scratch.append(
+            {
+                "agent_key": route_step.agent_key,
+                "output": result.output,
+                "handoff": _build_handoff(
+                    source_agent=route_step.agent_key,
+                    target_agent=next_agent,
+                    result=result,
+                ).model_dump(),
+            }
+        )
         results.append((route_step.agent_key, result))
     return results
 

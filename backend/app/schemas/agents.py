@@ -111,6 +111,34 @@ class RoutingDecision(BaseModel):
     matched_keywords: list[str] = Field(default_factory=list)
 
 
+class AgentHandoff(BaseModel):
+    """What one agent passes to the next in a pipeline.
+
+    Structured rather than a text blob, for two reasons. The receiving agent's
+    prompt stays bounded — pasting a full upstream reply into every downstream
+    prompt is how a three-step pipeline runs out of context. And what crosses
+    the boundary is auditable: findings and a next action, never the upstream
+    agent's reasoning.
+
+    Findings are the upstream agent's *conclusions*. Nothing here is chain-of-
+    thought, and nothing here is persisted beyond the A2A trace preview.
+    """
+
+    source_agent: str
+    target_agent: str
+    purpose: str = ""
+    relevant_findings: list[str] = Field(default_factory=list)
+    recommended_next_action: str = ""
+
+    def render(self) -> str:
+        """The block folded into the receiving agent's prompt."""
+        lines = [f"Findings handed over by the {self.source_agent} agent:"]
+        lines.extend(f"- {f}" for f in self.relevant_findings)
+        if self.recommended_next_action:
+            lines.append(f"What to do with them: {self.recommended_next_action}")
+        return chr(10).join(lines)
+
+
 class OrchestrationResult(BaseModel):
     """The reply-shaped payload the Orchestrator hands back to ``run_turn``
     (it persists the assistant message exactly as the Phase 2 path does)."""

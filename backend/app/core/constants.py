@@ -179,6 +179,21 @@ AGENT_TRACE_PREVIEW_CHARS = 200
 AGENT_ROUTER_MIN_SCORE = 1
 AGENT_ROUTER_PHRASE_WEIGHT = 2
 AGENT_ROUTER_KEYWORD_WEIGHT = 1
+
+# ── Compound (multi-agent) routing ────────────────────────────────────────────
+# A request becomes a multi-agent plan only when it splits into clauses that
+# want DIFFERENT specialists. Counting keywords is not enough: "find AI/ML
+# fresher jobs and internships" fires four career keywords and is still one
+# task, while "find jobs and then build a learning plan" is two.
+#
+# So the discriminator is grammatical, not statistical — an explicit connective
+# between clauses. That keeps detection deterministic and conservative: a
+# request with no connective can never fan out.
+COMPOUND_MAX_STEPS = 3
+
+# A clause shorter than this is punctuation noise ("and", "then, ok") rather
+# than a task worth dispatching an agent for.
+COMPOUND_MIN_CLAUSE_CHARS = 8
 # Context-pack caps for the Goal & Task Foundation (M8): how many active
 # goals / open tasks are surfaced to an agent per dispatch.
 CONTEXT_MAX_GOALS = 5

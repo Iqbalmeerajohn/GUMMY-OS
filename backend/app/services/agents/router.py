@@ -26,6 +26,8 @@ from app.core.constants import (
     AGENT_ROUTER_KEYWORD_WEIGHT,
     AGENT_ROUTER_MIN_SCORE,
     AGENT_ROUTER_PHRASE_WEIGHT,
+    COMPOUND_MAX_STEPS,
+    COMPOUND_MIN_CLAUSE_CHARS,
 )
 from app.models.enums import AgentContext, PlanShape
 from app.schemas.agents import AgentManifest, RouteStep, RoutingDecision
@@ -66,6 +68,136 @@ def _recall_pipeline(rationale: str, confidence: float) -> RoutingDecision:
         ],
         rationale=rationale,
         confidence=confidence,
+    )
+
+
+# Connectives that separate one task from the next. This is the whole basis of
+# compound detection, and the reason it stays conservative: counting keywords
+# cannot distinguish "find AI/ML fresher jobs and internships" (four career
+# keywords, one task) from "find jobs and then build a learning plan" (two
+# tasks). Grammar can. A request with no connective can never fan out.
+#
+# Ordered longest-first so "and then" is consumed before "and".
+_CONNECTIVES: tuple[str, ...] = (
+    " and then ",
+    " then also ",
+    " and after that ",
+    " after that ",
+    ", and then ",
+    ", then ",
+    " then ",
+    ", and ",
+    " and also ",
+    " and ",
+    ";",
+    # A bare comma is included, but it is only safe because of the
+    # "two distinct specialists" guard below. "Find jobs, research the
+    # companies, and tell me how to prepare" needs it; "jobs in Bangalore,
+    # Chennai, or Pune" splits too but yields one specialist, so it collapses
+    # straight back to a single step.
+    ",",
+)
+
+_CONNECTIVE_RE = re.compile("|".join(re.escape(c) for c in _CONNECTIVES), re.IGNORECASE)
+
+
+def split_clauses(intent: str) -> list[str]:
+    """Split a request into the tasks it actually contains.
+
+    Splitting on connectives rather than on punctuation alone: a comma inside
+    one task ("jobs in Bangalore, Chennai, or Pune") must not become three
+    clauses, whereas "find jobs, and then teach me" must become two.
+    """
+    parts = [p.strip(" ,.;") for p in _CONNECTIVE_RE.split(intent)]
+    return [p for p in parts if len(p) >= COMPOUND_MIN_CLAUSE_CHARS]
+
+
+def _best_specialist(
+    intent: str, registry: AgentRegistry
+) -> tuple[str | None, int, list[str]]:
+    """The highest-scoring specialist for one clause, or None."""
+    lowered = intent.lower()
+    registered = registry.keys()
+    best_key: str | None = None
+    best_score = 0
+    best_priority = -1
+    best_matched: list[str] = []
+    for key in SPECIALIST_AGENT_KEYS:
+        if key not in registered:
+            continue
+        manifest = registry.get(key)
+        score, matched = _score_specialist(manifest, lowered)
+        if score < AGENT_ROUTER_MIN_SCORE:
+            continue
+        if (score, manifest.priority) > (best_score, best_priority):
+            best_key, best_score, best_priority, best_matched = (
+                key,
+                score,
+                manifest.priority,
+                matched,
+            )
+    return best_key, best_score, best_matched
+
+
+def plan_compound(intent: str, registry: AgentRegistry) -> RoutingDecision | None:
+    """A multi-agent pipeline when the request contains distinct tasks.
+
+    Returns None — meaning "route normally" — unless every condition holds:
+
+    * the request splits on a connective into two or more clauses;
+    * at least two clauses resolve to specialists;
+    * those specialists are not all the same agent.
+
+    The last condition is what stops "find jobs and internships" fanning out:
+    both clauses want Career, so it collapses back to one step. Consecutive
+    duplicates are folded rather than deduplicated globally, so a genuine
+    A → B → A shape is still expressible.
+
+    Clause order is execution order. "Research X and then teach me" runs
+    Research first because that is the order the sentence states, and the
+    dependency runs the same way.
+    """
+    clauses = split_clauses(intent)
+    if len(clauses) < 2:
+        return None
+
+    resolved: list[tuple[str, str, list[str]]] = []
+    for clause in clauses:
+        key, _score, matched = _best_specialist(clause, registry)
+        if key is None:
+            # A clause with no specialist ("tell me how I should prepare") is
+            # not dropped silently — it is folded into the previous step's
+            # intent, so its wording still reaches an agent.
+            if resolved:
+                agent_key, prior_intent, prior_matched = resolved[-1]
+                resolved[-1] = (agent_key, f"{prior_intent}. {clause}", prior_matched)
+            continue
+        if resolved and resolved[-1][0] == key:
+            # Same agent twice in a row: one task, phrased in two clauses.
+            agent_key, prior_intent, prior_matched = resolved[-1]
+            resolved[-1] = (
+                agent_key,
+                f"{prior_intent}. {clause}",
+                sorted(set(prior_matched) | set(matched)),
+            )
+            continue
+        resolved.append((key, clause, matched))
+
+    if len({key for key, _, _ in resolved}) < 2:
+        return None  # one distinct capability: not compound
+
+    resolved = resolved[:COMPOUND_MAX_STEPS]
+    agents = [key for key, _, _ in resolved]
+    matched_all = sorted({m for _, _, ms in resolved for m in ms})
+    return RoutingDecision(
+        plan_shape=PlanShape.PIPELINE,
+        steps=[
+            RouteStep(agent_key=key, intent=clause_intent)
+            for key, clause_intent, _ in resolved
+        ],
+        rationale=("compound request: " + " then ".join(agents)),
+        confidence=0.9,
+        matched_keywords=matched_all,
     )
 
 
@@ -185,12 +317,20 @@ async def route(
     if agent_context == AgentContext.RESEARCH:
         return _recall_pipeline("agent_context hint: research thread", confidence=0.95)
 
-    # (c) Deterministic weighted keyword scoring across the specialists.
+    # (c) Compound request: distinct tasks joined by a connective become a
+    # pipeline. Checked BEFORE single scoring, because single scoring collapses
+    # the whole request to its highest-scoring specialist and would silently
+    # discard the second task.
+    compound = plan_compound(intent, registry)
+    if compound is not None:
+        return compound
+
+    # (d) Deterministic weighted keyword scoring across the specialists.
     decision = score_agents(intent, registry)
     if decision.steps[0].agent_key != GENERAL_AGENT_KEY:
         return decision
 
-    # (d) LLM fallback on the cheap tier (budget-capped, parse-safe).
+    # (e) LLM fallback on the cheap tier (budget-capped, parse-safe).
     if llm is not None:
         try:
             response = await llm.generate(
@@ -207,5 +347,5 @@ async def route(
         except Exception:
             logger.exception("llm router fallback failed; using default")
 
-    # (e) Low confidence → the safe single-agent default.
+    # (f) Low confidence → the safe single-agent default.
     return _single("default: low confidence", confidence=0.3)
