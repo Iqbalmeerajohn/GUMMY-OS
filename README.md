@@ -24,10 +24,11 @@ One Postgres container, one Ollama daemon, two dev servers. Paid model keys
 
 | Area | State |
 | --- | --- |
-| Backend tests | **655 passing**, 0 failing (4 Postgres-gated skips) |
+| Backend tests | **745 passing**, 0 failing (4 Postgres-gated skips) |
 | Migrations | 23 Alembic revisions |
 | API | ~60 REST endpoints across 11 routers (`/api/v1`) |
-| Agents | 5 routed specialists + general + recall; the rest are in the plan phase |
+| Agents | 5 routed specialists + general + recall, each declaring tools; the rest are in the plan phase |
+| Tools | 7 executable (calculator · memory · file search · file list · clock · web search · doc read), 2 modeled behind approval |
 | Web client | 6 routes — the chat *is* the app, everything else is a slide-over |
 | Stack | Python 3.12 · FastAPI · SQLAlchemy 2.0 async · PostgreSQL 16 + pgvector · Ollama · Next.js 16 / React 19 |
 
@@ -38,8 +39,16 @@ profile, an episodic timeline, and reinforcement/decay ranking · instant recall
 chat→memory extraction · goals · file intelligence · unified knowledge · the
 routed agent workforce · calendar import.
 
-**Seam-only (not yet wired):** Gmail/Drive connectors, live web search
-(Brave/Tavily), vector file RAG, and the action/automation layer.
+**Also working:** a production tool loop — agents call tools through one
+registry → policy → executor path, with Green/Yellow/Red tiers, schema
+validation, per-tool timeouts, an iteration cap, redacted audit rows, and safe
+execution status streamed to the UI. Verified against local Ollama models, which
+do support native tool calling. See [docs/TOOL_SYSTEM.md](docs/TOOL_SYSTEM.md).
+
+**Seam-only (not yet wired):** Gmail/Drive connectors, live web search (Brave —
+implemented and config-gated; the tool reports UNAVAILABLE without a key rather
+than returning placeholder results), vector file RAG, and execution of
+approval-gated actions.
 
 See [M9 release notes](docs/10_RELEASE_NOTES_M9_LOCAL_FIRST.md) for the full
 account of what changed and what comes next.

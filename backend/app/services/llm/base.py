@@ -44,6 +44,55 @@ class LLMProvider(Protocol):
         ...
 
 
+@dataclass(frozen=True)
+class ToolCall:
+    """One tool the model asked to run, normalized across providers."""
+
+    id: str
+    name: str
+    arguments: dict
+
+
+@dataclass(frozen=True)
+class ToolCallResponse:
+    """A model turn that may be a final answer, tool calls, or both."""
+
+    text: str
+    tool_calls: list[ToolCall]
+    model: str
+    input_tokens: int
+    output_tokens: int
+    stop_reason: str
+
+    @property
+    def wants_tools(self) -> bool:
+        return bool(self.tool_calls)
+
+
+@runtime_checkable
+class SupportsToolCalling(Protocol):
+    """A provider that can be offered tools and may ask to call them.
+
+    Optional capability, detected with ``isinstance(llm, SupportsToolCalling)``.
+    A provider without it simply never gets tools, and the agent answers from
+    context alone — the tool loop degrades to the previous behaviour rather than
+    failing, so selecting a model that cannot call tools is a limitation and not
+    an outage.
+    """
+
+    async def generate_with_tools(
+        self,
+        *,
+        system: str,
+        messages: list[dict],
+        tools: list[dict],
+        model: str | None = None,
+        max_tokens: int | None = None,
+    ) -> ToolCallResponse:
+        """Generate, offering ``tools`` (JSON Schema function definitions)."""
+        ...
+
+
 @runtime_checkable
 class SupportsJsonMode(Protocol):
     """A provider that can constrain its output to syntactically valid JSON.

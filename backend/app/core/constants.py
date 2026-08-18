@@ -156,6 +156,19 @@ DEFAULT_CONTEXT_MAX_MEMORIES = 20
 # and spend at most this many tokens before it is halted (runaway-loop/cost
 # protection; PHASE3_PLAN.md §9.8/§12).
 AGENT_MAX_RUN_STEPS = 8
+
+# ── Tool loop ─────────────────────────────────────────────────────────────────
+# How many times one agent turn may call tools before it must answer with what
+# it has. Each iteration is a full model round-trip, so this is a latency budget
+# as much as a safety one: at ~2-3s per local generation, 4 iterations is
+# already a ~12s worst case. Conservative on purpose — the common shape is one
+# tool call, and a model that wants five is usually looping, not working.
+MAX_TOOL_ITERATIONS = 4
+
+# Tool calls permitted in a single model response. A model that emits a dozen
+# parallel calls has misunderstood the task; executing them all multiplies both
+# latency and the blast radius of that misunderstanding.
+MAX_TOOL_CALLS_PER_STEP = 3
 AGENT_MAX_RUN_COST_TOKENS = 60_000
 # Preview length for message/reply snippets stored on trace rows (keeps JSONB
 # rows lean; full text lives on the messages table).

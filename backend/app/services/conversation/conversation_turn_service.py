@@ -852,6 +852,7 @@ async def stream_turn(
     first_token_ms: float | None = None
     orch: OrchestrationResult | None = None
     stages: list[str] = []
+    tool_events: list[dict] = []
 
     try:
         async for event in orchestrator_service.orchestrate_stream(
@@ -880,6 +881,12 @@ async def stream_turn(
                 # Safe progress only — a stage name and an agent key, never
                 # reasoning. Forwarded so the client can show what is happening.
                 stages.append(str(event["stage"]))
+                yield event
+            elif kind == "tool_status":
+                # Tool progress: a tool key, a label, and an outcome. Never the
+                # arguments the model chose and never its reasoning.
+                stages.append(str(event["stage"]))
+                tool_events.append(event)
                 yield event
             elif kind == "result":
                 orch = event["result"]
@@ -1032,6 +1039,17 @@ async def stream_turn(
         # The stages this turn passed through, for the orchestrator activity
         # view. Stage names only — never reasoning.
         "stages": stages,
+        # Which tools ran, and how each ended, so the client can show the work
+        # after the fact as well as during it.
+        "tools": [
+            {
+                "tool": e.get("tool"),
+                "label": e.get("label", e.get("tool")),
+                "stage": e.get("stage"),
+            }
+            for e in tool_events
+            if e.get("stage") in ("tool_completed", "tool_failed", "approval_required")
+        ],
         "goal_candidate": (
             goal_candidate.model_dump(mode="json") if goal_candidate else None
         ),

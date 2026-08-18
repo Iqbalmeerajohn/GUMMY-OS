@@ -62,14 +62,34 @@ from app.services.agents import (
 from app.services.agents.handlers import grounding
 from app.services.agents.manifests import GENERAL_AGENT_KEY
 from app.services.agents.registry import get_registry
+from app.services.agents.tools.context import ToolContext
+from app.services.agents.tools.loop import ToolLoopResult, run_tool_loop
 from app.services.embeddings.embedding_service import EmbeddingService
-from app.services.llm.base import LLMProvider, LLMResponse, SupportsStreaming
+from app.services.llm.base import (
+    LLMProvider,
+    LLMResponse,
+    SupportsStreaming,
+    SupportsToolCalling,
+)
 from app.utils.tokens import estimate_tokens
 
 logger = logging.getLogger(__name__)
 
 # The Orchestrator's name on the A2A trace (it is not an agent).
 ORCHESTRATOR_ACTOR = "orchestrator"
+
+
+def _agent_tool_keys(agent_key: str) -> tuple[str, ...]:
+    """The tools this agent declares, or empty when it declares none.
+
+    Read from the registry rather than passed in, so an agent's capability is
+    defined in exactly one place (its manifest) and cannot be widened by a
+    caller. An unknown agent gets nothing.
+    """
+    try:
+        return tuple(get_registry().get(agent_key).tools)
+    except KeyError:
+        return ()
 
 
 def _emit_route_analytics(
@@ -412,6 +432,7 @@ async def _run_terminal_streaming(
     token_budget: int,
     max_memories: int,
     user_identity: str | None,
+    tool_context: ToolContext,
 ) -> AsyncIterator[dict]:
     """Execute the LAST step of a plan, streaming the model's output.
 
@@ -451,7 +472,48 @@ async def _run_terminal_streaming(
 
     try:
         prepared = await handlers.prepare(task)
-        if prepared is None or not isinstance(llm, SupportsStreaming):
+        tool_keys = _agent_tool_keys(route_step.agent_key)
+        loop_result: ToolLoopResult | None = None
+
+        if prepared is not None and tool_keys and isinstance(llm, SupportsToolCalling):
+            # Tool loop. Runs non-streamed because a tool-calling turn is not a
+            # single generation — the model may answer, call, observe, and
+            # answer again, and only the last of those is the reply. The
+            # tool_status events carry the progress in the meantime, which is
+            # the part of streaming that actually matters here.
+            async for event in run_tool_loop(
+                session,
+                system=prepared.system,
+                messages=prepared.messages,
+                tool_keys=tool_keys,
+                llm=llm,
+                agent_key=route_step.agent_key,
+                run_id=run.id,
+                user_id=run.user_id,
+                context=tool_context,
+            ):
+                if event["type"] == "result":
+                    loop_result = event["result"]
+                else:
+                    yield event
+
+        if loop_result is not None and prepared is not None:
+            result = grounding.finish(
+                prepared,
+                LLMResponse(
+                    text=loop_result.text,
+                    model=loop_result.model,
+                    input_tokens=loop_result.input_tokens,
+                    output_tokens=loop_result.output_tokens,
+                    stop_reason="end_turn",
+                ),
+            )
+            result.output["tools_used"] = [
+                {"tool": e.tool_key, "outcome": e.outcome.value}
+                for e in loop_result.executions
+            ]
+            yield {"type": "delta", "text": loop_result.text}
+        elif prepared is None or not isinstance(llm, SupportsStreaming):
             # No model call to stream (recall), or a provider without streaming:
             # produce the result normally and emit it as a single delta, so the
             # client sees the same event shape either way.
@@ -715,6 +777,11 @@ async def orchestrate_stream(
                         token_budget=token_budget,
                         max_memories=max_memories,
                         user_identity=user_identity,
+                        tool_context=ToolContext(
+                            session=session,
+                            user_id=user_id,
+                            embedding_service=embedding_service,
+                        ),
                     ):
                         if event["type"] == "step":
                             results.append((event["agent_key"], event["result"]))

@@ -18,6 +18,11 @@ import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import { LivingOrb } from "@/components/brand/LivingOrb";
+import {
+  ActivityTrail,
+  stageLabel,
+  type ActivityStep,
+} from "@/components/workspace/ActivityTrail";
 import { AgentSelect } from "@/components/workspace/AgentSelect";
 import { Composer } from "@/components/workspace/Composer";
 import { MessageBubble } from "@/components/workspace/MessageBubble";
@@ -225,6 +230,8 @@ export function ChatPane({
   const [value, setValue] = useState(initialPrompt);
   const [pending, setPending] = useState<string | null>(null);
   const [streamText, setStreamText] = useState("");
+  // What the backend reports it is doing, in order. Cleared per turn.
+  const [activity, setActivity] = useState<ActivityStep[]>([]);
   const [sending, setSending] = useState(false);
   // File Intelligence (M6.5): files attached to the next message. Each is
   // uploaded immediately (reusing the M6 pipeline) and its id is sent with the
@@ -287,6 +294,7 @@ export function ChatPane({
       streamingConvRef.current = null;
       setPending(null);
       setStreamText("");
+      setActivity([]);
       setSending(false);
     }
   }, [activeId]);
@@ -324,6 +332,7 @@ export function ChatPane({
     setAttachments([]);
     setPending(text);
     setStreamText("");
+    setActivity([]);
     setSending(true);
     atBottomRef.current = true;
     logMsg("(pending)", "user", "optimistic");
@@ -371,6 +380,56 @@ export function ChatPane({
       )) {
         if (ev.type === "delta" && ev.text) {
           setStreamText((prev) => prev + ev.text);
+        } else if (ev.type === "status" && ev.stage) {
+          const label = stageLabel(ev.stage);
+          if (label) {
+            // Each orchestrator stage supersedes the previous one, so earlier
+            // steps settle to "done" rather than all spinning at once.
+            setActivity((prev) => [
+              ...prev.map((s) =>
+                s.state === "running" ? { ...s, state: "done" as const } : s,
+              ),
+              {
+                id: `stage-${ev.stage}-${prev.length}`,
+                label,
+                state: "running",
+              },
+            ]);
+          }
+        } else if (ev.type === "tool_status" && ev.tool) {
+          const name = ev.label ?? ev.tool;
+          setActivity((prev) => {
+            const id = `tool-${ev.tool}`;
+            const rest = prev.map((s) =>
+              s.state === "running" && !s.id.startsWith("tool-")
+                ? { ...s, state: "done" as const }
+                : s,
+            );
+            const next: ActivityStep = {
+              id,
+              label:
+                ev.stage === "approval_required"
+                  ? `${name} needs your approval`
+                  : ev.stage === "tool_failed"
+                    ? `${name} unavailable`
+                    : name,
+              state:
+                ev.stage === "tool_completed"
+                  ? "done"
+                  : ev.stage === "tool_failed"
+                    ? "failed"
+                    : ev.stage === "approval_required"
+                      ? "approval"
+                      : "running",
+            };
+            const existing = rest.findIndex((s) => s.id === id);
+            if (existing >= 0) {
+              const copy = [...rest];
+              copy[existing] = next;
+              return copy;
+            }
+            return [...rest, next];
+          });
         } else if (ev.type === "done" && ev.assistant_message_id) {
           logMsg(ev.assistant_message_id, "assistant", "stream");
           const memories = ev.memories ?? [];
@@ -390,7 +449,8 @@ export function ChatPane({
           if (ev.web_sources && ev.web_sources.length > 0) {
             setWebSourcesByMessage((w) => ({
               ...w,
-              [ev.assistant_message_id as string]: ev.web_sources as WebSource[],
+              [ev.assistant_message_id as string]:
+                ev.web_sources as WebSource[],
             }));
           }
           analytics.track(AnalyticsEvent.AssistantResponseCompleted, {
@@ -474,6 +534,7 @@ export function ChatPane({
       if (!controller.signal.aborted && mountedRef.current) {
         setPending(null);
         setStreamText("");
+        setActivity([]);
         setSending(false);
       }
     }
@@ -569,8 +630,9 @@ export function ChatPane({
               // M8.5: prefer the just-streamed sources, else the persisted ones.
               const webSources =
                 webSourcesByMessage[m.id] ??
-                ((m.metadata as Record<string, unknown> | null)
-                  ?.web_sources as WebSource[] | undefined) ??
+                ((m.metadata as Record<string, unknown> | null)?.web_sources as
+                  | WebSource[]
+                  | undefined) ??
                 [];
               return (
                 <MessageBubble
@@ -609,7 +671,13 @@ export function ChatPane({
                   role="assistant"
                   content={streamText}
                   streaming={streamText.length > 0}
-                  status={<StreamingStatus />}
+                  status={
+                    activity.length > 0 ? (
+                      <ActivityTrail steps={activity} />
+                    ) : (
+                      <StreamingStatus />
+                    )
+                  }
                 />
               </>
             ) : null}

@@ -15,7 +15,13 @@ import dataclasses
 
 from app.core.constants import SEARCH_DEFAULT_LIMIT
 from app.services.agents.tools.context import ToolContext
+from app.services.search import provider as search_provider
 from app.services.search import search_service
+
+
+class SearchUnavailableError(RuntimeError):
+    """No live search backend is configured."""
+
 
 _MAX_RESULTS = 10
 
@@ -25,6 +31,15 @@ async def execute(context: ToolContext, args: dict) -> dict:
     query = str(args.get("query", "")).strip()
     if not query:
         raise ValueError("web_search requires a non-empty 'query'")
+    if not search_provider.is_live():
+        # Verified live: with the offline provider installed, the model was
+        # handed placeholder rows and reported them to the user as "results
+        # from a search". Refusing outright is the only honest answer — the
+        # model can then say search is unavailable instead of inventing.
+        raise SearchUnavailableError(
+            "Live web search is not configured on this instance, so no results "
+            "are available. Say so plainly rather than guessing."
+        )
     limit = min(int(args.get("limit", SEARCH_DEFAULT_LIMIT)), _MAX_RESULTS)
     results = await search_service.search(query, limit=limit)
     return {

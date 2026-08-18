@@ -20,6 +20,7 @@ from app.services.agents.registry import (
     ManifestValidationError,
     get_registry,
 )
+from app.services.agents.tools import catalog
 
 
 def _manifest(key: str = "test-agent", **overrides: object) -> AgentManifest:
@@ -38,7 +39,33 @@ def test_builtin_registry_validates() -> None:
     assert GENERAL_AGENT_KEY in registered
     manifest = registry.get(GENERAL_AGENT_KEY)
     assert manifest.ceiling == PermissionTier.GREEN
-    assert manifest.tools == ()
+    # The general agent now declares tools (it previously declared none). What
+    # matters is not the count but the invariant below: every tool an agent
+    # names must exist and sit within its ceiling.
+    assert manifest.tools
+
+
+def test_every_declared_tool_exists_and_respects_its_agents_ceiling() -> None:
+    """A manifest cannot name a tool that is unknown or above its tier.
+
+    This is the property that keeps capability declarations honest as tools are
+    added: an agent claiming a tool it may not run would otherwise only fail at
+    invocation time, one policy verdict per turn.
+    """
+    tier_order = {
+        PermissionTier.GREEN: 0,
+        PermissionTier.YELLOW: 1,
+        PermissionTier.RED: 2,
+    }
+    registry = get_registry()
+    for key in registry.keys():  # noqa: SIM118
+        manifest = registry.get(key)
+        for tool_key in manifest.tools:
+            spec = catalog.get(tool_key)
+            assert spec is not None, f"{key} declares unknown tool {tool_key!r}"
+            assert tier_order[spec.tier] <= tier_order[manifest.ceiling], (
+                f"{key} declares {tool_key!r} above its {manifest.ceiling} ceiling"
+            )
 
 
 def test_m8_specialists_registered_with_keywords() -> None:

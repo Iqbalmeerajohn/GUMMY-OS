@@ -162,6 +162,19 @@ def get_provider() -> SearchProvider:
     return _provider
 
 
+def is_live() -> bool:
+    """True when a real backend is installed (not the offline placeholder).
+
+    The dummy provider exists so callers can be wired and tested before a key
+    is configured, and its results are clearly labelled as placeholders. That
+    is fine for a knowledge-fusion path that treats search as supplemental —
+    but a tool must not report *success* with invented rows, because the model
+    then presents them to the user as findings. Tools ask this first and
+    return UNAVAILABLE instead.
+    """
+    return not isinstance(_provider, DummySearchProvider)
+
+
 def set_provider(provider: SearchProvider) -> None:
     """Swap the search backend (composition-root seam)."""
     global _provider

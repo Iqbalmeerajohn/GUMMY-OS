@@ -30,8 +30,10 @@ from app.services.agents.policy_engine import (
     evaluate,
 )
 from app.services.agents.registry import get_registry
+from app.services.agents.tools import executor as tool_executor
 from app.services.agents.tools.catalog import TOOL_CATALOG
 from app.services.agents.tools.context import ToolContext
+from app.services.agents.tools.executor import ToolExecution, ToolOutcome
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +52,24 @@ class ToolResult:
     reason: str
     invocation_id: uuid.UUID
     approval_id: uuid.UUID | None = None
+    # The agent-facing view of the same event. ``decision``/``status`` describe
+    # the audit row; ``outcome`` describes what the caller should do next, and
+    # is what the tool loop branches on.
+    outcome: ToolOutcome = ToolOutcome.SUCCESS
+    error: str | None = None
+    duration_ms: float = 0.0
+
+    def execution(self) -> ToolExecution:
+        """This result as the loop's structured value."""
+        return ToolExecution(
+            tool_key=self.tool_key,
+            outcome=self.outcome,
+            output=self.output,
+            error=self.error,
+            duration_ms=self.duration_ms,
+            approval_id=self.approval_id,
+            invocation_id=self.invocation_id,
+        )
 
 
 async def invoke(
@@ -89,6 +109,8 @@ async def invoke(
             output=None,
             reason=f"unknown tool {tool_key!r}",
             invocation_id=invocation.id,
+            outcome=ToolOutcome.DENIED,
+            error=f"There is no tool called {tool_key!r}.",
         )
 
     verdict = evaluate(
@@ -99,10 +121,13 @@ async def invoke(
     )
 
     approval_id: uuid.UUID | None = None
+    outcome = ToolOutcome.SUCCESS
+    duration_ms = 0.0
     if verdict.decision == PolicyDecision.BLOCK:
         decision, status = ToolDecision.BLOCKED, ToolRunStatus.NOT_EXECUTED
         output: dict | None = None
-        error: str | None = None
+        error: str | None = verdict.reason
+        outcome = ToolOutcome.DENIED
     elif verdict.decision == PolicyDecision.PROMPT:
         # The human-in-the-loop seam (M10): create a previewed pending
         # approval and hand back its id. Deciding it later records the
@@ -121,20 +146,24 @@ async def invoke(
         approval_id = approval.id
         decision, status = ToolDecision.PENDING, ToolRunStatus.NOT_EXECUTED
         output, error = None, None
+        outcome = ToolOutcome.APPROVAL_REQUIRED
     elif spec.tier != PermissionTier.GREEN or spec.executor is None:
-        # ALLOW above Green (standing allowance) — but Phase 3 wires no
-        # non-Green executor, so nothing may run. Recorded as pending.
+        # ALLOW above Green (standing allowance), or a modeled tool with no
+        # executor: nothing may run. Recorded as pending/unavailable.
         decision, status = ToolDecision.PENDING, ToolRunStatus.NOT_EXECUTED
         output = None
-        error = None
+        error = f"{spec.name} is declared but not available in this build."
+        outcome = ToolOutcome.UNAVAILABLE
     else:
         decision = ToolDecision.ALLOWED
-        try:
-            output = await spec.executor(context, args)
-            status, error = ToolRunStatus.SUCCEEDED, None
-        except Exception as exc:
-            logger.exception("green tool %s failed", tool_key)
-            output, status, error = None, ToolRunStatus.FAILED, str(exc)
+        # Execution, validation, and the timeout all live in the executor, so a
+        # tool cannot opt out of any of them and nothing here can raise.
+        execution = await tool_executor.run(spec, context, args)
+        output = execution.output
+        error = execution.error
+        outcome = execution.outcome
+        duration_ms = execution.duration_ms
+        status = ToolRunStatus.SUCCEEDED if execution.ok else ToolRunStatus.FAILED
 
     invocation = await audit_repo.record_invocation(
         session,
@@ -142,7 +171,9 @@ async def invoke(
         run_id=run_id,
         agent_key=agent_key,
         tool_key=tool_key,
-        args=args,
+        # Redacted + bounded: an audit row is evidence, not a log sink, and
+        # must never become a place secrets accumulate.
+        args=tool_executor.redact_args(args),
         tier=spec.tier,
         decision=decision,
         status=status,
@@ -163,6 +194,9 @@ async def invoke(
         reason=verdict.reason,
         invocation_id=invocation.id,
         approval_id=approval_id,
+        outcome=outcome,
+        error=error,
+        duration_ms=duration_ms,
     )
 
 

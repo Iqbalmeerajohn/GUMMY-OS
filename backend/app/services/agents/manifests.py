@@ -11,6 +11,22 @@ from __future__ import annotations
 from app.models.enums import PermissionTier
 from app.schemas.agents import AgentManifest
 
+# Tools every LLM-backed agent may use: read-only, local, and cheap. Declared
+# once so a capability change lands on every agent that should have it rather
+# than on whichever manifests someone remembered to edit.
+_BASE_TOOLS: tuple[str, ...] = (
+    "calculator",
+    "current_time",
+    "memory_read",
+    "file_search",
+    "file_list",
+)
+
+# Adds live web search. Only for specialists whose work genuinely needs current
+# external information — search costs a network round-trip and, once a provider
+# key is configured, money.
+_RESEARCH_TOOLS: tuple[str, ...] = (*_BASE_TOOLS, "web_search")
+
 GENERAL_AGENT_KEY = "general"
 
 # The single M3 built-in: the general-purpose conversational agent. Its M4
@@ -24,7 +40,7 @@ GENERAL_AGENT = AgentManifest(
         "thread history, and rolling summary."
     ),
     ceiling=PermissionTier.GREEN,
-    tools=(),
+    tools=_BASE_TOOLS,
     keywords=(),
     model_tier="default",
 )
@@ -78,7 +94,7 @@ CAREER_AGENT = AgentManifest(
         "planning — grounded in their memories, goals, and uploaded documents."
     ),
     ceiling=PermissionTier.GREEN,
-    tools=(),
+    tools=_RESEARCH_TOOLS,
     keywords=(
         "resume",
         "cv",
@@ -115,7 +131,7 @@ LEARNING_AGENT = AgentManifest(
         "to learn."
     ),
     ceiling=PermissionTier.GREEN,
-    tools=(),
+    tools=_RESEARCH_TOOLS,
     keywords=(
         "teach",
         "learn",
@@ -148,7 +164,7 @@ PLANNER_AGENT = AgentManifest(
         "goals and deadlines."
     ),
     ceiling=PermissionTier.GREEN,
-    tools=(),
+    tools=_BASE_TOOLS,
     keywords=(
         "goal",
         "goals",
@@ -176,7 +192,7 @@ MEMORY_AGENT = AgentManifest(
         "history, and stored memories — grounded entirely in retrieved memory."
     ),
     ceiling=PermissionTier.GREEN,
-    tools=(),
+    tools=_BASE_TOOLS,
     keywords=(
         "memory",
         "memories",
@@ -202,7 +218,7 @@ RESEARCH_AGENT = AgentManifest(
         "search arrives in M8.5)."
     ),
     ceiling=PermissionTier.GREEN,
-    tools=(),
+    tools=_RESEARCH_TOOLS,
     keywords=(
         "research",
         "compare",

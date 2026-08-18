@@ -551,10 +551,36 @@ export interface WebSource {
   domain: string;
 }
 
+/** What GUMMY is doing right now — safe to display, never reasoning. */
+export interface ToolActivity {
+  /** The tool's registry key, e.g. "file_search". */
+  tool?: string;
+  /** Human label for the tool, e.g. "File Search". */
+  label?: string;
+  stage?: string;
+}
+
 /** A single Server-Sent Event from the streaming turn endpoint. */
 export interface StreamEvent {
-  type: "delta" | "done";
+  /**
+   * `status` and `tool_status` are progress; `delta` is reply text; `done` is
+   * terminal. Progress events carry a stage name and (for tools) a tool key
+   * and label — deliberately never the model's reasoning or tool arguments.
+   */
+  type: "delta" | "done" | "status" | "tool_status";
   text?: string;
+  /** Orchestrator stage: understanding | retrieving_context | answering | … */
+  stage?: string;
+  /** Tool stage: tool_requested | tool_running | tool_completed | tool_failed |
+   * approval_required. */
+  tool?: string;
+  label?: string;
+  duration_ms?: number;
+  approval_id?: string;
+  /** Every stage this turn passed through (on `done`). */
+  stages?: string[];
+  /** Tools that ran, with how each ended (on `done`). */
+  tools?: ToolActivity[];
   conversation_id?: string;
   user_message_id?: string;
   assistant_message_id?: string;

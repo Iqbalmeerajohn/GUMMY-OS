@@ -25,7 +25,7 @@ import httpx
 
 from app.core.exceptions import AppError
 from app.observability.langfuse import observe_generation
-from app.services.llm.base import LLMResponse
+from app.services.llm.base import LLMResponse, ToolCall, ToolCallResponse
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,45 @@ _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL)
 
 def _clean(text: str) -> str:
     return _THINK_BLOCK.sub("", text).strip()
+
+
+def _parse_tool_calls(raw: object) -> list[ToolCall]:
+    """Normalize Ollama's ``message.tool_calls`` into ``ToolCall`` values.
+
+    Defensive by necessity: this is model output. Ollama usually returns
+    arguments as an object, but a JSON string appears often enough to handle,
+    and a malformed entry should cost that one call rather than the whole turn.
+    Ollama omits an id in some versions, so one is synthesised when missing —
+    the loop pairs results to calls by id and cannot use a null key.
+    """
+    if not isinstance(raw, list):
+        return []
+    calls: list[ToolCall] = []
+    for index, entry in enumerate(raw):
+        if not isinstance(entry, dict):
+            continue
+        fn = entry.get("function")
+        if not isinstance(fn, dict):
+            continue
+        name = str(fn.get("name", "")).strip()
+        if not name:
+            continue
+        arguments = fn.get("arguments")
+        if isinstance(arguments, str):
+            try:
+                arguments = json.loads(arguments)
+            except (json.JSONDecodeError, ValueError):
+                arguments = {}
+        if not isinstance(arguments, dict):
+            arguments = {}
+        calls.append(
+            ToolCall(
+                id=str(entry.get("id") or f"call_{index}"),
+                name=name,
+                arguments=arguments,
+            )
+        )
+    return calls
 
 
 class OllamaGateway:
@@ -98,6 +137,89 @@ class OllamaGateway:
             # and silently loses the fact being extracted.
             payload["format"] = "json"
         return payload
+
+    async def generate_with_tools(
+        self,
+        *,
+        system: str,
+        messages: list[dict],
+        tools: list[dict],
+        model: str | None = None,
+        max_tokens: int | None = None,
+    ) -> ToolCallResponse:
+        """Generate with tools offered, returning any calls the model requested.
+
+        Implements ``SupportsToolCalling``. Ollama accepts the OpenAI-shaped
+        ``tools`` array on /api/chat and returns ``message.tool_calls``;
+        verified against qwen2.5:3b and qwen3:8b, both of which call tools and
+        correctly stop calling once a result is fed back.
+        """
+        chat_messages: list[dict] = []
+        if system:
+            chat_messages.append({"role": "system", "content": system})
+        chat_messages.extend(messages)
+
+        model_name = model or self._default_model
+        num_predict = max_tokens or self._max_tokens
+        payload: dict = {
+            "model": model_name,
+            "messages": chat_messages,
+            "stream": False,
+            "keep_alive": self._keep_alive,
+            "options": {"num_predict": num_predict},
+        }
+        if tools:
+            payload["tools"] = tools
+
+        start = time.perf_counter()
+        data = await self._post_chat(payload, model_name)
+        message = data.get("message") or {}
+        calls = _parse_tool_calls(message.get("tool_calls"))
+        logger.info(
+            "ollama tool turn: model=%s elapsed=%.1fs tool_calls=%d",
+            data.get("model", model_name),
+            time.perf_counter() - start,
+            len(calls),
+        )
+        return ToolCallResponse(
+            text=_clean(message.get("content", "")),
+            tool_calls=calls,
+            model=data.get("model", model_name),
+            input_tokens=int(data.get("prompt_eval_count", 0) or 0),
+            output_tokens=int(data.get("eval_count", 0) or 0),
+            stop_reason=data.get("done_reason") or "stop",
+        )
+
+    async def _post_chat(self, payload: dict, model_name: str) -> dict:
+        """POST /api/chat, mapping transport failures to ``AppError``."""
+        try:
+            response = await self._http().post("/api/chat", json=payload)
+            response.raise_for_status()
+            return dict(response.json())
+        except httpx.TimeoutException as exc:
+            raise AppError(
+                "The LLM request timed out.", code="llm_timeout", status_code=504
+            ) from exc
+        except httpx.ConnectError as exc:
+            raise AppError(
+                f"Cannot reach Ollama at {self._base_url}. Is it running?",
+                code="llm_unavailable",
+                status_code=503,
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            logger.warning("Ollama API error: %s", exc)
+            raise AppError(
+                "The LLM provider returned an error.",
+                code="llm_error",
+                status_code=502,
+            ) from exc
+        except Exception as exc:
+            logger.exception("unexpected LLM error")
+            raise AppError(
+                "An unexpected LLM error occurred.",
+                code="llm_error",
+                status_code=502,
+            ) from exc
 
     async def generate_json(
         self,
