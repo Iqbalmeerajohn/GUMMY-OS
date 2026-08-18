@@ -40,8 +40,38 @@ const STAGE_LABELS: Record<string, string> = {
   answering: "Preparing the answer",
 };
 
-export function stageLabel(stage: string): string | null {
-  return STAGE_LABELS[stage] ?? null;
+/** Backend agent key → the name shown while it works. */
+const AGENT_NAMES: Record<string, string> = {
+  career: "Career Agent",
+  learning: "Learning Agent",
+  research: "Research Agent",
+  automation: "Automation Agent",
+  planner: "Planner Agent",
+  memory: "Memory Agent",
+  recall: "Memory Recall",
+  general: "GUMMY",
+};
+
+/**
+ * The label for one orchestrator stage.
+ *
+ * A compound request runs two agents in sequence and can take twenty seconds,
+ * so naming the agent that is working is what turns that into a visible
+ * handover rather than one long unexplained pause. Still only a stage and an
+ * agent name — never what the agent is thinking.
+ */
+export function stageLabel(
+  stage: string,
+  agent?: string | null,
+): string | null {
+  const base = STAGE_LABELS[stage];
+  if (!base) return null;
+  const who = agent ? AGENT_NAMES[agent] : null;
+  if (!who || agent === "general") return base;
+  if (stage === "answering") return `${who} is preparing the answer`;
+  if (stage === "gathering") return `${who} is gathering context`;
+  if (stage === "delegating") return `Delegating to ${who}`;
+  return base;
 }
 
 function Icon({ state }: { state: ActivityStep["state"] }) {

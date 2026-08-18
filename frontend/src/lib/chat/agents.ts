@@ -11,6 +11,7 @@ export const AGENTS = [
   { value: "planner", label: "Planner" },
   { value: "memory", label: "Memory" },
   { value: "research", label: "Research" },
+  { value: "automation", label: "Automation" },
 ] as const;
 
 /** Backend agent key → human label (badges). Includes the General fallback. */
@@ -21,4 +22,6 @@ export const AGENT_LABELS: Record<string, string> = {
   planner: "Planner",
   memory: "Memory",
   research: "Research",
+  automation: "Automation",
+  recall: "Recall",
 };

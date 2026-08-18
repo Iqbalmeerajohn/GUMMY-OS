@@ -48,7 +48,9 @@ class StepResponse(BaseModel):
     seq: int
     agent_key: str
     status: str
-    started_at: str | None = None
+    # A step records when it was created and when it finished; there is no
+    # separate "started" column — creation IS the start.
+    created_at: str
     finished_at: str | None = None
     cost_tokens: int = 0
     error: str | None = None
@@ -138,7 +140,7 @@ async def get_run(
                 seq=s.seq,
                 agent_key=s.agent_key,
                 status=s.status.value,
-                started_at=s.started_at.isoformat() if s.started_at else None,
+                created_at=s.created_at.isoformat(),
                 finished_at=s.finished_at.isoformat() if s.finished_at else None,
                 cost_tokens=s.cost_tokens,
                 error=s.error,

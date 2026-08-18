@@ -481,3 +481,49 @@ def test_each_agent_in_a_pipeline_keeps_its_own_tool_ceiling() -> None:
     assert "web_search" in _agent_tool_keys("research")
     assert "web_search" not in _agent_tool_keys("automation")
     assert "automation_create" not in _agent_tool_keys("career")
+
+
+# ── The trace endpoint ───────────────────────────────────────────────────────
+
+
+async def test_the_run_trace_endpoint_returns_the_pipeline(
+    api_client: Any, seed_user: uuid.UUID, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Found live: the endpoint 500'd because it read step fields that do not
+    exist on the model. A response model is not a schema check — only calling
+    the endpoint proves the attribute names are real."""
+    monkeypatch.setattr(
+        "app.repositories.search_repository.search_similar_memories", _fake_search
+    )
+    params = {"user_id": str(seed_user)}
+    created = await api_client.post("/api/v1/conversations", params=params, json={})
+    conversation_id = created.json()["id"]
+
+    await api_client.post(
+        f"/api/v1/conversations/{conversation_id}/messages",
+        params=params,
+        json={"message": "Find AI jobs and then create a learning plan"},
+    )
+
+    listed = await api_client.get(
+        "/api/v1/runs", params={**params, "conversation_id": conversation_id}
+    )
+    assert listed.status_code == 200
+    runs = listed.json()
+    assert runs and runs[0]["route_plan"]["steps"] == ["career", "learning"]
+
+    detail = await api_client.get(f"/api/v1/runs/{runs[0]['id']}", params=params)
+    assert detail.status_code == 200, detail.text
+    body = detail.json()
+    assert [s["agent_key"] for s in body["steps"]] == ["career", "learning"]
+    assert body["hops"], "A2A hops must be retrievable"
+
+
+async def test_another_tenants_run_is_not_readable(
+    api_client: Any, seed_user: uuid.UUID
+) -> None:
+    """404 rather than 403: the existence of a run id is itself information."""
+    response = await api_client.get(
+        f"/api/v1/runs/{uuid.uuid4()}", params={"user_id": str(seed_user)}
+    )
+    assert response.status_code == 404

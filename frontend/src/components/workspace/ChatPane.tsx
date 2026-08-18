@@ -381,7 +381,7 @@ export function ChatPane({
         if (ev.type === "delta" && ev.text) {
           setStreamText((prev) => prev + ev.text);
         } else if (ev.type === "status" && ev.stage) {
-          const label = stageLabel(ev.stage);
+          const label = stageLabel(ev.stage, ev.agent);
           if (label) {
             // Each orchestrator stage supersedes the previous one, so earlier
             // steps settle to "done" rather than all spinning at once.

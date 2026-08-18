@@ -24,7 +24,7 @@ One Postgres container, one Ollama daemon, two dev servers. Paid model keys
 
 | Area | State |
 | --- | --- |
-| Backend tests | **780 passing**, 0 failing (4 Postgres-gated skips) |
+| Backend tests | **815 passing**, 0 failing (4 Postgres-gated skips) |
 | Migrations | 24 Alembic revisions |
 | API | ~60 REST endpoints across 11 routers (`/api/v1`) |
 | Agents | 6 routed specialists (career · learning · research · automation · planner · memory) + general + recall, each declaring tools |
@@ -47,7 +47,11 @@ do support native tool calling. See [docs/TOOL_SYSTEM.md](docs/TOOL_SYSTEM.md).
 
 **Agent workforce:** four primary agents on one runtime — Career, Learning,
 Research, and Automation — sharing the same memory engine, knowledge seam, tool
-loop, and orchestrator. Automation schedules reminders and recurring check-ins
+loop, and orchestrator. A compound request ("find AI jobs and then a learning
+plan for the biggest gap") is detected deterministically and run as a pipeline,
+with structured findings handed between agents and the full agent-to-agent trace
+readable at `/api/v1/runs`. See
+[docs/MULTI_AGENT_DELEGATION.md](docs/MULTI_AGENT_DELEGATION.md). Automation schedules reminders and recurring check-ins
 that persist in Postgres and survive a restart; they run inside GUMMY and do not
 send email or create calendar events. See
 [docs/AGENT_WORKFORCE.md](docs/AGENT_WORKFORCE.md).

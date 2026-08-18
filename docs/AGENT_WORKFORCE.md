@@ -174,11 +174,15 @@ The orchestrator **supports** pipeline and parallel plan shapes, with A2A hops
 persisted to `agent_messages` and per-step rows in `agent_steps`. Findings from
 an earlier step are folded into the next step's prompt.
 
-**Current limitation:** the deterministic router produces a multi-agent plan
-only from a thread's `agent_context` hint (research threads lead with recall).
-A compound request like *"find AI jobs and then a learning plan for the biggest
-gap"* routes to a single agent today. The execution machinery is in place and
-tested; the routing that would trigger it from keywords is not implemented.
+**Implemented.** The router detects compound requests grammatically — a
+connective separating clauses that resolve to different specialists — and emits
+a pipeline. *"Find AI jobs and then a learning plan for the biggest gap"* runs
+Career → Learning, with the upstream findings handed forward as a structured
+`AgentHandoff`. Verified live. See
+[MULTI_AGENT_DELEGATION.md](MULTI_AGENT_DELEGATION.md).
+
+Parallel plans remain un-routed: `_run_parallel` works and is tested, but no
+keyword pattern produces a `PARALLEL` shape.
 
 ---
 
@@ -208,7 +212,8 @@ honest; the script's phrase list missed "is not available").
 
 ## 9. Known limitations
 
-- **Multi-agent routing** — machinery exists, keyword-driven delegation does not (§7).
+- **Parallel routing** — `_run_parallel` works and is tested, but no keyword
+  pattern produces a `PARALLEL` plan. Sequential pipelines are routed (§7).
 - **Automations run only while GUMMY is running.** The scheduler is in-process;
   a task due while the backend is stopped fires on next startup, not at its slot.
 - **No notification channel.** A fired automation writes a run row visible in
