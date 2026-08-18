@@ -21,12 +21,17 @@ from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging
 from app.core.security import assert_auth_safe
-from app.database.session import dispose_engine, get_sessionmaker
+from app.database.session import (
+    dispose_engine,
+    get_auth_sessionmaker,
+    get_sessionmaker,
+)
 from app.observability import langfuse as langfuse_obs
 from app.services.agents.registry import get_registry
 from app.services.embeddings.factory import get_embedding_service
 from app.services.llm.factory import get_llm_provider
 from app.services.search import provider as search_provider
+from app.workers.automation_scheduler import automation_scheduler
 from app.workers.embedding_worker import embedding_worker
 from app.workers.enrichment_worker import enrichment_worker
 
@@ -69,6 +74,17 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         )
         enrichment_worker.start()
 
+        # The automation scheduler reads the automations table directly, with no
+        # acting user — it runs as the system, between requests. RLS would hide
+        # every row from a tenant-scoped connection, so it uses the same owner
+        # connection authentication does, for the same reason: this is a
+        # genuinely pre-tenant operation. Everything it then executes is scoped
+        # to each automation's own user_id.
+        automation_scheduler.configure(
+            sessionmaker=get_auth_sessionmaker() or sessionmaker
+        )
+        automation_scheduler.start()
+
         # Seed the agent registry catalog (idempotent upsert of built-in
         # manifests; runs with no tenant GUC — the agents_global_seed path).
         # Best-effort: a seeding failure must not block boot.
@@ -82,6 +98,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
     yield
 
+    await automation_scheduler.stop()
     await enrichment_worker.stop()
     await embedding_worker.stop()
     await dispose_engine()

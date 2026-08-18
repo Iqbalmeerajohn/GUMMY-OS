@@ -10,6 +10,7 @@ from app.models.agent import Agent
 from app.models.agent_message import AgentMessage
 from app.models.agent_run import AgentRun
 from app.models.agent_step import AgentStep
+from app.models.automation import Automation, AutomationRun
 from app.models.conversation import Conversation
 from app.models.conversation_summary import ConversationSummary
 from app.models.conversation_summary_embedding import (
@@ -70,6 +71,8 @@ __all__ = [
     "Message",
     "ConversationSummary",
     "ConversationSummaryEmbedding",
+    "Automation",
+    "AutomationRun",
     "MemorySource",
     "ConversationStatus",
     "AgentContext",

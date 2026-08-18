@@ -667,3 +667,43 @@ export function importCalendar(icsUrl: string) {
     json: { ics_url: icsUrl },
   });
 }
+
+// ── Automations ──────────────────────────────────────────────────────────────
+
+/** A scheduled task GUMMY runs locally. */
+export interface AutomationItem {
+  id: string;
+  name: string;
+  description: string | null;
+  kind: string;
+  schedule: string;
+  status: string;
+  enabled: boolean;
+  timezone: string;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  last_error: string | null;
+  created_at: string;
+}
+
+export interface AutomationListResult {
+  items: AutomationItem[];
+  total: number;
+}
+
+export function listAutomations() {
+  return apiFetch<AutomationListResult>("/api/v1/automations", {
+    query: { limit: 100 },
+  });
+}
+
+export function toggleAutomation(id: string, enabled: boolean) {
+  return apiFetch<AutomationItem>(`/api/v1/automations/${id}/toggle`, {
+    method: "POST",
+    json: { enabled },
+  });
+}
+
+export function deleteAutomation(id: string) {
+  return apiFetch<void>(`/api/v1/automations/${id}`, { method: "DELETE" });
+}

@@ -16,6 +16,7 @@ from app.api.v1 import (
     actions,
     agents,
     auth,
+    automations,
     connectors,
     conversations,
     files,
@@ -38,3 +39,4 @@ api_router.include_router(files.router)
 api_router.include_router(knowledge.router)
 api_router.include_router(agents.router)
 api_router.include_router(connectors.router)
+api_router.include_router(automations.router)

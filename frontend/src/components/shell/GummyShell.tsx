@@ -13,11 +13,13 @@ import {
   Target,
   Users,
   X,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 
 import { LivingOrb } from "@/components/brand/LivingOrb";
 import { AgentDirectory } from "@/components/agents/AgentDirectory";
+import { AutomationsCenter } from "@/components/automations/AutomationsCenter";
 import { FilesCenter } from "@/components/files/FilesCenter";
 import { GoalsCenter } from "@/components/goals/GoalsCenter";
 import { MemoryCenter } from "@/components/memory/MemoryCenter";
@@ -40,6 +42,7 @@ type PanelId =
   | "goals"
   | "files"
   | "agents"
+  | "automations"
   | "settings";
 
 /** Panels wide enough to need it get a roomier sheet; the rest stay narrow. */
@@ -52,6 +55,7 @@ const RAIL: { id: PanelId; label: string; icon: LucideIcon }[] = [
   { id: "goals", label: "Goals", icon: Target },
   { id: "files", label: "Files", icon: FileText },
   { id: "agents", label: "Agents", icon: Users },
+  { id: "automations", label: "Automations", icon: Zap },
 ];
 
 const TITLES: Record<PanelId, string> = {
@@ -61,6 +65,7 @@ const TITLES: Record<PanelId, string> = {
   goals: "Goals",
   files: "Files",
   agents: "Agents",
+  automations: "Automations",
   settings: "Settings",
 };
 
@@ -290,6 +295,8 @@ function SlideOver({
                 <FilesCenter />
               ) : panel === "agents" ? (
                 <AgentDirectory />
+              ) : panel === "automations" ? (
+                <AutomationsCenter />
               ) : (
                 <SettingsPanel />
               )}

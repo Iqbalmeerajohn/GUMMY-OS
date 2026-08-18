@@ -87,6 +87,7 @@ def _int_arg(description: str) -> dict:
 def _catalog() -> dict[str, ToolSpec]:
     # Imported lazily so adapters can import this module's types freely.
     from app.services.agents.tools import (
+        automation_tools,
         calculator,
         clock,
         doc_read,
@@ -218,6 +219,44 @@ def _catalog() -> dict[str, ToolSpec]:
                 "required": ["ref"],
             },
             executor=doc_read.execute,
+        ),
+        ToolSpec(
+            key="automation_create",
+            display_name="Create Automation",
+            category="automation",
+            tier=PermissionTier.GREEN,
+            description=(
+                "Schedule a reminder or recurring check-in for this user. The "
+                "automation fires inside GUMMY and appears in their Automations "
+                "panel; it does NOT send email or create calendar events."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "name": _arg("Short title, e.g. 'Review goals'."),
+                    "when": _arg(
+                        "When it should first run, as an ISO-8601 timestamp "
+                        "such as 2026-08-19T09:00:00Z."
+                    ),
+                    "schedule": _arg("One of: once, daily, weekly."),
+                    "kind": _arg("One of: reminder, goal_check_in, digest."),
+                    "message": _arg("What the reminder should say."),
+                },
+                "required": ["name", "when"],
+            },
+            executor=automation_tools.execute_create,
+        ),
+        ToolSpec(
+            key="automation_list",
+            display_name="List Automations",
+            category="automation",
+            tier=PermissionTier.GREEN,
+            description=(
+                "List this user's scheduled automations, with status and next "
+                "run time. Use before claiming what is or is not scheduled."
+            ),
+            parameters={"type": "object", "properties": {}},
+            executor=automation_tools.execute_list,
         ),
         # ── Modeled, executor-deferred (approval UI first) ────────────────
         ToolSpec(

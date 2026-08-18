@@ -297,3 +297,44 @@ def enum_type(enum_cls: type[Enum], name: str) -> SAEnum:
         validate_strings=True,
         values_callable=lambda enum: [member.value for member in enum],
     )
+
+
+# ── Automation (local scheduled tasks) ────────────────────────────────────────
+
+
+class AutomationKind(StrEnum):
+    """What a scheduled automation does when it fires.
+
+    Deliberately a closed set. An automation is created from a chat message, so
+    an open-ended "kind" would let a model invent capabilities that do not
+    exist; every value here has an executor behind it.
+    """
+
+    REMINDER = "reminder"
+    GOAL_CHECK_IN = "goal_check_in"
+    DIGEST = "digest"
+
+
+class AutomationSchedule(StrEnum):
+    """How often an automation repeats."""
+
+    ONCE = "once"
+    DAILY = "daily"
+    WEEKLY = "weekly"
+
+
+class AutomationStatus(StrEnum):
+    """Lifecycle of an automation."""
+
+    ACTIVE = "active"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class AutomationRunStatus(StrEnum):
+    """Outcome of one firing."""
+
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"

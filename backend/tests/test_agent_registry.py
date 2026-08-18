@@ -63,9 +63,9 @@ def test_every_declared_tool_exists_and_respects_its_agents_ceiling() -> None:
         for tool_key in manifest.tools:
             spec = catalog.get(tool_key)
             assert spec is not None, f"{key} declares unknown tool {tool_key!r}"
-            assert tier_order[spec.tier] <= tier_order[manifest.ceiling], (
-                f"{key} declares {tool_key!r} above its {manifest.ceiling} ceiling"
-            )
+            assert (
+                tier_order[spec.tier] <= tier_order[manifest.ceiling]
+            ), f"{key} declares {tool_key!r} above its {manifest.ceiling} ceiling"
 
 
 def test_m8_specialists_registered_with_keywords() -> None:
@@ -81,6 +81,7 @@ def test_m8_specialists_registered_with_keywords() -> None:
         "planner",
         "memory",
         "research",
+        "automation",
     }
 
 

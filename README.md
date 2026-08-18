@@ -24,11 +24,11 @@ One Postgres container, one Ollama daemon, two dev servers. Paid model keys
 
 | Area | State |
 | --- | --- |
-| Backend tests | **745 passing**, 0 failing (4 Postgres-gated skips) |
-| Migrations | 23 Alembic revisions |
+| Backend tests | **780 passing**, 0 failing (4 Postgres-gated skips) |
+| Migrations | 24 Alembic revisions |
 | API | ~60 REST endpoints across 11 routers (`/api/v1`) |
-| Agents | 5 routed specialists + general + recall, each declaring tools; the rest are in the plan phase |
-| Tools | 7 executable (calculator · memory · file search · file list · clock · web search · doc read), 2 modeled behind approval |
+| Agents | 6 routed specialists (career · learning · research · automation · planner · memory) + general + recall, each declaring tools |
+| Tools | 9 executable (calculator · memory · file search · file list · clock · web search · doc read · automation create/list), 2 modeled behind approval |
 | Web client | 6 routes — the chat *is* the app, everything else is a slide-over |
 | Stack | Python 3.12 · FastAPI · SQLAlchemy 2.0 async · PostgreSQL 16 + pgvector · Ollama · Next.js 16 / React 19 |
 
@@ -44,6 +44,13 @@ registry → policy → executor path, with Green/Yellow/Red tiers, schema
 validation, per-tool timeouts, an iteration cap, redacted audit rows, and safe
 execution status streamed to the UI. Verified against local Ollama models, which
 do support native tool calling. See [docs/TOOL_SYSTEM.md](docs/TOOL_SYSTEM.md).
+
+**Agent workforce:** four primary agents on one runtime — Career, Learning,
+Research, and Automation — sharing the same memory engine, knowledge seam, tool
+loop, and orchestrator. Automation schedules reminders and recurring check-ins
+that persist in Postgres and survive a restart; they run inside GUMMY and do not
+send email or create calendar events. See
+[docs/AGENT_WORKFORCE.md](docs/AGENT_WORKFORCE.md).
 
 **Seam-only (not yet wired):** Gmail/Drive connectors, live web search (Brave —
 implemented and config-gated; the tool reports UNAVAILABLE without a key rather

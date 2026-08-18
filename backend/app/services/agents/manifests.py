@@ -27,6 +27,17 @@ _BASE_TOOLS: tuple[str, ...] = (
 # key is configured, money.
 _RESEARCH_TOOLS: tuple[str, ...] = (*_BASE_TOOLS, "web_search")
 
+# The Automation agent gets a deliberately narrow set: the clock (so it can
+# resolve "tomorrow" correctly), memory (to know what the user cares about),
+# and the two automation tools. No file or web access — scheduling a reminder
+# needs neither, and a tool an agent cannot justify is attack surface.
+_AUTOMATION_TOOLS: tuple[str, ...] = (
+    "current_time",
+    "memory_read",
+    "automation_create",
+    "automation_list",
+)
+
 GENERAL_AGENT_KEY = "general"
 
 # The single M3 built-in: the general-purpose conversational agent. Its M4
@@ -115,6 +126,30 @@ CAREER_AGENT = AgentManifest(
         "hiring",
         "cover letter",
         "portfolio",
+        # Added after live testing: "Find AI/ML fresher opportunities" routed to
+        # general because none of the words above appear in it. The keyword set
+        # has to cover how people actually phrase the request, not only the
+        # canonical nouns — and it should span the capabilities this agent
+        # claims (exams, scholarships, certifications, hackathons).
+        "opportunity",
+        "opportunities",
+        "fresher",
+        "freshers",
+        "graduate",
+        "placement",
+        "placements",
+        "vacancy",
+        "vacancies",
+        "opening",
+        "openings",
+        "scholarship",
+        "scholarships",
+        "certification",
+        "certifications",
+        "hackathon",
+        "hackathons",
+        "exam",
+        "exams",
     ),
     priority=5,
     model_tier="default",
@@ -239,12 +274,49 @@ RESEARCH_AGENT = AgentManifest(
 
 # The Router scores against these specialists (general is the fallthrough and
 # recall is an internal pipeline head — neither is a keyword target).
+AUTOMATION_AGENT_KEY = "automation"
+
+AUTOMATION_AGENT = AgentManifest(
+    key=AUTOMATION_AGENT_KEY,
+    display_name="Automation Agent",
+    mission=(
+        "Schedule and manage the things Gummy does on a timer: reminders, "
+        "recurring check-ins, and periodic summaries — all local to Gummy."
+    ),
+    ceiling=PermissionTier.GREEN,
+    tools=_AUTOMATION_TOOLS,
+    keywords=(
+        "remind",
+        "reminder",
+        "remind me",
+        "schedule",
+        "scheduled",
+        "recurring",
+        "every day",
+        "every week",
+        "daily",
+        "weekly",
+        "automation",
+        "automate",
+        "check in",
+        "check-in",
+        "notify",
+        "alert me",
+        "tomorrow",
+    ),
+    # Above Planner: "schedule a check-in every Monday" is scheduling work, not
+    # goal planning, and both agents claim the word "schedule".
+    priority=6,
+    model_tier="default",
+)
+
 SPECIALIST_AGENT_KEYS: tuple[str, ...] = (
     CAREER_AGENT_KEY,
     LEARNING_AGENT_KEY,
     PLANNER_AGENT_KEY,
     MEMORY_AGENT_KEY,
     RESEARCH_AGENT_KEY,
+    AUTOMATION_AGENT_KEY,
 )
 
 BUILTIN_MANIFESTS: tuple[AgentManifest, ...] = (
@@ -255,4 +327,5 @@ BUILTIN_MANIFESTS: tuple[AgentManifest, ...] = (
     PLANNER_AGENT,
     MEMORY_AGENT,
     RESEARCH_AGENT,
+    AUTOMATION_AGENT,
 )
