@@ -8,15 +8,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# Gummy's identity and speaking style, prepended to every prompt. Lives in
+# ``prompts.identity`` because the capability half of it is generated from the
+# agent registry and the live settings — a hand-written capability paragraph
+# starts rotting the day it is written.
+from app.services.agents.prompts import identity as _identity
 from app.services.memory.context_assembly_service import (
     ContextPackage,
     render_memory_line,
 )
 
-_PERSONA = (
-    "You are Gummy, the user's personal AI assistant. You help the user using "
-    "what you remember about them. Be warm, concise, and direct."
-)
+_PERSONA = _identity.IDENTITY
 
 _GROUNDING = (
     "Answer using the remembered context below when it is relevant. If the "
@@ -136,6 +138,17 @@ def build_prompt(
       stays byte-identical for the existing callers and tests.
     """
     identity_block = f"{identity}\n\n" if identity else ""
+    # Guidance for this specific message, and usually empty. Two shapes the
+    # model demonstrably gets wrong unaided — a bare greeting, and 'what can
+    # you do' — get a targeted instruction; everything else is left to it. A
+    # canned answer per question type would not survive the next agent added.
+    #
+    # It is appended LAST, after the knowledge block, rather than sitting up
+    # with the persona. Placed in the middle it was measurably ignored: the
+    # local 3B model answered "hello" with "How may I assist you?" — dodging
+    # the banned phrasing by paraphrasing it. The most specific instruction
+    # belongs closest to the message it is about.
+    shape = _identity.guidance_for(query)
 
     if knowledge is not None and knowledge.strip():
         system = (
@@ -156,6 +169,8 @@ def build_prompt(
                 "\n\nSummary of earlier in this conversation:\n"
                 f"<conversation_summary>\n{summary}\n</conversation_summary>"
             )
+        if shape:
+            system += f"\n\n{shape}"
         messages = [*(history or []), {"role": "user", "content": query}]
         return PromptPayload(system=system, messages=messages)
 
@@ -194,5 +209,7 @@ def build_prompt(
             "\n\nSummary of earlier in this conversation:\n"
             f"<conversation_summary>\n{summary}\n</conversation_summary>"
         )
+    if shape:
+        system += f"\n\n{shape}"
     messages = [*(history or []), {"role": "user", "content": query}]
     return PromptPayload(system=system, messages=messages)

@@ -2,16 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  BellRing,
   Brain,
   Briefcase,
   ChevronDown,
   FileSearch,
   Globe,
   GraduationCap,
-  Hammer,
   PanelLeft,
   PanelRight,
-  Sparkles,
   Telescope,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -100,16 +99,33 @@ const STREAM_PHASES = [
   "Generating response…",
 ];
 
+// Each of these maps to something GUMMY actually does — an agent that is
+// registered or a tool that can run. A starter that opens a feature the
+// backend does not have teaches the user the wrong thing about the product.
+// Prompts ending in a space are stems: they land in the composer with the
+// caret after them, so the user names the topic.
 const QUICK_ACTIONS = [
-  { icon: Telescope, label: "Research something", prompt: "Research " },
-  { icon: Sparkles, label: "Plan my day", prompt: "Help me plan my day." },
-  { icon: Hammer, label: "Build a project", prompt: "Help me build " },
-  { icon: GraduationCap, label: "Learn a topic", prompt: "Teach me about " },
-  { icon: FileSearch, label: "Analyze a document", prompt: "Analyze this: " },
+  { icon: Telescope, label: "Research a topic", prompt: "Research " },
+  {
+    icon: GraduationCap,
+    label: "Build a learning plan",
+    prompt: "Build me a learning plan for ",
+  },
   {
     icon: Briefcase,
     label: "Find opportunities",
-    prompt: "Find opportunities for ",
+    prompt: "Find internships and fresher roles in ",
+  },
+  { icon: BellRing, label: "Set a reminder", prompt: "Remind me " },
+  {
+    icon: FileSearch,
+    label: "Ask about my files",
+    prompt: "What is in the files I have uploaded?",
+  },
+  {
+    icon: Brain,
+    label: "See what you remember",
+    prompt: "What do you remember about me?",
   },
 ];
 
@@ -724,7 +740,7 @@ function WelcomeScreen({ onPick }: { onPick: (s: string) => void }) {
           {greeting}, {firstName}.
         </h2>
         <p className="text-muted-foreground text-base">
-          How can GUMMY help today?
+          I remember what matters, and I can work on it with you.
         </p>
       </div>
 

@@ -16,10 +16,14 @@ from __future__ import annotations
 # The single shared formatting contract. Kept terse: it is prepended to every
 # specialist prompt, so every token here is paid on every specialist turn.
 FORMATTING_RULES = (
-    "Formatting rules (follow exactly):\n"
+    "Formatting rules:\n"
     "- NEVER output markdown tables (no `|` columns). They render badly in chat. "
     "Use the plain structures below instead.\n"
-    "- Use short headers and bullet points; keep lines tight.\n"
+    "- Structure is for content that needs it. A greeting, a short factual "
+    "answer, or a one-line confirmation should be plain prose with no headers "
+    "and no bullets. Reach for the shapes below only when the answer really "
+    "has parts.\n"
+    "- When you do use them, keep headers short and lines tight.\n"
     "\n"
     "When you COMPARE two or more things, use a Comparison Block — one labeled "
     "group per option, each with its own bullets:\n"
