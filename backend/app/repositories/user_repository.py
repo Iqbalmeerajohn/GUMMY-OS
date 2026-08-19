@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,3 +70,13 @@ async def upsert_user(
             status_code=409,
         ) from exc
     return user
+
+
+async def count_users(session: AsyncSession) -> int:
+    """How many accounts exist.
+
+    Used only by the owner-mode gate: owner mode assumes this machine has one
+    user, and that premise is checkable.
+    """
+    total = await session.scalar(select(func.count()).select_from(User))
+    return int(total or 0)

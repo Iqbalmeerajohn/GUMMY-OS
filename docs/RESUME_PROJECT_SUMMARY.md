@@ -1,153 +1,126 @@
-# GUMMY OS — Résumé & Interview Positioning
+# GUMMY OS — Résumé & Interview Summary
 
-> Career-facing summary of GUMMY OS at the M8.5 freeze point, tuned for resume
-> bullets, LinkedIn, and technical interviews. All metrics are code-verified
-> (`PROJECT_AUDIT.md`, `TEST_REPORT.md`).
+Only verified capabilities appear here. Every number is reproducible from
+[VERIFICATION_REPORT.md](VERIFICATION_REPORT.md).
 
----
-
-## 1. The one-liner (project headline)
-
-**GUMMY OS** — *Designed and built a multi-tenant, memory-first AI operating
-system: a FastAPI + PostgreSQL/pgvector backend with fail-closed Row-Level
-Security, a unified semantic-retrieval knowledge layer, and a routed multi-agent
-workforce — verified by ~600 automated tests across 9 delivery milestones.*
+Deliberately **not** claimed: production, 24/7, cloud, fully autonomous, or any
+accuracy percentage.
 
 ---
 
-## 2. Verified facts to quote
+## One-line description
 
-| Fact | Value |
+> A local-first personal AI operating system — persistent long-term memory,
+> multi-agent orchestration, safe tool execution, and durable automation — built
+> on FastAPI, PostgreSQL/pgvector, and local Ollama models, with no external
+> service dependency.
+
+---
+
+## Résumé bullets
+
+**Built a relevance-gated long-term memory engine on PostgreSQL + pgvector**
+that extracts facts from conversation, consolidates them (restatements
+reinforce; more specific versions supersede), and retrieves them by hybrid
+ranking. Calibrated the retrieval threshold empirically against the live
+embedding model — 0.45 semantic similarity rejects 96.5% of irrelevant memories
+while retaining 92% of relevant ones — eliminating the "assistant volunteers
+unrelated facts" failure mode.
+
+**Designed a safe agent tool-execution loop** with a code-defined registry,
+Green/Yellow/Red policy gate, JSON-Schema validation, per-tool timeouts, and a
+bounded reason→call→observe cycle, backed by redacted audit rows. Arithmetic is
+evaluated through an AST allowlist rather than `eval`, so code-execution
+payloads are rejected at parse level — added after a local model was observed
+passing Python to a calculator tool unprompted.
+
+**Implemented deterministic multi-agent delegation** across six specialists on
+one orchestrator: compound requests are detected grammatically (a connective
+separating clauses that resolve to different agents) and executed as a pipeline
+with structured hand-offs and persisted agent-to-agent traces, while
+single-capability requests provably stay single-agent. Verified 19/19 routing
+scenarios live.
+
+---
+
+## Engineering metrics
+
+| Metric | Value |
 | --- | --- |
-| Automated backend tests | **598 passing**, 0 failing (4 Postgres-gated skips) |
-| Delivery milestones | **9** (M0→M8.5) across 5 completed phases |
-| Database migrations | 21 Alembic revisions |
-| REST endpoints | ~55 across 10 routers |
-| Specialized agents | 5 specialists + general + recall (7 manifests) |
-| Stack | Python 3.12, FastAPI, SQLAlchemy 2.0 async, PostgreSQL/pgvector, Next.js 16/React 19 |
-| Security | Fail-closed Postgres RLS under a non-bypass role, proven live |
+| Backend tests | 837 passed, 4 skipped, 0 failed |
+| Frontend tests | 11 passed, 0 failed |
+| Static analysis | `ruff`, `black`, `mypy app` clean (235 files); TS + ESLint clean |
+| Migrations | 24 |
+| API | 71 endpoints, 15 routers |
+| Agents | 6 routed specialists + general + recall |
+| Tools | 9 executable, 2 modeled behind approval |
+| Tenant tables under RLS | 24 |
+| Live auth + isolation | 26/26 |
+| Live routing | 19/19 |
+| Live tool loop | 10/10 |
 
 ---
 
-## 3. Résumé bullets (pick 3–4)
+## Stack
 
-**Backend / platform focus**
-- Architected and built a **multi-tenant AI backend** (FastAPI, PostgreSQL/pgvector,
-  SQLAlchemy 2.0 async) with **fail-closed Postgres Row-Level Security** enforcing
-  per-user isolation at the database layer, verified live by a Postgres-gated test
-  suite running as a non-bypass role.
-- Engineered a **memory-first retrieval system** — hybrid semantic + keyword search
-  (pgvector HNSW + Postgres full-text) ranked by importance/recency/confidence —
-  powering memory-grounded, token-budgeted LLM responses.
-- Built a **unified knowledge-retrieval layer** that ranks and compresses memories,
-  conversation summaries, goals, and documents into a single grounded context pack,
-  enforcing a "single retrieval layer" rule so new agents add zero retrieval code.
-
-**AI / agent focus**
-- Designed a **multi-agent orchestration runtime** with a deterministic keyword
-  router, single/pipeline/parallel execution shapes, per-run step & token-cost
-  guards, and a guaranteed fallback so routing never fails a request — with a full
-  agent-to-agent audit trail and Langfuse tracing.
-- Shipped **five specialized agents** (career, learning, planner, memory, research)
-  on a shared handler that grounds exclusively through the knowledge seam, plus a
-  read-only routing-diagnostics API.
-
-**Delivery / quality focus**
-- Delivered across **9 incremental milestones** with **598 automated tests** (0
-  failing), `ruff`/`mypy`-clean, 21 Alembic migrations, and live verification on
-  Supabase Postgres — as a disciplined single-founder engineering effort.
-
-**Full-stack focus**
-- Built the **Next.js 16 / React 19** web client: streaming (SSE) chat workspace
-  with agent selection, a Memory Center, goals, file upload + chat attachments, and
-  unified search — with TanStack Query, Supabase SSR auth, and PostHog/Sentry.
+Python 3.12 · FastAPI · SQLAlchemy 2.0 (async) · Alembic · PostgreSQL 16 ·
+pgvector · Ollama (`qwen2.5:3b`, `nomic-embed-text`) · Next.js 16 · React 19 ·
+TypeScript · Tailwind v4 · TanStack Query · Docker
 
 ---
 
-## 4. LinkedIn "About / Featured" blurb
+## Interview talking points
 
-> *Building **GUMMY OS** — a personal, memory-first AI operating system. A
-> FastAPI + PostgreSQL/pgvector backend with fail-closed Row-Level Security, a
-> consent-based long-term memory engine, a unified semantic-retrieval knowledge
-> layer, and a routed multi-agent workforce (career, learning, planner, memory,
-> research). ~600 automated tests, 21 migrations, a streaming Next.js/React client.
-> Solo-built with startup engineering discipline.*
+**Why a relevance floor, and why 0.45.**
+Semantic similarity was only 55% of the blended retrieval score, so importance
+and recency could carry a topically unrelated memory into the prompt. The fix
+gates on *raw* similarity, and the threshold was measured rather than guessed:
+probe queries against real stored memories showed irrelevant pairs averaging
+0.362 and relevant pairs 0.533. 0.50 would have been cleaner on precision but
+discarded 42% of genuine recall — a forgetful assistant is a more visible
+failure than an occasional stray fact.
 
----
+**Making two code paths agree by construction.**
+The streamed and non-streamed chat paths had drifted, and the richer one (the
+orchestrator) was the one production never used. Rather than syncing them, the
+streaming path became the single implementation and the non-streaming call
+became a thin drain of it — divergence became impossible rather than
+discouraged, and every existing test kept passing because the public signature
+was preserved.
 
-## 5. Interview talking points (Q → A)
+**Idempotency as a database guarantee.**
+The automation scheduler claims a slot by inserting a run row with a unique
+constraint on `(automation_id, scheduled_for)`. Two workers racing, a restart
+replaying a window, or a clock stepping backwards all produce a constraint
+violation instead of a duplicate reminder — correctness from a constraint rather
+than from careful sequencing.
 
-**"How do you guarantee one user can't read another's data?"**
-Postgres Row-Level Security keyed on a per-transaction GUC set from the verified
-JWT, enforced under a dedicated `NOSUPERUSER/NOBYPASSRLS` role so policies actually
-apply, **fail-closed** (unset tenant → zero rows), with `WITH CHECK` on writes.
-Proven by a live cross-tenant test suite — including under full-text and vector
-search. The hard-won lesson: I make each migration ship the table's *full* access
-policy (RLS **and** grants) so security travels with the schema and can't drift.
+**A green test suite is not evidence about a real dependency.**
+The hermetic suite used a fake model provider that returned well-formed JSON by
+construction. Against the real local model, every memory extraction failed on
+one missing quote — so the product's central feature had never worked, silently,
+with no failing test. Fixed with constrained decoding at the source plus a
+tolerant fallback.
 
-**"How do you keep an AI assistant cheap and coherent over long histories?"**
-Rolling conversation summaries (versioned + embedded) plus token-budgeted context
-assembly — the model never replays the full thread. Long histories stay bounded in
-latency and token cost.
+**A convenience feature that was a data leak.**
+"Owner mode" auto-authenticated requests on a single-user machine. Measured
+against the running app, an anonymous caller received the owner's identity, 7
+memories, and 10 conversations — and sign-out could not work by construction,
+since the client discards its token and is told it is still the owner. The fix
+gated the feature on its own premise: it applies only while the owner is the
+sole account.
 
-**"How does chat become long-term memory safely?"**
-Consent-gated extraction routed through the existing memory engine (no duplicated
-scoring/versioning/embedding logic), provenance-linked, and **watermark-first** —
-so an LLM failure rolls back and retries, and a success never re-extracts (no
-duplicates). It runs on an async worker off the request path.
-
-**"How does routing to multiple agents stay reliable?"**
-The router is deterministic and free (weighted keyword scoring) so the same intent
-always routes the same way and a diagnostics endpoint can explain it. Below
-threshold it degrades to a general agent; the orchestrator wraps every run with a
-guaranteed fallback to the grounded single-agent reply; per-run step and token
-caps stop runaway plans. Routing never costs the user a reply.
-
-**"Why a 'single retrieval layer'?"**
-So retrieval logic, cost, and tenant-scoping live in exactly one place. Five
-specialists shipped without five retrieval implementations — they all ground
-through one ranked, compressed knowledge seam.
-
-**"How would this scale to many users?"**
-Stateless services over a stateful store (any instance serves any request),
-denormalized tenant columns for cheap index-friendly RLS on hot tables, ANN +
-GIN indexing, and an in-process worker contract that maps directly onto a shared
-queue (Redis/Celery) when multi-process scale-out is needed.
-
-**"What's your testing philosophy?"**
-A hermetic SQLite suite for speed (zero infra, ~32s) where Postgres-only features
-degrade gracefully, plus a Postgres-gated suite that proves the security-critical
-guarantees against real Postgres. LLM/embeddings run behind deterministic fakes —
-no network, no flakiness, no spend.
+**Defending against the model, not with it.**
+The first probe of a local model with tools attached, asked only to say hello,
+called the calculator with `print('Hello')`. A tool's safety cannot rest on the
+model behaving well, so rejection is structural — an AST allowlist where calls,
+names, and attributes are parse-level failures.
 
 ---
 
-## 6. Competencies this project demonstrates
+## Honest limitations
 
-- **System design:** layered architecture, acyclic module graph, provider
-  abstractions, designed-for-scale multi-tenancy.
-- **Data/database:** PostgreSQL, pgvector (HNSW), full-text search, RLS, migrations.
-- **AI engineering:** retrieval-augmented grounding, agent orchestration, prompt
-  architecture, LLM provider abstraction, cost/observability.
-- **Security:** database-enforced isolation, JWT auth, consent & provenance,
-  defense-in-depth, live security verification.
-- **Quality:** 598-test suite, lint/type gates, incremental milestone delivery,
-  honest scoping (seams vs. shipped features).
-- **Full-stack:** Next.js/React streaming UI, server-state caching, SSR auth.
-- **Product/ownership:** vision → roadmap → shipped increments, solo, with docs.
-
----
-
-## 7. Honesty guardrails (so you never overclaim in an interview)
-
-- Live **web search is a seam**, not a wired feature (Brave/Tavily pending; off by
-  default). Say "I built the provider abstraction and eligibility gating."
-- File RAG is **keyword retrieval**, not vector ranking yet. Say "keyword RAG with
-  a seam for a vector retriever."
-- The **action layer is scaffolded** (approval/permission model exists); Gummy
-  proposes actions but doesn't execute external ones yet.
-- Workers are **in-process** (asyncio), not a distributed queue — by design, with a
-  clear externalization path.
-
-Framing these as *deliberate seams with a designed path forward* is itself a
-strong signal of engineering judgment.
+Google sign-in is implemented but unverified (no credentials configured).
+Parallel agent routing is not implemented. File retrieval is keyword-based, not
+vector RAG. Live web search is config-gated. No connectors, no public
+deployment, no cloud infrastructure.

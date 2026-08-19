@@ -20,7 +20,7 @@ from app.api.v1 import health
 from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging
-from app.core.security import assert_auth_safe
+from app.core.security import assert_auth_safe, warn_if_login_is_disabled
 from app.database.session import (
     dispose_engine,
     get_auth_sessionmaker,
@@ -114,6 +114,7 @@ def create_app() -> FastAPI:
     # Live web search backend (M8.5; offline Dummy default without BRAVE_API_KEY).
     search_provider.init_provider(settings)
     assert_auth_safe(settings)  # fail fast if dev auth bypass reaches production
+    warn_if_login_is_disabled(settings)
 
     app = FastAPI(
         title=settings.app_name,

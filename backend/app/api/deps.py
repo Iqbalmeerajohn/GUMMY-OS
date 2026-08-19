@@ -8,6 +8,7 @@ dependency behind it changed.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Annotated
 
@@ -26,6 +27,8 @@ from app.services.embeddings.embedding_service import EmbeddingService
 from app.services.embeddings.factory import get_embedding_service
 from app.services.llm.base import LLMProvider
 from app.services.llm.factory import get_llm_provider
+
+logger = logging.getLogger(__name__)
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -79,6 +82,14 @@ async def get_current_user(
     # auth_dev_bypass this resolves a REAL persisted account, so anything Gummy
     # learns while running open stays owned by that account once sign-in is
     # enabled. Refused in production by assert_auth_safe.
+    #
+    # Gated on the owner being the ONLY account. Owner mode's whole premise is
+    # "one person uses this machine", and that premise is checkable: the moment
+    # a second account exists it is false, and answering an anonymous request
+    # with the owner's identity stops being a convenience and becomes a data
+    # leak — an unauthenticated caller was served the owner's memories and
+    # conversations. It also silently defeats sign-out, because the client
+    # discards its token, asks who it is, and is told it is still the owner.
     if settings.gummy_owner_mode:
         if sessionmaker is None:
             raise AppError(
@@ -87,14 +98,19 @@ async def get_current_user(
                 status_code=503,
             )
         async with sessionmaker() as session:
-            owner = await auth_service.get_or_create_owner(
-                session, email=settings.gummy_owner_email
-            )
-            profile = CurrentUser(
-                id=owner.id, email=owner.email, display_name=owner.display_name
-            )
-        set_current_user_id(profile.id)
-        return profile
+            if await user_repository.count_users(session) <= 1:
+                owner = await auth_service.get_or_create_owner(
+                    session, email=settings.gummy_owner_email
+                )
+                profile = CurrentUser(
+                    id=owner.id, email=owner.email, display_name=owner.display_name
+                )
+                set_current_user_id(profile.id)
+                return profile
+        logger.warning(
+            "owner mode is enabled but more than one account exists; "
+            "refusing to auto-authenticate. Set GUMMY_OWNER_MODE=false."
+        )
 
     if settings.auth_dev_bypass:
         if user_id is not None:

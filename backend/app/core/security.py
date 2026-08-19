@@ -122,6 +122,24 @@ def _claims_from_payload(payload: dict[str, object]) -> TokenClaims:
     )
 
 
+def warn_if_login_is_disabled(settings: Settings) -> None:
+    """Log loudly when owner mode is on outside production.
+
+    Owner mode and sign-out are mutually exclusive: if every request without a
+    credential resolves to the owner, then discarding the token cannot log
+    anyone out. That trade is fine for a personal machine with no login screen
+    and surprising everywhere else, so it is stated at boot rather than
+    discovered when sign-out appears broken.
+    """
+    if settings.gummy_owner_mode and not settings.is_production:
+        logger.warning(
+            "GUMMY_OWNER_MODE is on: requests without a token resolve to %s, "
+            "so sign-out cannot work and the login screen is skipped. "
+            "Set GUMMY_OWNER_MODE=false to use real accounts.",
+            settings.gummy_owner_email,
+        )
+
+
 def assert_auth_safe(settings: Settings) -> None:
     """Fail fast if an insecure auth configuration would reach production.
 

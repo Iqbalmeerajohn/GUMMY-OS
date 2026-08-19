@@ -1,166 +1,243 @@
 # GUMMY OS
 
-> A Personal, Memory-First **Multi-Agent AI Operating System**. Your assistant's
-> name is **Gummy**.
+> A local-first personal AI operating system: persistent memory, multi-agent
+> orchestration, safe tool execution, and durable automation — running entirely
+> on your own machine.
 
-GUMMY OS is a unified, agentic operating layer that manages personal life, career,
-learning, research, and planning through a coordinated team of specialized AI
-agents — all backed by a persistent, **consent-based long-term memory** behind
-**fail-closed multi-tenant isolation**.
+Your assistant is called **Gummy**. It learns useful things from your
+conversations, keeps them in a local PostgreSQL database, and uses them quietly
+— only when they bear on what you just asked.
 
-**Gummy** learns you through conversation, memory, documents, and goals — while
-staying secure, permission-based, and user-controlled. It is built **first for
-personal use**, with a deliberate path toward a multi-user **SaaS** platform.
+**No Supabase. No Railway. No Vercel backend. No paid infrastructure.** One
+Postgres container, one Ollama daemon, two dev servers.
 
 ---
 
-## Status — M9 Local-First (2026-08-12)
-
-GUMMY runs **entirely on your machine**. No Supabase, no Railway, no Vercel, no
-Sentry, no PostHog — those SDKs are gone from both dependency manifests, there is
-one JWT issuer (this server), and errors and product events are logged locally.
-One Postgres container, one Ollama daemon, two dev servers. Paid model keys
-(OpenAI / Claude) still work; they are simply optional.
+## Status
 
 | Area | State |
 | --- | --- |
-| Backend tests | **815 passing**, 0 failing (4 Postgres-gated skips) |
+| Backend tests | **837 passed**, 4 skipped (Postgres-gated), 0 failed |
+| Frontend tests | **11 passed**, 0 failed |
+| TypeScript · ESLint | clean |
+| `ruff` · `black` · `mypy app` | clean (235 source files) |
+| `mypy tests` | 57 pre-existing errors — [reported, not hidden](docs/VERIFICATION_REPORT.md#1-automated-checks) |
 | Migrations | 24 Alembic revisions |
-| API | ~60 REST endpoints across 11 routers (`/api/v1`) |
-| Agents | 6 routed specialists (career · learning · research · automation · planner · memory) + general + recall, each declaring tools |
-| Tools | 9 executable (calculator · memory · file search · file list · clock · web search · doc read · automation create/list), 2 modeled behind approval |
-| Web client | 6 routes — the chat *is* the app, everything else is a slide-over |
-| Stack | Python 3.12 · FastAPI · SQLAlchemy 2.0 async · PostgreSQL 16 + pgvector · Ollama · Next.js 16 / React 19 |
+| API | 71 endpoints across 15 routers |
+| Agents | 6 routed specialists + general + recall |
+| Tools | 9 executable, 2 modeled behind approval |
 
-**What works today:** local auth (email/password + Google OAuth + owner mode)
-with fail-closed RLS · the memory engine with consolidation, a learned user
-profile, an episodic timeline, and reinforcement/decay ranking · instant recall
-(~0.6 s end-to-end, no model call, vs ~3 s generated) · streaming conversations with summaries and
-chat→memory extraction · goals · file intelligence · unified knowledge · the
-routed agent workforce · calendar import.
-
-**Also working:** a production tool loop — agents call tools through one
-registry → policy → executor path, with Green/Yellow/Red tiers, schema
-validation, per-tool timeouts, an iteration cap, redacted audit rows, and safe
-execution status streamed to the UI. Verified against local Ollama models, which
-do support native tool calling. See [docs/TOOL_SYSTEM.md](docs/TOOL_SYSTEM.md).
-
-**Agent workforce:** four primary agents on one runtime — Career, Learning,
-Research, and Automation — sharing the same memory engine, knowledge seam, tool
-loop, and orchestrator. A compound request ("find AI jobs and then a learning
-plan for the biggest gap") is detected deterministically and run as a pipeline,
-with structured findings handed between agents and the full agent-to-agent trace
-readable at `/api/v1/runs`. See
-[docs/MULTI_AGENT_DELEGATION.md](docs/MULTI_AGENT_DELEGATION.md). Automation schedules reminders and recurring check-ins
-that persist in Postgres and survive a restart; they run inside GUMMY and do not
-send email or create calendar events. See
-[docs/AGENT_WORKFORCE.md](docs/AGENT_WORKFORCE.md).
-
-**Seam-only (not yet wired):** Gmail/Drive connectors, live web search (Brave —
-implemented and config-gated; the tool reports UNAVAILABLE without a key rather
-than returning placeholder results), vector file RAG, and execution of
-approval-gated actions.
-
-See [M9 release notes](docs/10_RELEASE_NOTES_M9_LOCAL_FIRST.md) for the full
-account of what changed and what comes next.
+Every number above was produced by running the thing. See the
+[Verification Report](docs/VERIFICATION_REPORT.md) for exact denominators.
 
 ---
 
-## Repository structure
+## Architecture
 
+```mermaid
+flowchart TD
+    U[User] --> FE[Next.js 16 · localhost:3000]
+    FE -->|Bearer JWT · SSE| API[FastAPI · localhost:8000]
+    API --> ORCH[Master Orchestrator]
+
+    ORCH --> ROUTER[Deterministic Router]
+    ROUTER --> AGENTS
+
+    subgraph AGENTS [Agents]
+        CAREER[Career]
+        LEARN[Learning]
+        RESEARCH[Research]
+        AUTO[Automation]
+        GEN[General · Planner · Memory · Recall]
+    end
+
+    AGENTS --> KNOW[Unified Knowledge<br/>memories + goals + files]
+    AGENTS --> LOOP[Tool Loop<br/>registry → policy → executor]
+
+    LOOP --> TOOLS
+    subgraph TOOLS [Tools]
+        T1[calculator]
+        T2[memory_read]
+        T3[file_search / file_list]
+        T4[web_search]
+        T5[current_time]
+        T6[automation_create / list]
+    end
+
+    KNOW --> DB[(PostgreSQL 16 + pgvector)]
+    LOOP --> DB
+    ORCH --> DB
+    AGENTS --> OLLAMA[Ollama<br/>qwen2.5:3b · nomic-embed-text]
+    SCHED[Automation Scheduler] --> DB
 ```
-GUMMY-OS/
-├── README.md, CONVENTIONS.md, .env.example
-├── architecture/            # Design specs + ADRs
-├── docs/                    # Product docs, release notes, freeze document set
-├── backend/                 # FastAPI app, agent runtime, services, tests
-│   └── app/{api,core,database,models,repositories,schemas,services,workers}
-└── frontend/                # Next.js 16 / React 19 web client
-```
+
+Every agent shares **one** memory engine, **one** knowledge seam, **one** tool
+loop, and **one** orchestrator. Agent identity lives entirely in prompts.
 
 ---
 
-## Documentation map
+## What works
 
-**Current (start here):**
-1. [M9 — Local-First GUMMY](docs/10_RELEASE_NOTES_M9_LOCAL_FIRST.md) — what the
-   system is today, and what is next
+### Memory
+Facts are extracted from conversation automatically, consolidated against what
+is already known (restatements reinforce; more specific versions supersede), and
+retrieved by hybrid ranking — semantic similarity blended with importance,
+confidence, and recency.
 
-**Freeze document set (M8.5 history — these still describe the hosted stack):**
-1. [Master Document](docs/GUMMY_OS_MASTER_DOCUMENT.md) — the single canonical record
-2. [Project Audit](docs/PROJECT_AUDIT.md) — code-verified inventory & technical debt
-3. [The GUMMY OS Story](docs/GUMMY_OS_STORY.md) — product history
-4. [Technical Architecture](docs/GUMMY_OS_ARCHITECTURE.md) — all layers, as-built
-5. [Product Overview](docs/PRODUCT_OVERVIEW.md) — what it is for users
-6. [Test Report](docs/TEST_REPORT.md) — verification snapshot
-7. [Résumé & Interview Positioning](docs/RESUME_PROJECT_SUMMARY.md)
-8. [Future Roadmap](docs/FUTURE_ROADMAP.md) — Phase 4 remaining → Phase 9
+**Memory stays silent unless relevant.** A measured **0.45 semantic floor**
+(calibrated against the real embedding model, not guessed) keeps unrelated
+memories out of the prompt entirely, and the prompt tells the model to use
+context without announcing it. Ask *"what is the capital of France?"* and zero
+memories are injected.
 
-**Design specs:** [VISION.md](docs/VISION.md) · [ROADMAP.md](docs/ROADMAP.md) ·
-[FEATURES.md](docs/FEATURES.md) · [architecture/](architecture/) ·
-[CONVENTIONS.md](CONVENTIONS.md)
+**Instant recall** answers direct questions about stored facts with no model
+call at all — sub-second, versus ~3 s generated.
 
-**Release notes:** [M4](docs/06_RELEASE_NOTES_M4.md) ·
-[M6](docs/07_RELEASE_NOTES_M6.md) · [M6.5](docs/08_RELEASE_NOTES_M6_5.md) ·
-[M8](docs/09_RELEASE_NOTES_M8.md) ·
-[M9](docs/10_RELEASE_NOTES_M9_LOCAL_FIRST.md)
+### Agents
+Career · Learning · Research · Automation, plus Planner, Memory, General, and a
+deterministic Recall agent. Routing is keyword-based, free, and needs no LLM.
 
----
+**Compound requests become pipelines.** *"Find AI jobs and then create a
+learning plan for the biggest gap"* runs Career → Learning, with structured
+findings handed between them. Detection is grammatical, so *"find jobs and
+internships"* correctly stays one agent.
 
-## Running it locally
+### Tools
+A registry → policy → executor path with Green/Yellow/Red tiers, JSON-Schema
+validation, per-tool timeouts, a 4-iteration loop cap, and redacted audit rows.
+The calculator parses with an AST allowlist — `eval` is never used, so
+`__import__('os').system(...)` is rejected at parse level.
 
-Everything below runs on one machine. Nothing needs an account anywhere.
+### Automation
+Reminders and recurring check-ins persisted in PostgreSQL, **surviving a
+restart** — verified by restarting the backend and re-querying. Duplicate
+execution is prevented by a unique constraint, not by careful sequencing.
 
-**1. Database** — Postgres 16 + pgvector + pg_trgm, in Docker:
+They run inside GUMMY and **do not send email or create calendar events.**
 
-```bash
-docker compose up -d db        # container `gummy-db` on :5432
-```
-
-**2. Models** — [Ollama](https://ollama.com) provides both chat and embeddings,
-free and offline:
-
-```bash
-ollama pull qwen2.5:3b         # chat
-ollama pull nomic-embed-text   # embeddings (768-d)
-```
-
-**3. Backend:**
-
-```bash
-cd backend
-uv sync                                  # or: pip install -r requirements.txt
-cp .env.example .env                     # defaults are already local-first
-.venv/Scripts/alembic upgrade head       # 23 revisions
-.venv/Scripts/python -m pytest -q        # 655 passed, 4 skipped
-.venv/Scripts/uvicorn app.main:app --reload   # OpenAPI at /docs
-```
-
-**4. Frontend:**
-
-```bash
-cd frontend
-npm install
-npm run dev        # http://localhost:3000
-```
-
-Sign up with an email and password, or set `GUMMY_OWNER_MODE=true` to skip the
-login screen entirely on a single-user machine.
-
-**Optional — Google sign-in.** Create an OAuth client (Web application) in the
-Google Cloud console with redirect URI
-`http://localhost:8000/api/v1/auth/google/callback`, then set `GOOGLE_CLIENT_ID`
-and `GOOGLE_CLIENT_SECRET` in `backend/.env`. The button appears by itself once
-the server reports the method as available.
-
-**Optional — paid models.** Set `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` and
-switch `LLM_PROVIDER`. Ollama remains the default so the product costs nothing to
-run.
-
-The Postgres-gated security suite (fail-closed RLS, cross-tenant rejection) runs
-with `RUN_RLS_PG_TESTS=1` and `RLS_TEST_DSN` pointed at a `gummy_app` DSN.
+### Authentication
+GUMMY is its own identity provider: HS256 JWTs, PBKDF2 at 600k iterations,
+rotating hashed refresh tokens, and Row-Level Security on all 24 tenant tables.
+Verified live: **26/26** checks including two-user isolation.
 
 ---
 
-_Maintained as a single-founder project with the discipline of a startup
-engineering org._
+## Running locally
+
+**Local development only.** There is no public deployment — GUMMY runs on your
+machine by design, because the point of the product is that your memory never
+leaves it. The URLs below are not reachable by anyone else.
+
+### Prerequisites
+Docker · Python 3.12 · Node 22 · [Ollama](https://ollama.com)
+
+```bash
+ollama pull qwen2.5:3b
+ollama pull nomic-embed-text
+```
+
+### Start
+
+```bash
+docker compose up -d
+```
+
+```bash
+cd backend && cp .env.example .env && uv sync && uv run alembic upgrade head && uv run uvicorn app.main:app --reload
+```
+
+```bash
+cd frontend && npm install && npm run dev
+```
+
+| | URL |
+| --- | --- |
+| App (local) | **http://localhost:3000** |
+| API (local) | **http://localhost:8000** |
+| Swagger | **http://localhost:8000/docs** |
+| Health | **http://localhost:8000/health** |
+
+### Environment
+
+Everything required is local. All external providers are optional.
+
+| Variable | Purpose | Required |
+| --- | --- | --- |
+| `DATABASE_URL` | App connection (`gummy_app`, RLS-enforced) | yes |
+| `DIRECT_DATABASE_URL` | Migrations + auth (owner role) | yes |
+| `GUMMY_JWT_SECRET` | Token signing | yes |
+| `LLM_PROVIDER` / `OLLAMA_MODEL` | Defaults to local Ollama | — |
+| `EMBEDDINGS_PROVIDER` | Defaults to `nomic-embed-text` (768-d) | — |
+| `GUMMY_OWNER_MODE` | Skips the login screen — **also disables sign-out** | leave `false` |
+| `GOOGLE_CLIENT_ID` / `_SECRET` | Enables the Google button | optional |
+| `BRAVE_API_KEY` | Enables live web search | optional |
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | Alternative model providers | optional |
+
+Never commit `.env`. `.env.example` carries empty placeholders only.
+
+---
+
+## Documentation
+
+| Document | Contents |
+| --- | --- |
+| [Verification Report](docs/VERIFICATION_REPORT.md) | Every metric, with commands and denominators |
+| [Authentication](docs/AUTHENTICATION.md) | Sessions, sign-out, Google OAuth, isolation |
+| [Agent Workforce](docs/AGENT_WORKFORCE.md) | The four agents and durable automation |
+| [Multi-Agent Delegation](docs/MULTI_AGENT_DELEGATION.md) | Compound routing and hand-offs |
+| [Tool System](docs/TOOL_SYSTEM.md) | Registry, policy, executor, the loop |
+| [Architecture](docs/GUMMY_OS_ARCHITECTURE.md) | Layer-by-layer (M8.5 history) |
+| [Résumé Summary](docs/RESUME_PROJECT_SUMMARY.md) | Positioning and talking points |
+| [Roadmap](docs/FUTURE_ROADMAP.md) | What comes next |
+
+Documents numbered `01`–`10` are release notes and describe the state at the
+time they were written.
+
+---
+
+## Limitations
+
+Stated plainly, because a README that hides these is not useful.
+
+- **Google sign-in is implemented but unverified** — no credentials on this
+  machine, so the round trip has never been tested. The button hides itself
+  until the backend reports credentials.
+- **Parallel agent routing is not implemented.** The executor exists and is
+  tested; no keyword pattern produces a parallel plan.
+- **File retrieval is keyword-based.** There is no vector RAG over file chunks.
+- **Live web search is config-gated.** Without a key, agents say so rather than
+  fabricating results.
+- **Automations run only while GUMMY is running**, and there is no notification
+  channel — a fired reminder appears in the Automations panel.
+- **No connectors.** Gmail, Calendar, GitHub, Slack are not implemented; only
+  `.ics` calendar import exists.
+- **No public deployment**, and no cloud infrastructure.
+- **Tokens live in localStorage**, a deliberate trade for the `:3000`→`:8000`
+  split. No rate limiting on login — local-only concerns today.
+
+---
+
+## Roadmap
+
+1. **Parallel agent routing** — the executor is built; detection is not.
+2. **Vector file RAG** — `file_chunk_embeddings` mirroring the proven
+   `memory_embeddings` HNSW pattern.
+3. **Model gateway tiering** — per-call provider selection; `qwen3:8b` is
+   already on disk as the local complex tier.
+4. **Connector credentials** — an encrypted token store, unblocking Gmail and
+   Drive.
+5. **LangGraph**, evaluated only once the tool loop and delegation are proven.
+
+---
+
+## Stack
+
+Python 3.12 · FastAPI · SQLAlchemy 2.0 async · Alembic · PostgreSQL 16 ·
+pgvector · Ollama · Next.js 16 · React 19 · TypeScript · Tailwind v4 ·
+TanStack Query
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).

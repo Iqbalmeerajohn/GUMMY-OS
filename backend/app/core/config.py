@@ -105,6 +105,12 @@ class Settings(BaseSettings):
     # resolves a REAL persisted user (by gummy_owner_email), so memories written
     # in owner mode remain owned by the same account after sign-in is enabled.
     # Refused in production by assert_auth_safe.
+    #
+    # It is mutually exclusive with sign-out. If a request with no credential
+    # resolves to the owner, discarding the token cannot log anyone out — the
+    # client asks who it is and is told it is still the owner. Leave this false
+    # to use real accounts; the dependency additionally refuses to
+    # auto-authenticate once more than one account exists.
     gummy_owner_mode: bool = False
     gummy_owner_email: str = "owner@gummy.local"
 
