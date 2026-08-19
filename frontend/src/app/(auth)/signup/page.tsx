@@ -11,13 +11,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { buttonVariants } from "@/components/ui/button";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { MIN_PASSWORD_LENGTH } from "@/lib/auth/passwordPolicy";
 import { signUp } from "@/lib/auth/session";
 import { analytics, AnalyticsEvent } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
-
-// Mirrors the backend's SignUpRequest bound, so the user is told before the
-// round-trip rather than by a 422.
-const MIN_PASSWORD_LENGTH = 8;
 
 function SignUpForm() {
   const router = useRouter();
@@ -33,7 +30,9 @@ function SignUpForm() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (password.length < MIN_PASSWORD_LENGTH) {
-      toast.error(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+      toast.error(
+        `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
+      );
       return;
     }
     setSubmitting(true);
@@ -44,7 +43,9 @@ function SignUpForm() {
       router.replace(next?.startsWith("/") ? next : "/");
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Could not create your account.",
+        error instanceof Error
+          ? error.message
+          : "Could not create your account.",
       );
     } finally {
       setSubmitting(false);
@@ -100,7 +101,10 @@ function SignUpForm() {
         <button
           type="submit"
           disabled={submitting}
-          className={cn(buttonVariants({ size: "lg" }), "h-11 w-full text-base")}
+          className={cn(
+            buttonVariants({ size: "lg" }),
+            "h-11 w-full text-base",
+          )}
         >
           {submitting ? "Creating account…" : "Create account"}
         </button>

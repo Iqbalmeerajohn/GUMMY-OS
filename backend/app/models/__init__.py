@@ -49,6 +49,7 @@ from app.models.memory_embedding import MemoryEmbedding
 from app.models.memory_source import MemorySource
 from app.models.memory_version import MemoryVersion
 from app.models.message import Message
+from app.models.password_reset_token import PasswordResetToken
 from app.models.refresh_token import RefreshToken
 from app.models.task import Task
 from app.models.tool_invocation import ToolInvocation
@@ -58,6 +59,7 @@ from app.models.user_profile import UserProfile
 __all__ = [
     "Base",
     "User",
+    "PasswordResetToken",
     "RefreshToken",
     "UserProfile",
     "Memory",

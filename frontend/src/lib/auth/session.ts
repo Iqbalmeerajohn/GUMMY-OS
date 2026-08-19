@@ -122,19 +122,56 @@ export async function fetchProfile(): Promise<AuthUser | null> {
   return (await response.json()) as AuthUser;
 }
 
+const GENERIC_ERROR = "Something went wrong. Please try again.";
+
+/**
+ * Turn an error response body into one sentence a person can act on.
+ *
+ * Three shapes reach here. The app's own envelope is `{error:{code,message}}`.
+ * FastAPI's request-validation failure is `{detail:[{msg,loc},…]}` — an array,
+ * which a naive `?? detail` renders as "[object Object]". And a 500 may carry
+ * no usable body at all, which is what the fallback is for: a raw traceback is
+ * never shown to a user.
+ */
+function errorMessage(data: unknown, status: number): string {
+  const body = (data ?? {}) as {
+    error?: { message?: string };
+    detail?: unknown;
+  };
+
+  if (body.error?.message) return body.error.message;
+
+  if (Array.isArray(body.detail)) {
+    const first = body.detail[0] as { msg?: string } | undefined;
+    if (first?.msg) {
+      // Pydantic prefixes with "Value error, " / "String should have…".
+      return first.msg.replace(/^Value error,\s*/, "");
+    }
+  }
+  if (typeof body.detail === "string") return body.detail;
+
+  if (status === 429) return "Too many attempts. Please wait and try again.";
+  if (status >= 500) return GENERIC_ERROR;
+  return GENERIC_ERROR;
+}
+
 async function post<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(`${env.apiBaseUrl}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${env.apiBaseUrl}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    // The backend is down or unreachable. Distinguish it, because "check your
+    // connection" is actionable where the generic message is not.
+    throw new Error("Could not reach the server. Is the backend running?");
+  }
+
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const message =
-      (data as { error?: { message?: string } })?.error?.message ??
-      (data as { detail?: string })?.detail ??
-      "Something went wrong. Please try again.";
-    throw new Error(message);
+    throw new Error(errorMessage(data, response.status));
   }
   return data as T;
 }
@@ -183,13 +220,20 @@ export interface AuthCapabilities {
   password_enabled: boolean;
   google_enabled: boolean;
   owner_mode: boolean;
+  /** True when the backend logs auth email instead of sending it (local dev). */
+  email_console_mode: boolean;
 }
 
 /** Which sign-in methods this backend supports (drives what the UI offers). */
 export async function fetchAuthConfig(): Promise<AuthCapabilities> {
   const response = await fetch(`${env.apiBaseUrl}/api/v1/auth/config`);
   if (!response.ok) {
-    return { password_enabled: true, google_enabled: false, owner_mode: false };
+    return {
+      password_enabled: true,
+      google_enabled: false,
+      owner_mode: false,
+      email_console_mode: true,
+    };
   }
   return (await response.json()) as AuthCapabilities;
 }
@@ -197,4 +241,31 @@ export async function fetchAuthConfig(): Promise<AuthCapabilities> {
 /** Start Google sign-in by handing the browser to the backend's OAuth entry. */
 export function googleSignInUrl(next = "/"): string {
   return `${env.apiBaseUrl}/api/v1/auth/google/start?next=${encodeURIComponent(next)}`;
+}
+
+/**
+ * Ask for a password reset link.
+ *
+ * Resolves for a known and an unknown address alike — the backend answers
+ * identically on purpose, so that this endpoint cannot be used to find out
+ * which addresses have accounts. The caller must not infer anything from it
+ * succeeding.
+ */
+export async function requestPasswordReset(email: string): Promise<string> {
+  const data = await post<{ message: string }>("/api/v1/auth/forgot-password", {
+    email,
+  });
+  return data.message;
+}
+
+/** Redeem a reset token and set a new password. Does not sign the user in. */
+export async function resetPassword(
+  token: string,
+  newPassword: string,
+): Promise<string> {
+  const data = await post<{ message: string }>("/api/v1/auth/reset-password", {
+    token,
+    new_password: newPassword,
+  });
+  return data.message;
 }

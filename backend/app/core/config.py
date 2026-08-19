@@ -120,8 +120,28 @@ class Settings(BaseSettings):
     google_client_id: str | None = None
     google_client_secret: str | None = None
     google_redirect_uri: str = "http://localhost:8000/api/v1/auth/google/callback"
-    # Where the OAuth callback sends the browser once a session is minted.
+    # Where the OAuth callback sends the browser once a session is minted, and
+    # the origin password-reset links are built against.
     frontend_url: str = "http://localhost:3000"
+
+    # ── Password reset ────────────────────────────────────────────────────────
+    # How long a reset link stays valid. Short by design: it is a bearer
+    # credential for the account, delivered over a channel we do not control.
+    password_reset_ttl_minutes: int = 45
+
+    # Delivery mode for auth email: "console" | "smtp".
+    #
+    # "console" is the local-first default — the message, reset link and all, is
+    # written to the backend log. That keeps the whole flow testable on a laptop
+    # with no provider and no credentials, and it never claims an email was sent
+    # when none was. Set "smtp" (and SMTP_HOST) for real delivery.
+    auth_email_mode: str = "console"
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_from: str | None = None
+    smtp_use_tls: bool = True
 
     # ── AI (used from Day 3+) ─────────────────────────────────────────────────
     anthropic_api_key: str | None = None
@@ -240,6 +260,20 @@ class Settings(BaseSettings):
     def _normalize_log_level(cls, value: str) -> str:
         return value.lower()
 
+    @field_validator("auth_email_mode")
+    @classmethod
+    def _normalize_auth_email_mode(cls, value: str) -> str:
+        """Accept any casing, but reject a mode that does not exist.
+
+        Failing here beats silently falling back to console: a deployment that
+        meant to send real email would otherwise log reset links forever and
+        look like it was working.
+        """
+        normalized = value.strip().lower()
+        if normalized not in {"console", "smtp"}:
+            raise ValueError("AUTH_EMAIL_MODE must be 'console' or 'smtp'")
+        return normalized
+
     @property
     def cors_origins(self) -> list[str]:
         """CORS origins parsed from the comma-separated env value."""
@@ -259,6 +293,15 @@ class Settings(BaseSettings):
     def google_oauth_enabled(self) -> bool:
         """True only when both Google OAuth credentials are configured."""
         return bool(self.google_client_id and self.google_client_secret)
+
+    @property
+    def auth_email_console_mode(self) -> bool:
+        """True when auth email is logged locally rather than actually sent.
+
+        Surfaced to the client so the reset screen can say where the link went
+        instead of telling a developer to check an inbox nothing was sent to.
+        """
+        return self.auth_email_mode != "smtp"
 
     @property
     def local_auth_secret(self) -> str:

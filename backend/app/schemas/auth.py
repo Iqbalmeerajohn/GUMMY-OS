@@ -25,12 +25,20 @@ Email = Annotated[
 # Long enough to resist offline guessing, short enough not to annoy. The upper
 # bound is not cosmetic: PBKDF2 hashes its input, so an unbounded password is a
 # cheap way to make the server do unbounded work.
-_PASSWORD = Field(min_length=8, max_length=128)
+#
+# One definition, shared by every endpoint that accepts a new password (sign-up
+# and password reset today). Duplicating the bounds is how a reset flow ends up
+# quietly accepting a weaker password than sign-up does.
+MIN_PASSWORD_LENGTH = 8
+MAX_PASSWORD_LENGTH = 128
+Password = Annotated[
+    str, Field(min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
+]
 
 
 class SignUpRequest(BaseModel):
     email: Email
-    password: str = _PASSWORD
+    password: Password
     display_name: str | None = Field(default=None, max_length=255)
 
 
@@ -41,6 +49,22 @@ class SignInRequest(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: Email
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=512)
+    # The same bound sign-up enforces — see ``Password``.
+    new_password: Password
+
+
+class MessageResponse(BaseModel):
+    """A plain human-readable outcome, for endpoints with nothing else to say."""
+
+    message: str
 
 
 class UserProfile(BaseModel):
@@ -76,3 +100,7 @@ class AuthConfigResponse(BaseModel):
     password_enabled: bool = True
     google_enabled: bool
     owner_mode: bool
+    # True when auth email is logged to the backend console rather than sent.
+    # Lets the reset screen tell a local developer where the link actually went,
+    # instead of pointing them at an inbox nothing was delivered to.
+    email_console_mode: bool = True
