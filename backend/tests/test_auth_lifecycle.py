@@ -298,19 +298,48 @@ async def test_a_token_identifies_its_own_user(api_client: AsyncClient) -> None:
 
 
 async def test_auth_config_reports_google_as_unavailable_when_unconfigured(
-    api_client: AsyncClient,
+    api_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The login screen must not offer a button the server cannot honour."""
+    """The login screen must not offer a button the server cannot honour.
+
+    The credentials are forced absent rather than assumed absent. Reading the
+    developer's real ``.env`` made this test pass or fail depending on whether
+    whoever ran it happened to have Google configured — which is not a property
+    of the code, and made a green suite mean less than it looked like.
+    """
+    settings = get_settings()
+    monkeypatch.setattr(settings, "google_client_id", None)
+    monkeypatch.setattr(settings, "google_client_secret", None)
+
     response = await api_client.get("/api/v1/auth/config")
 
     assert response.status_code == 200
     assert response.json()["google_enabled"] is False
 
 
-async def test_starting_google_signin_without_credentials_is_refused(
-    api_client: AsyncClient,
+async def test_auth_config_reports_google_as_available_once_configured(
+    api_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The other half: the button appears exactly when it will work."""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "google_client_id", "test-client-id")
+    monkeypatch.setattr(settings, "google_client_secret", "test-client-secret")
+
+    response = await api_client.get("/api/v1/auth/config")
+
+    assert response.status_code == 200
+    assert response.json()["google_enabled"] is True
+
+
+async def test_starting_google_signin_without_credentials_is_refused(
+    api_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = get_settings()
+    monkeypatch.setattr(settings, "google_client_id", None)
+    monkeypatch.setattr(settings, "google_client_secret", None)
+
     response = await api_client.get("/api/v1/auth/google/start", follow_redirects=False)
+
     assert response.status_code == 503
 
 

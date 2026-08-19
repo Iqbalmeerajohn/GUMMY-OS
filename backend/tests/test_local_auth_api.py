@@ -9,6 +9,8 @@ from __future__ import annotations
 import pytest
 from httpx import AsyncClient
 
+from app.core.config import get_settings
+
 _EMAIL = "owner@local.test"
 _PASSWORD = "correct-horse-battery"
 
@@ -109,10 +111,18 @@ async def test_logout_revokes_the_refresh_token(api_client: AsyncClient) -> None
 
 
 @pytest.mark.asyncio
-async def test_config_reports_available_sign_in_methods(client: AsyncClient) -> None:
+async def test_config_reports_available_sign_in_methods(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Forced absent, not assumed absent: this used to read the developer's real
+    # .env, so the result depended on who ran it rather than on the code.
+    settings = get_settings()
+    monkeypatch.setattr(settings, "google_client_id", None)
+    monkeypatch.setattr(settings, "google_client_secret", None)
+
     response = await client.get("/api/v1/auth/config")
+
     assert response.status_code == 200
     body = response.json()
     assert {"google_enabled", "owner_mode"} <= set(body)
-    # No credentials configured in the test environment, so no Google button.
     assert body["google_enabled"] is False
