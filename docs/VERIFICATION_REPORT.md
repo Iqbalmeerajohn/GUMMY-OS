@@ -12,13 +12,13 @@ What follows is engineering evidence with exact denominators.
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Backend tests | `pytest -q` | **837 passed, 4 skipped, 0 failed** |
-| Frontend tests | `npm test` | **11 passed, 0 failed** |
+| Backend tests | `pytest -q` | **915 passed, 4 skipped, 0 failed** |
+| Frontend tests | `npm test` | **18 passed, 0 failed** |
 | TypeScript | `npm run typecheck` | **clean** |
 | ESLint | `npm run lint` | **clean** |
 | Python lint | `ruff check app tests` | **clean** |
 | Formatting | `black --check app tests` | **clean** |
-| Types (app) | `mypy app` | **clean — 235 source files** |
+| Types (app) | `mypy app` | **clean — 240 source files** |
 | Types (tests) | `mypy tests` | **57 errors in 23 files — pre-existing** |
 
 The 4 skipped backend tests are Postgres-gated and do not run against the
@@ -61,6 +61,60 @@ Run against PostgreSQL + Ollama + FastAPI over real HTTP.
 
 **Before the fix**, checks 1–4 returned **200** — an anonymous caller was served
 the owner's identity, 7 memories, and 10 conversations.
+
+---
+
+## 2b. Live password reset — 19/19
+
+Run against the real stack: PostgreSQL 16, FastAPI, console mail mode. The raw
+token was read out of the backend log exactly as a developer would — it is not
+obtainable any other way, which is the point of the design.
+
+| # | Check | Result |
+| --- | --- | --- |
+| 1 | User A created and signed in | ✅ |
+| 2 | Seed conversation created (to prove data survives) | ✅ 201 |
+| 3 | Logout | ✅ 204 |
+| 4 | `forgot-password` for A | ✅ 200 |
+| 5 | Response byte-identical for an unknown address | ✅ |
+| 6 | Reset link found in backend console | ✅ |
+| 7 | Password reset with the link | ✅ 200 |
+| 8 | **OLD** password rejected | ✅ 401 |
+| 9 | **NEW** password accepted | ✅ 200 |
+| 10 | Same link reused | ✅ 400 `invalid_reset_token` |
+| 11 | Garbage token | ✅ 400, not 500 |
+| 12 | Weak password on reset | ✅ 422 |
+| 13 | User B created | ✅ |
+| 14 | Reset token minted for A | ✅ |
+| 15 | B's original password still works after A's reset | ✅ 200 |
+| 16 | B **not** reset by A's token | ✅ 401 |
+| 17 | A's conversations survived the reset | ✅ 1 found |
+| 18 | A's memories reachable after reset | ✅ 200 |
+| 19 | Anonymous `/auth/me` still refused | ✅ 401 |
+
+### Browser round trip
+
+Driven through the real UI at `localhost:3000`:
+
+| Step | Result |
+| --- | --- |
+| "Forgot password?" on the login page | ✅ loads (was a **404**) |
+| Submit email | ✅ generic "Check your email" |
+| Console-mode notice shown to the developer | ✅ |
+| Open the link from the console | ✅ reset form |
+| Mismatched confirmation | ✅ caught client-side, token not spent |
+| Matching passwords | ✅ "reset successfully" + "Continue to sign in" |
+| Sign in with OLD password | ✅ rejected, "Incorrect email or password." |
+| Sign in with NEW password | ✅ signed in to the workspace |
+| Reuse the same link | ✅ "This password reset link is invalid or has expired." |
+| Open `/reset-password` with no token | ✅ explains, offers to request one |
+
+Browser console: no unhandled errors — only the expected 401s and the 400 from
+the deliberately reused link.
+
+Automated: **29 tests** in `tests/test_password_reset.py`. The single-use
+guarantee was mutation-checked — removing the `used_at` stamp makes the reuse
+test fail, so it is testing what it claims to.
 
 ---
 
@@ -111,17 +165,17 @@ no reasoning in any payload, **404** for another tenant's run id.
 
 | Metric | Value |
 | --- | --- |
-| Alembic migrations | 24 |
+| Alembic migrations | 25 |
 | API routers | 15 |
-| API endpoints | 71 |
-| Backend test files | 100 |
+| API endpoints | 73 |
+| Backend test files | 102 |
 | Agent manifests | 8 (6 routed specialists + general + recall) |
 | Tools defined | 11 |
 | Tools executable | 9 (2 modeled behind approval) |
 | Max tool iterations per turn | 4 |
 | Max compound pipeline steps | 3 |
 | Memory relevance floor | 0.45 semantic similarity |
-| Tenant tables under RLS | 24 |
+| Tenant tables under RLS | 25 |
 
 ---
 
@@ -130,9 +184,10 @@ no reasoning in any payload, **404** for another tenant's run id.
 | Capability | Status | Evidence |
 | --- | --- | --- |
 | Email signup / login | **Working** | 26/26 live; 22 automated |
+| Password reset | **Working** | 19/19 live + browser round trip; 29 automated |
 | Sign-out | **Working** | live 9–11; refresh replay → 401 |
 | Session refresh + rotation | **Working** | automated |
-| Multi-user isolation | **Working** | live 15–19, 24; RLS on 24 tables |
+| Multi-user isolation | **Working** | live 15–19, 24; RLS on 25 tables |
 | Display name handling | **Working** | live 7, 13, 22 |
 | **Google sign-in** | **Implemented, unverified** | code complete; **no credentials configured — not tested end to end** |
 | Persistent memory | **Working** | live recall across conversations |
@@ -164,7 +219,7 @@ no reasoning in any payload, **404** for another tenant's run id.
 | Cross-user memory / conversations / goals | ✅ live 15–19 |
 | Direct-id access to another user's record | ✅ 404 |
 | Another tenant's agent-run trace | ✅ 404 |
-| RLS enforced at the database | ✅ `gummy_app` is `NOBYPASSRLS`; 24 tables |
+| RLS enforced at the database | ✅ `gummy_app` is `NOBYPASSRLS`; 25 tables |
 | No arbitrary code execution | ✅ AST allowlist; `eval` never used |
 | No shell execution | ✅ no tool spawns a process |
 | Tool ceilings across a pipeline | ✅ automated |
@@ -180,6 +235,10 @@ no reasoning in any payload, **404** for another tenant's run id.
   and the UI hides itself correctly, but no credentials exist on this machine.
 - **No public deployment.** GUMMY runs locally; `localhost` URLs are not
   reachable by anyone else.
+- **No real SMTP send has been performed.** Console mode is verified live;
+  SMTP mode is implemented and unit-tested but never exercised against a
+  real server from this machine.
+- **No rate limiting** on login or forgot-password.
 - **No parallel agent routing.**
 - **No vector file RAG.**
 - **No accuracy percentage.** Nothing here was benchmarked against a labelled

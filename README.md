@@ -17,13 +17,13 @@ Postgres container, one Ollama daemon, two dev servers.
 
 | Area | State |
 | --- | --- |
-| Backend tests | **837 passed**, 4 skipped (Postgres-gated), 0 failed |
-| Frontend tests | **11 passed**, 0 failed |
+| Backend tests | **915 passed**, 4 skipped (Postgres-gated), 0 failed |
+| Frontend tests | **18 passed**, 0 failed |
 | TypeScript · ESLint | clean |
-| `ruff` · `black` · `mypy app` | clean (235 source files) |
+| `ruff` · `black` · `mypy app` | clean (240 source files) |
 | `mypy tests` | 57 pre-existing errors — [reported, not hidden](docs/VERIFICATION_REPORT.md#1-automated-checks) |
-| Migrations | 24 Alembic revisions |
-| API | 71 endpoints across 15 routers |
+| Migrations | 25 Alembic revisions |
+| API | 73 endpoints across 15 routers |
 | Agents | 6 routed specialists + general + recall |
 | Tools | 9 executable, 2 modeled behind approval |
 
@@ -117,8 +117,17 @@ They run inside GUMMY and **do not send email or create calendar events.**
 
 ### Authentication
 GUMMY is its own identity provider: HS256 JWTs, PBKDF2 at 600k iterations,
-rotating hashed refresh tokens, and Row-Level Security on all 24 tenant tables.
+rotating hashed refresh tokens, and Row-Level Security on all 25 tenant tables.
 Verified live: **26/26** checks including two-user isolation.
+
+**Password recovery works offline.** Reset tokens are stored only as a SHA-256
+hash, are single-use, expire in 45 minutes, and revoke every session on the
+account when redeemed. `forgot-password` returns a byte-identical response for
+known and unknown addresses, so it cannot be used to discover who has an
+account. With no email provider configured the reset link is written to the
+backend log tagged `[GUMMY AUTH]` — the whole flow is testable locally, and
+nothing ever claims an email was sent when none was. Verified live: **19/19**,
+plus the full browser round trip.
 
 ---
 
@@ -170,6 +179,8 @@ Everything required is local. All external providers are optional.
 | `EMBEDDINGS_PROVIDER` | Defaults to `nomic-embed-text` (768-d) | — |
 | `GUMMY_OWNER_MODE` | Skips the login screen — **also disables sign-out** | leave `false` |
 | `GOOGLE_CLIENT_ID` / `_SECRET` | Enables the Google button | optional |
+| `AUTH_EMAIL_MODE` | `console` (log the reset link) or `smtp` | — |
+| `SMTP_*` | Real email delivery, only when mode is `smtp` | optional |
 | `BRAVE_API_KEY` | Enables live web search | optional |
 | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | Alternative model providers | optional |
 
@@ -207,13 +218,16 @@ Stated plainly, because a README that hides these is not useful.
 - **File retrieval is keyword-based.** There is no vector RAG over file chunks.
 - **Live web search is config-gated.** Without a key, agents say so rather than
   fabricating results.
+- **Auth email is console-mode locally.** SMTP is implemented and unit-tested,
+  but no real send has been performed from this machine.
+- **No rate limiting** on login or forgot-password — local-only concerns today.
 - **Automations run only while GUMMY is running**, and there is no notification
   channel — a fired reminder appears in the Automations panel.
 - **No connectors.** Gmail, Calendar, GitHub, Slack are not implemented; only
   `.ics` calendar import exists.
 - **No public deployment**, and no cloud infrastructure.
 - **Tokens live in localStorage**, a deliberate trade for the `:3000`→`:8000`
-  split. No rate limiting on login — local-only concerns today.
+  split.
 
 ---
 

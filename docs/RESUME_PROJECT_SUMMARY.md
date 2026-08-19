@@ -27,6 +27,15 @@ embedding model — 0.45 semantic similarity rejects 96.5% of irrelevant memorie
 while retaining 92% of relevant ones — eliminating the "assistant volunteers
 unrelated facts" failure mode.
 
+**Built account recovery for a self-hosted identity provider**, with reset
+tokens stored only as a SHA-256 hash, single-use via a `used_at` stamp,
+45-minute expiry, and revocation of every session on the account at redemption.
+`forgot-password` returns a byte-identical response for known and unknown
+addresses, so it cannot be used to enumerate accounts. Because the product must
+run with no cloud dependency, delivery is a mode rather than a dependency: the
+default writes the link to the backend log, so the full flow is testable with no
+provider and nothing ever reports an email as sent when none was.
+
 **Designed a safe agent tool-execution loop** with a code-defined registry,
 Green/Yellow/Red policy gate, JSON-Schema validation, per-tool timeouts, and a
 bounded reason→call→observe cycle, backed by redacted audit rows. Arithmetic is
@@ -47,15 +56,16 @@ scenarios live.
 
 | Metric | Value |
 | --- | --- |
-| Backend tests | 837 passed, 4 skipped, 0 failed |
-| Frontend tests | 11 passed, 0 failed |
-| Static analysis | `ruff`, `black`, `mypy app` clean (235 files); TS + ESLint clean |
-| Migrations | 24 |
-| API | 71 endpoints, 15 routers |
+| Backend tests | 915 passed, 4 skipped, 0 failed |
+| Frontend tests | 18 passed, 0 failed |
+| Static analysis | `ruff`, `black`, `mypy app` clean (240 files); TS + ESLint clean |
+| Migrations | 25 |
+| API | 73 endpoints, 15 routers |
 | Agents | 6 routed specialists + general + recall |
 | Tools | 9 executable, 2 modeled behind approval |
-| Tenant tables under RLS | 24 |
+| Tenant tables under RLS | 25 |
 | Live auth + isolation | 26/26 |
+| Live password reset | 19/19 + browser round trip |
 | Live routing | 19/19 |
 | Live tool loop | 10/10 |
 
@@ -110,6 +120,14 @@ since the client discards its token and is told it is still the owner. The fix
 gated the feature on its own premise: it applies only while the owner is the
 sole account.
 
+**A dangling link is a feature claim.**
+The login screen had linked to `/forgot-password` since the day local auth
+landed. There was no page, no endpoint, and no table behind it — clicking it
+gave a 404. The documentation had honestly recorded "no password reset flow" as
+a limitation, which is exactly why it survived: the gap was written down
+somewhere nobody looked while the UI kept promising otherwise. Shipping the
+feature meant treating the link, not the doc, as the specification.
+
 **Defending against the model, not with it.**
 The first probe of a local model with tools attached, asked only to say hello,
 called the calculator with `print('Hello')`. A tool's safety cannot rest on the
@@ -121,6 +139,8 @@ names, and attributes are parse-level failures.
 ## Honest limitations
 
 Google sign-in is implemented but unverified (no credentials configured).
+Password-reset email is console-mode locally; SMTP is implemented and
+unit-tested but never sent against a real server.
 Parallel agent routing is not implemented. File retrieval is keyword-based, not
 vector RAG. Live web search is config-gated. No connectors, no public
 deployment, no cloud infrastructure.
