@@ -28,6 +28,7 @@ import logging
 
 from app.schemas.agents import AgentResult
 from app.services.agents import compose
+from app.services.agents.handlers import grounding
 from app.services.llm.base import LLMProvider
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,18 @@ MAX_SYNTHESIS_TOKENS = 900
 # findings, short enough that three branches still fit a small local model's
 # context alongside the instructions.
 MAX_BRANCH_CHARS = 3000
+
+# Phrases that mean "I could not verify the present". If the synthesis already
+# contains one, it kept the caveat and nothing needs restoring.
+_UNVERIFIED_MARKERS: tuple[str, ...] = (
+    "reliably verify",
+    "can't verify",
+    "cannot verify",
+    "isn't configured",
+    "not configured",
+    "couldn't reach",
+    "returned nothing",
+)
 
 _SYSTEM = (
     "You are Gummy, writing the final answer to a request that was worked on "
@@ -55,6 +68,9 @@ _SYSTEM = (
     "figures. Losing them is worse than an ugly answer.\n"
     "- If a part could not be completed, say so plainly in one sentence and "
     "never guess what it would have said.\n"
+    "- If a part says current information could not be verified, KEEP that "
+    "statement in your answer. Dropping it leaves the user believing the "
+    "whole question was answered.\n"
     "- Group related points together rather than repeating them per part."
 )
 
@@ -116,4 +132,23 @@ async def synthesize_parallel(
             len(text),
         )
         return fallback
-    return compose.shape_voice(text)
+    return compose.shape_voice(_keep_unverified_notice(text, results))
+
+
+def _keep_unverified_notice(text: str, results: list[tuple[str, AgentResult]]) -> str:
+    """Restore an "I couldn't verify current information" line the synthesis lost.
+
+    Observed live: a parallel Career+Research turn where the Research branch
+    correctly reported that it could not verify current information, and the
+    synthesis then summarised the Career half and dropped the caveat entirely.
+    Nothing in the final answer was false — but the user was left believing the
+    whole question had been answered.
+    """
+    if any(marker in text.lower() for marker in _UNVERIFIED_MARKERS):
+        return text
+    for _agent_key, result in results:
+        if not result.output.get("evidence_missing"):
+            continue
+        status = str(result.output.get("search_status", ""))
+        return f"{grounding.notice_for(status)}\n\n{text}"
+    return text

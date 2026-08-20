@@ -53,6 +53,81 @@ class PreparedTurn:
     # Contents of the memories that survived compression into the prompt — what
     # the client shows in its "Memory Used" disclosure.
     grounding_memories: list[str] = field(default_factory=list)
+    # The request was about the present and no live evidence backs it.
+    evidence_missing: bool = False
+    # Which of AVAILABLE / UNAVAILABLE / FAILED / NO_RESULTS applied.
+    search_status: str = ""
+
+
+# Handed to the model when the question is about the present and nothing
+# current backs it. Written as an instruction about what TO write, because a
+# bare prohibition gets paraphrased around rather than obeyed.
+NO_EVIDENCE_DIRECTIVE = (
+    "IMPORTANT — this question asks about current or recent information, and "
+    "no live web results are available for it.\n"
+    "Open by saying you cannot verify current information right now. Then "
+    "answer only with what does not depend on being current: concepts, how "
+    "things work, how the user could find out, what to look for.\n"
+    "Do NOT state current facts. No specific companies, products, versions, "
+    "prices, dates, funding, rankings, job openings or 'as of today' claims. "
+    "Naming something you cannot check is a fabrication even if it happens to "
+    "be right."
+)
+
+# Appended by code after generation, not requested from the model. A prompt
+# instruction is advice a small model can drop; this sentence is present
+# whatever it wrote, so the user is never left believing an unverified answer
+# was checked.
+#
+# One per reason, because they are not the same news. "Not configured" is a
+# setup step the user can take; "couldn't reach it" is worth retrying; "found
+# nothing" is a fact about the search, not about us. Collapsing them into one
+# message would tell the user to fix something that isn't broken.
+NO_EVIDENCE_NOTICE = (
+    "Live web search isn't configured on this GUMMY instance, so I can't "
+    "reliably verify current information."
+)
+_SEARCH_FAILED_NOTICE = (
+    "I couldn't reach live web search just now, so I can't reliably verify "
+    "current information."
+)
+_NO_RESULTS_NOTICE = (
+    "Live web search returned nothing for this, so I can't reliably verify "
+    "current information."
+)
+
+_NOTICE_BY_STATUS: dict[str, str] = {
+    "unavailable": NO_EVIDENCE_NOTICE,
+    "failed": _SEARCH_FAILED_NOTICE,
+    "no_results": _NO_RESULTS_NOTICE,
+}
+
+
+def notice_for(search_status: str) -> str:
+    """The honest one-liner for why current information is unverified."""
+    return _NOTICE_BY_STATUS.get(search_status, NO_EVIDENCE_NOTICE)
+
+
+_NOTICE_MARKERS = (
+    "live web search",
+    "couldn't reach live",
+    "reliably verify",
+    "can't verify",
+    "cannot verify",
+    "can't reliably verify",
+    "cannot reliably verify",
+    "not configured",
+)
+
+
+def _needs_notice(reply: str) -> bool:
+    """True when the model did not already say it cannot verify the present.
+
+    Checked rather than always prepended, so a model that obeyed the directive
+    is not made to say the same thing twice.
+    """
+    lowered = reply.lower()
+    return not any(marker in lowered for marker in _NOTICE_MARKERS)
 
 
 def _web_sources(ctx: UnifiedKnowledgeContext) -> list[dict]:
@@ -86,12 +161,20 @@ async def prepare(
         ),
         query=task.intent,
     )
-    web_results = await search_service.maybe_search(task.agent_key, task.intent)
-    if web_results:
+    outcome = await search_service.maybe_search_outcome(task.agent_key, task.intent)
+    if outcome.results:
         ctx = dataclasses.replace(
             ctx,
-            search=knowledge_retrieval_service.search_items_from_results(web_results),
+            search=knowledge_retrieval_service.search_items_from_results(
+                outcome.results
+            ),
         )
+    # A request about the present, answered with no evidence about the present.
+    # This is the case the whole milestone exists for: the model will happily
+    # fill the gap, and what it produces reads exactly like a finding.
+    evidence_missing = (
+        search_service.requires_fresh_evidence(task.intent) and not outcome.has_evidence
+    )
     ranked = knowledge_ranker.rank(ctx)
     compiled = knowledge_context_builder.build(ranked, inventory=ctx.inventory)
 
@@ -135,6 +218,10 @@ async def prepare(
     persona = persona_fn(task.intent, compiled.block) if persona_fn else ""
     lead = f"{persona}\n\n{FORMATTING_RULES}" if persona else FORMATTING_RULES
     system = f"{lead}\n\n{payload.system}"
+    if evidence_missing:
+        # Appended last, which is where an instruction actually lands: placed
+        # mid-prompt, guidance of this kind was measurably ignored.
+        system = f"{system}\n\n{NO_EVIDENCE_DIRECTIVE}"
 
     return PreparedTurn(
         system=system,
@@ -146,20 +233,27 @@ async def prepare(
             for i in compiled.items
             if i.source == knowledge_retrieval_service.SOURCE_MEMORY
         ],
+        evidence_missing=evidence_missing,
+        search_status=outcome.status.value,
     )
 
 
 def finish(prepared: PreparedTurn, response: LLMResponse) -> AgentResult:
     """Package a model response into the agent result contract."""
+    reply = response.text
+    if prepared.evidence_missing and _needs_notice(reply):
+        reply = f"{notice_for(prepared.search_status)}\n\n{reply}"
     return AgentResult(
         output={
-            "reply": response.text,
+            "reply": reply,
             "model": response.model,
             "memories_used": prepared.memories_used,
             "input_tokens": response.input_tokens,
             "output_tokens": response.output_tokens,
             "web_sources": prepared.web_sources,
             "grounding_memories": prepared.grounding_memories,
+            "search_status": prepared.search_status,
+            "evidence_missing": prepared.evidence_missing,
         },
         citations=[{"type": "web", **s} for s in prepared.web_sources],
         cost=CostInfo(tokens=response.input_tokens + response.output_tokens),
