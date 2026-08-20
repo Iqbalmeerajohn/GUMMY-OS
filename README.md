@@ -17,10 +17,10 @@ Postgres container, one Ollama daemon, two dev servers.
 
 | Area | State |
 | --- | --- |
-| Backend tests | **915 passed**, 4 skipped (Postgres-gated), 0 failed |
+| Backend tests | **947 passed**, 4 skipped (Postgres-gated), 0 failed |
 | Frontend tests | **18 passed**, 0 failed |
 | TypeScript · ESLint | clean |
-| `ruff` · `black` · `mypy app` | clean (240 source files) |
+| `ruff` · `black` · `mypy app` | clean (241 source files) |
 | `mypy tests` | 57 pre-existing errors — [reported, not hidden](docs/VERIFICATION_REPORT.md#1-automated-checks) |
 | Migrations | 25 Alembic revisions |
 | API | 73 endpoints across 15 routers |
@@ -97,10 +97,24 @@ call at all — sub-second, versus ~3 s generated.
 Career · Learning · Research · Automation, plus Planner, Memory, General, and a
 deterministic Recall agent. Routing is keyword-based, free, and needs no LLM.
 
-**Compound requests become pipelines.** *"Find AI jobs and then create a
-learning plan for the biggest gap"* runs Career → Learning, with structured
-findings handed between them. Detection is grammatical, so *"find jobs and
-internships"* correctly stays one agent.
+**Requests are routed into one of three shapes**, decided grammatically
+rather than by keyword counting:
+
+| Shape | Example | What runs |
+| --- | --- | --- |
+| **SINGLE** | *"Find AI/ML jobs and internships"* | Career only — one task phrased twice |
+| **PIPELINE** | *"Find AI jobs **and then** a plan for my biggest gap"* | Career → Learning, findings handed forward |
+| **PARALLEL** | *"Find AI/ML jobs **and** research AI agent companies"* | Career ‖ Research, then synthesis |
+
+PIPELINE is the default of the two multi-agent shapes: running independent work
+sequentially is merely slower, while running dependent work concurrently means
+the second agent answers without what it was supposed to receive. So
+independence must be shown — a neutral connective and no back-reference. A
+phrase like *"research **the companies**"* points at the previous clause's
+result and stays a pipeline.
+
+Measured live: two branches that each take ~10 s **finish 17–19 ms apart**,
+against a 19.06 s finish spread for the same pair run as a pipeline.
 
 ### Tools
 A registry → policy → executor path with Green/Yellow/Red tiers, JSON-Schema
@@ -210,11 +224,9 @@ time they were written.
 
 Stated plainly, because a README that hides these is not useful.
 
-- **Google sign-in is implemented but unverified** — no credentials on this
-  machine, so the round trip has never been tested. The button hides itself
-  until the backend reports credentials.
-- **Parallel agent routing is not implemented.** The executor exists and is
-  tested; no keyword pattern produces a parallel plan.
+- **Google sign-in is configured but the round trip is untested.** The backend
+  reports it available and `/auth/google/start` redirects to Google correctly;
+  completing the flow needs a real Google account sign-in, which was not done.
 - **File retrieval is keyword-based.** There is no vector RAG over file chunks.
 - **Live web search is config-gated.** Without a key, agents say so rather than
   fabricating results.
@@ -233,14 +245,13 @@ Stated plainly, because a README that hides these is not useful.
 
 ## Roadmap
 
-1. **Parallel agent routing** — the executor is built; detection is not.
-2. **Vector file RAG** — `file_chunk_embeddings` mirroring the proven
+1. **Vector file RAG** — `file_chunk_embeddings` mirroring the proven
    `memory_embeddings` HNSW pattern.
-3. **Model gateway tiering** — per-call provider selection; `qwen3:8b` is
+2. **Model gateway tiering** — per-call provider selection; `qwen3:8b` is
    already on disk as the local complex tier.
-4. **Connector credentials** — an encrypted token store, unblocking Gmail and
+3. **Connector credentials** — an encrypted token store, unblocking Gmail and
    Drive.
-5. **LangGraph**, evaluated only once the tool loop and delegation are proven.
+4. **LangGraph**, evaluated only once the tool loop and delegation are proven.
 
 ---
 

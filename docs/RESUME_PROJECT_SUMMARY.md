@@ -56,9 +56,9 @@ scenarios live.
 
 | Metric | Value |
 | --- | --- |
-| Backend tests | 915 passed, 4 skipped, 0 failed |
+| Backend tests | 947 passed, 4 skipped, 0 failed |
 | Frontend tests | 18 passed, 0 failed |
-| Static analysis | `ruff`, `black`, `mypy app` clean (240 files); TS + ESLint clean |
+| Static analysis | `ruff`, `black`, `mypy app` clean (241 files); TS + ESLint clean |
 | Migrations | 25 |
 | API | 73 endpoints, 15 routers |
 | Agents | 6 routed specialists + general + recall |
@@ -66,6 +66,7 @@ scenarios live.
 | Tenant tables under RLS | 25 |
 | Live auth + isolation | 26/26 |
 | Live password reset | 19/19 + browser round trip |
+| Live parallel routing | shapes verified; 17-19 ms branch finish spread |
 | Live routing | 19/19 |
 | Live tool loop | 10/10 |
 
@@ -138,9 +139,10 @@ names, and attributes are parse-level failures.
 
 ## Honest limitations
 
-Google sign-in is implemented but unverified (no credentials configured).
+Google sign-in is configured and its entry point verified, but the full
+round trip was not tested.
 Password-reset email is console-mode locally; SMTP is implemented and
 unit-tested but never sent against a real server.
-Parallel agent routing is not implemented. File retrieval is keyword-based, not
+File retrieval is keyword-based, not
 vector RAG. Live web search is config-gated. No connectors, no public
 deployment, no cloud infrastructure.

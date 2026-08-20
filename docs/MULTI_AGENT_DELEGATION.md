@@ -73,6 +73,67 @@ the request to its highest scorer and would discard the second task.
 
 ---
 
+## 2b. Choosing the shape
+
+`plan_compound` splits a request on connectives, resolves each clause to a
+specialist, and then decides between two multi-agent shapes.
+
+```
+                     two or more clauses,
+                     two distinct specialists
+                              |
+              does a later clause need an earlier result?
+                     /                                          yes                          no
+                   |                            |
+               PIPELINE                     PARALLEL
+           (findings handed              (asyncio.gather,
+            forward, in order)            then synthesis)
+```
+
+**Dependency is signalled two ways.** A sequencing connective — `and then`,
+`after that`, `then also` — states the order outright. Otherwise a
+back-reference in the later clause does: `based on`, `using the results`,
+`those`, `them`, `for my biggest ...`, or a definite article on a
+result-shaped noun (`research **the companies**`).
+
+The definite-article rule requires the noun to follow `the` immediately, which
+is what keeps it narrow: *"research **the latest AI agent companies**"*
+introduces its own subject and stays independent.
+
+**PIPELINE is the default of the two.** Running independent work sequentially
+costs latency. Running dependent work concurrently means the second agent
+answers without the information it was supposed to receive — a wrong answer,
+not a slow one. Independence has to be demonstrated, never assumed.
+
+`SINGLE` remains the default overall: a request that does not split, or whose
+clauses all resolve to the same specialist, never fans out. *"Find AI/ML jobs
+and internships"* is one task phrased twice.
+
+## 2c. Synthesis, and what happens when a branch fails
+
+Parallel branches produce two independent answers. Stacking them is a
+transcript of how the work was divided, not an answer, so
+`synthesis.synthesize_parallel` writes one reply from them. Its prompt carries
+the branch outputs and nothing else, and forbids naming agents or adding
+findings.
+
+Synthesis is an improvement, never a dependency: any failure — no provider, an
+exception, or a suspiciously short generation — falls back to
+`compose.merge_parallel`, which is deterministic. Losing synthesis costs prose,
+never content.
+
+A branch that fails is **named**, not dropped:
+
+```
+Found 3 fresher roles at X, Y, Z.
+
+I couldn't complete the research this time, so that part is missing.
+```
+
+Silence is the dangerous option here: a parallel run that quietly discards a
+failed branch reads as a complete answer to a half-answered question. The raw
+exception is not shown — it is already on the step record.
+
 ## 3. Structured hand-off
 
 Grounding previously read only a `digest` key — which the deterministic recall
@@ -120,19 +181,21 @@ Every agent keeps **its own tool ceiling**, however it is reached. Delegation
 never widens capability: Automation has no web access when reached via a
 pipeline, and Career cannot create automations.
 
-**Parallel execution** exists (`_run_parallel`, branch-isolated failures) but
+**Parallel execution** is now routed as well as implemented. Historically
+`_run_parallel` existed (branch-isolated failures) but
 the router does not currently produce a `PARALLEL` plan from keywords — see §8.
 
 ---
 
 ## 5. Synthesis
 
-The **terminal agent is the synthesiser**. Because it receives the upstream
-findings in its prompt, its answer already incorporates them — so the user gets
-one coherent reply rather than two concatenated ones.
+For `single` and `pipeline`, the **terminal agent is the synthesiser**. Because
+it receives the upstream findings in its prompt, its answer already
+incorporates them — so the user gets one coherent reply rather than two
+concatenated ones. `compose_reply` returns that terminal reply unchanged.
 
-`compose_reply` returns the terminal reply for `single` and `pipeline`, and
-merges labelled sections for `parallel`.
+`parallel` has no terminal agent — its branches are peers — so it gets an
+explicit synthesis pass instead. See §2c.
 
 ---
 
@@ -197,9 +260,10 @@ a full grounded generation. No optimisation attempted.
 
 ## 8. Limitations
 
-- **Parallel plans are not routed.** `_run_parallel` works and is tested, but
-  no keyword pattern produces a `PARALLEL` shape. *"Research these three
-  companies and compare them"* runs as a single Research turn.
+- **Same-specialist fan-out is not expressible.** *"Research these three
+  companies and compare them"* resolves every clause to Research, so it
+  collapses to a single turn rather than three parallel branches. Parallel
+  requires two *distinct* specialists (see §2b).
 - **Detection is English-only** and connective-based. A compound request phrased
   without a connective ("find jobs — build me a plan") stays single-agent. That
   is the conservative failure direction.

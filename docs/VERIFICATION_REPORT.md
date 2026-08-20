@@ -18,7 +18,7 @@ What follows is engineering evidence with exact denominators.
 | ESLint | `npm run lint` | **clean** |
 | Python lint | `ruff check app tests` | **clean** |
 | Formatting | `black --check app tests` | **clean** |
-| Types (app) | `mypy app` | **clean — 240 source files** |
+| Types (app) | `mypy app` | **clean — 241 source files** |
 | Types (tests) | `mypy tests` | **57 errors in 23 files — pre-existing** |
 
 The 4 skipped backend tests are Postgres-gated and do not run against the
@@ -118,6 +118,65 @@ test fail, so it is testing what it claims to.
 
 ---
 
+## 2c. Live parallel routing
+
+Run against PostgreSQL 16 + Ollama `qwen2.5:3b`, one fresh conversation per
+scenario. The recorded shape comes from `agent_runs.route_plan`.
+
+| Request | Recorded shape | Branches |
+| --- | --- | --- |
+| "Find AI/ML fresher opportunities for me" | `single` | career |
+| "Find AI/ML jobs and internships" | `single` | career |
+| "Research OpenAI, Anthropic and Google AI" | `single` | research |
+| "Find AI/ML jobs **and then** a learning plan for my biggest skill gap" | `pipeline` | career → learning |
+| "Find AI/ML fresher jobs **and** research the latest AI agent companies" | `parallel` | career ‖ research |
+
+### Concurrency — measured, not assumed
+
+`agent_steps.created_at` is a Postgres `now()` default, which is **transaction**
+time and therefore identical for every step in a run. It cannot be used as a
+per-step start. `finished_at` is set in Python and is real wall clock, so the
+measurements below use it.
+
+**Finish spread** — the variance-free signal:
+
+| Run | Shape | Branches | Finish spread |
+| --- | --- | --- | --- |
+| parallel-both-0 | `parallel` | 2 | **0.017 s** |
+| parallel-both-1 | `parallel` | 2 | **0.019 s** |
+| no-search-honesty | `parallel` | 2 | **0.018 s** |
+| 2-pipeline | `pipeline` | 2 | **19.063 s** |
+
+Two branches that each take ~10 s cannot finish 17 ms apart unless they ran at
+the same time. The pipeline's 19 s spread is the control.
+
+**A/B wall clock** (median of 2 runs each, fresh conversation per run):
+
+| | Median |
+| --- | --- |
+| career alone | 11.4 s |
+| research alone | 9.8 s |
+| sum, if sequential | 21.2 s |
+| both, in parallel | **9.0 s** |
+| speedup | **2.36x** |
+
+Local-model timings vary run to run (a cold career run took 18.7 s, a warm one
+4.2 s), which is why the finish-spread table above is the primary evidence and
+this is corroboration.
+
+### Failure handling
+
+A failed branch is named, never dropped and never invented:
+
+> Found 3 fresher roles at X, Y, Z.
+>
+> I couldn't complete the research this time, so that part is missing.
+
+The raw exception stays on the step record. All-branches-failed raises, and the
+turn's existing fallback answers.
+
+---
+
 ## 3. Live multi-agent routing — 19/19
 
 The persisted `route_plan` is the authority, not the event stream.
@@ -168,7 +227,7 @@ no reasoning in any payload, **404** for another tenant's run id.
 | Alembic migrations | 25 |
 | API routers | 15 |
 | API endpoints | 73 |
-| Backend test files | 102 |
+| Backend test files | 103 |
 | Agent manifests | 8 (6 routed specialists + general + recall) |
 | Tools defined | 11 |
 | Tools executable | 9 (2 modeled behind approval) |
@@ -189,7 +248,7 @@ no reasoning in any payload, **404** for another tenant's run id.
 | Session refresh + rotation | **Working** | automated |
 | Multi-user isolation | **Working** | live 15–19, 24; RLS on 25 tables |
 | Display name handling | **Working** | live 7, 13, 22 |
-| **Google sign-in** | **Implemented, unverified** | code complete; **no credentials configured — not tested end to end** |
+| **Google sign-in** | **Configured, round trip untested** | `google_enabled: true`; `/google/start` 307s to Google with correct scopes; full flow needs a real account sign-in |
 | Persistent memory | **Working** | live recall across conversations |
 | Memory relevance gating | **Working** | calibrated 0.45; 0 injected for unrelated query |
 | Silent memory | **Working** | no narration in live replies |
@@ -204,7 +263,7 @@ no reasoning in any payload, **404** for another tenant's run id.
 | Automation Agent | **Working** | creates real persisted records |
 | Automation persistence | **Working** | survived a restart |
 | Pipeline delegation | **Working** | 3 pipelines live, A2A traced |
-| **Parallel routing** | **Not started** | `_run_parallel` exists and is tested; no keyword produces a `PARALLEL` plan |
+| **Parallel routing** | **Working** | shape detection live-verified; branches finish 17-19 ms apart (§2c) |
 | **Live web search** | **Config-gated** | Brave client complete; no key → reports unavailable |
 | **Connectors** | **Calendar only** | `.ics` import; no OAuth token store |
 | **Cloud deployment** | **Not provided** | intentionally local-only |
@@ -231,15 +290,22 @@ no reasoning in any payload, **404** for another tenant's run id.
 
 ## 9. What is explicitly NOT claimed
 
-- **Google sign-in has not been tested end to end.** The code path is complete
-  and the UI hides itself correctly, but no credentials exist on this machine.
+- **Google sign-in is configured but the round trip is untested.** Credentials
+  are present, `/auth/config` reports `google_enabled: true`, and
+  `/auth/google/start` returns a 307 to `accounts.google.com` with the
+  correct scopes and redirect URI. Completing the flow requires signing in
+  to a real Google account, which was not done.
 - **No public deployment.** GUMMY runs locally; `localhost` URLs are not
   reachable by anyone else.
+- **Research quality without a search backend is not fully solved.** The
+  Research agent no longer invents company names (it produced "Anthropic,
+  Anthropic, and Google's Anthropic" before the prompt was tightened), but on
+  a 3B local model it can still characterise names the user themselves stored
+  as if they were current market findings. Reduced, not eliminated.
 - **No real SMTP send has been performed.** Console mode is verified live;
   SMTP mode is implemented and unit-tested but never exercised against a
   real server from this machine.
 - **No rate limiting** on login or forgot-password.
-- **No parallel agent routing.**
 - **No vector file RAG.**
 - **No accuracy percentage.** Nothing here was benchmarked against a labelled
   dataset, so no such number is offered.
