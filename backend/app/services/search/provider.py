@@ -51,8 +51,24 @@ class SearchResult:
             return ""
 
 
+class SearchProviderError(RuntimeError):
+    """The backend was reachable in principle but the query did not succeed.
+
+    Exists so "the provider broke" and "the provider found nothing" stop being
+    the same empty list. A caller that cannot tell them apart has to guess, and
+    the guess that gets made is "no results" — which reads to the model as a
+    settled fact about the world rather than a failure to look.
+    """
+
+
 class SearchProvider(Protocol):
-    """Returns ranked results for a query (read-only, never raises)."""
+    """Returns ranked results for a query (read-only).
+
+    May raise :class:`SearchProviderError` to report a genuine failure. It must
+    not raise anything else — :mod:`search_service` converts an error into a
+    ``FAILED`` outcome, and every other exception type would be an unhandled
+    bug rather than a search outcome.
+    """
 
     async def search(self, query: str, *, limit: int = 5) -> list[SearchResult]: ...
 
@@ -116,11 +132,17 @@ class BraveSearchProvider:
                 )
                 response.raise_for_status()
                 payload = response.json()
-        except Exception:
-            logger.warning(
-                "brave search failed; degrading to no results", exc_info=True
-            )
-            return []
+        except Exception as exc:
+            # Reported, not swallowed. Returning [] here made a timeout
+            # indistinguishable from "the web contains nothing about this",
+            # and the model presented the second reading to the user.
+            #
+            # The message deliberately carries the exception type and nothing
+            # else: provider error bodies can echo the subscription token back.
+            logger.warning("brave search failed: %s", type(exc).__name__)
+            raise SearchProviderError(
+                f"Brave search failed ({type(exc).__name__})."
+            ) from exc
         return self._parse(payload, limit=limit)
 
     @staticmethod
