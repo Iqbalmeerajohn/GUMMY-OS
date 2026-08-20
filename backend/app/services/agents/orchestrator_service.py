@@ -59,6 +59,7 @@ from app.services.agents import (
     handlers,
     router,
     run_recorder,
+    synthesis,
 )
 from app.services.agents.handlers import grounding
 from app.services.agents.manifests import GENERAL_AGENT_KEY
@@ -411,9 +412,13 @@ async def _run_parallel(
     token_budget: int,
     max_memories: int,
     user_identity: str | None = None,
-) -> list[tuple[str, AgentResult]]:
+) -> tuple[list[tuple[str, AgentResult]], list[tuple[str, str]]]:
     """Parallel fan-out/gather: branches run concurrently, failures are
     isolated per branch; the run succeeds if at least one branch does.
+
+    Returns ``(results, failures)``. The failures are returned rather than only
+    logged because the user has to be told: a parallel run that silently drops
+    a failed branch reads as a complete answer to a half-answered question.
 
     DB writes stay sequential on the shared session — only the pure
     handlers run concurrently.
@@ -458,13 +463,13 @@ async def _run_parallel(
     outcomes = await asyncio.gather(*tasks, return_exceptions=True)
 
     results: list[tuple[str, AgentResult]] = []
-    errors: list[str] = []
+    failures: list[tuple[str, str]] = []
     for (agent_key, _intent, step), outcome in zip(branches, outcomes, strict=True):
         if isinstance(outcome, BaseException):
             error = str(outcome)
             await run_recorder.close_step_failure(session, step, error=error)
             await _record_error_hop(session, run, agent_key=agent_key, error=error)
-            errors.append(f"{agent_key}: {error}")
+            failures.append((agent_key, error))
             continue
         guard.record(outcome)
         await run_recorder.close_step_success(
@@ -479,15 +484,16 @@ async def _run_parallel(
         results.append((agent_key, outcome))
 
     if not results:
-        raise RuntimeError(f"all parallel branches failed: {'; '.join(errors)}")
-    if errors:
+        detail = "; ".join(f"{key}: {err}" for key, err in failures)
+        raise RuntimeError(f"all parallel branches failed: {detail}")
+    if failures:
         logger.warning(
             "parallel run %s: %d branch(es) failed, composing from %d",
             run.id,
-            len(errors),
+            len(failures),
             len(results),
         )
-    return results
+    return results, failures
 
 
 async def _run_terminal_streaming(
@@ -782,17 +788,24 @@ async def orchestrate_stream(
                 },
             ) as exec_span:
                 results: list[tuple[str, AgentResult]] = []
+                branch_failures: list[tuple[str, str]] = []
                 # Parallel branches are composed from several replies, so there
                 # is no single stream to follow; they run to completion and the
                 # composed answer is emitted as one delta.
                 streamable = decision.plan_shape != PlanShape.PARALLEL
                 if not streamable:
+                    # The branch list rides along so the client can show the
+                    # fan-out as a fan-out. Without it a parallel run and a
+                    # single delegation are indistinguishable on screen, and
+                    # the user has no way to tell that two agents are working.
                     yield {
                         "type": "status",
                         "stage": "delegating",
                         "agent": selected_agent,
+                        "shape": decision.plan_shape.value,
+                        "agents": [step.agent_key for step in decision.steps],
                     }
-                    results = await _run_parallel(
+                    results, branch_failures = await _run_parallel(
                         session,
                         run=run,
                         decision=decision,
@@ -877,11 +890,21 @@ async def orchestrate_stream(
         await run_recorder.close_run_success(session, run)
         _emit_execute_analytics(user_id=user_id, decision=decision, results=results)
 
-        reply = compose.compose_reply(decision.plan_shape, results)
-        # A parallel plan has no single stream to follow, so its composed answer
-        # is emitted here as one delta — the client sees the same event shape.
+        # A parallel plan has no single stream to follow: its branches are
+        # merged into one answer here and emitted as a single delta, so the
+        # client sees the same event shape either way.
         if decision.plan_shape == PlanShape.PARALLEL:
+            yield {
+                "type": "status",
+                "stage": "synthesizing",
+                "agent": selected_agent,
+            }
+            reply = await synthesis.synthesize_parallel(
+                results, branch_failures, llm=llm, model=None
+            )
             yield {"type": "delta", "text": reply}
+        else:
+            reply = compose.compose_reply(decision.plan_shape, results)
         last_result = results[-1][1]
         total_cost = CostInfo(
             tokens=sum(r.cost.tokens for _, r in results),

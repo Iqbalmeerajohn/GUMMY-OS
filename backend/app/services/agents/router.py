@@ -100,6 +100,67 @@ _CONNECTIVES: tuple[str, ...] = (
 
 _CONNECTIVE_RE = re.compile("|".join(re.escape(c) for c in _CONNECTIVES), re.IGNORECASE)
 
+# Same alternation, but capturing, so the connective that joined two clauses
+# survives the split. Which connective was used is the strongest available
+# signal for whether the second task depends on the first: "and then" states a
+# sequence, a bare "and" states nothing.
+_CONNECTIVE_CAPTURE_RE = re.compile(
+    "(" + "|".join(re.escape(c) for c in _CONNECTIVES) + ")", re.IGNORECASE
+)
+
+# Connectives that assert an order. Anything joined by one of these is treated
+# as dependent, because that is what the words mean.
+_SEQUENCING_JOINS: frozenset[str] = frozenset(
+    {"and then", "then also", "and after that", "after that", "then"}
+)
+
+# A later clause that refers back to an earlier result is dependent even when
+# the connective is a neutral "and": "research the companies and apply to
+# them" cannot run its halves at the same time.
+#
+# Deliberately generous. Misreading independent work as dependent costs
+# latency; misreading dependent work as independent produces a second agent
+# answering with information it was supposed to be given. Only one of those is
+# a wrong answer, so the bias runs toward PIPELINE.
+_DEPENDENCY_MARKERS: tuple[str, ...] = (
+    r"\bbased on\b",
+    r"\busing (the results|those|that|what)\b",
+    r"\bfrom (what|the results|those)\b",
+    r"\bonce you\b",
+    r"\bafter (you|research|find|check)",
+    r"\bwith (those|that|the results)\b",
+    r"\bfor (the|my|that) (biggest|main|top|largest|weakest)\b",
+    r"\bthe (biggest|main|top|largest|weakest|best|first)\b",
+    # A definite article on a result-shaped noun, with nothing between them, is
+    # pointing at something the previous clause produced: "find jobs, research
+    # THE COMPANIES". Requiring the noun to follow "the" immediately is what
+    # keeps it narrow — "research the latest AI agent companies" introduces its
+    # own subject and stays independent.
+    r"\bthe (compan(y|ies)|role|roles|job|jobs|listing|listings"
+    r"|result|results|option|options|gap|gaps|one|ones)\b",
+    r"\b(those|them|these)\b",
+    r"\beach (one|of them)\b",
+    r"\bthat (gap|role|company|topic|one|result)\b",
+)
+_DEPENDENCY_RE = re.compile("|".join(_DEPENDENCY_MARKERS), re.IGNORECASE)
+
+
+def _segments(intent: str) -> list[tuple[str, str]]:
+    """Split into ``(clause, joining_connective)`` pairs.
+
+    The connective recorded against a clause is the one that came *before* it,
+    so ``segments[i][1]`` describes the relationship between clause ``i-1`` and
+    clause ``i``. The first clause has no preceding connective.
+    """
+    parts = _CONNECTIVE_CAPTURE_RE.split(intent)
+    segments: list[tuple[str, str]] = []
+    for index in range(0, len(parts), 2):
+        clause = parts[index].strip(" ,.;")
+        join = parts[index - 1].strip(" ,").lower() if index > 0 else ""
+        if len(clause) >= COMPOUND_MIN_CLAUSE_CHARS:
+            segments.append((clause, join))
+    return segments
+
 
 def split_clauses(intent: str) -> list[str]:
     """Split a request into the tasks it actually contains.
@@ -108,8 +169,12 @@ def split_clauses(intent: str) -> list[str]:
     one task ("jobs in Bangalore, Chennai, or Pune") must not become three
     clauses, whereas "find jobs, and then teach me" must become two.
     """
-    parts = [p.strip(" ,.;") for p in _CONNECTIVE_RE.split(intent)]
-    return [p for p in parts if len(p) >= COMPOUND_MIN_CLAUSE_CHARS]
+    return [clause for clause, _join in _segments(intent)]
+
+
+def _depends_on_earlier(clause: str, join: str) -> bool:
+    """Whether this clause needs the previous clause's result to run."""
+    return join in _SEQUENCING_JOINS or bool(_DEPENDENCY_RE.search(clause))
 
 
 def _best_specialist(
@@ -140,7 +205,7 @@ def _best_specialist(
 
 
 def plan_compound(intent: str, registry: AgentRegistry) -> RoutingDecision | None:
-    """A multi-agent pipeline when the request contains distinct tasks.
+    """A multi-agent plan when the request contains distinct tasks.
 
     Returns None — meaning "route normally" — unless every condition holds:
 
@@ -153,49 +218,76 @@ def plan_compound(intent: str, registry: AgentRegistry) -> RoutingDecision | Non
     duplicates are folded rather than deduplicated globally, so a genuine
     A → B → A shape is still expressible.
 
-    Clause order is execution order. "Research X and then teach me" runs
-    Research first because that is the order the sentence states, and the
-    dependency runs the same way.
+    Clause order is execution order either way. What differs is the *shape*:
+
+    * **PIPELINE** when a later task needs an earlier one's result — stated by
+      the connective ("and then") or by a back-reference ("...for my biggest
+      gap", "...apply to them").
+    * **PARALLEL** when the tasks are merely listed together and neither refers
+      to the other.
+
+    PIPELINE is the default of the two. Running independent work sequentially
+    is slower; running dependent work concurrently means the second agent
+    answers without the information it was supposed to receive. Only one of
+    those is a wrong answer, so independence has to be shown, not assumed.
     """
-    clauses = split_clauses(intent)
-    if len(clauses) < 2:
+    segments = _segments(intent)
+    if len(segments) < 2:
         return None
 
-    resolved: list[tuple[str, str, list[str]]] = []
-    for clause in clauses:
+    # (agent_key, intent, matched_keywords, depends_on_previous)
+    resolved: list[tuple[str, str, list[str], bool]] = []
+    for clause, join in segments:
         key, _score, matched = _best_specialist(clause, registry)
+        dependent = _depends_on_earlier(clause, join)
         if key is None:
             # A clause with no specialist ("tell me how I should prepare") is
             # not dropped silently — it is folded into the previous step's
             # intent, so its wording still reaches an agent.
             if resolved:
-                agent_key, prior_intent, prior_matched = resolved[-1]
-                resolved[-1] = (agent_key, f"{prior_intent}. {clause}", prior_matched)
+                agent_key, prior_intent, prior_matched, prior_dep = resolved[-1]
+                resolved[-1] = (
+                    agent_key,
+                    f"{prior_intent}. {clause}",
+                    prior_matched,
+                    prior_dep,
+                )
             continue
         if resolved and resolved[-1][0] == key:
             # Same agent twice in a row: one task, phrased in two clauses.
-            agent_key, prior_intent, prior_matched = resolved[-1]
+            agent_key, prior_intent, prior_matched, prior_dep = resolved[-1]
             resolved[-1] = (
                 agent_key,
                 f"{prior_intent}. {clause}",
                 sorted(set(prior_matched) | set(matched)),
+                prior_dep,
             )
             continue
-        resolved.append((key, clause, matched))
+        resolved.append((key, clause, matched, dependent))
 
-    if len({key for key, _, _ in resolved}) < 2:
+    if len({key for key, _, _, _ in resolved}) < 2:
         return None  # one distinct capability: not compound
 
     resolved = resolved[:COMPOUND_MAX_STEPS]
-    agents = [key for key, _, _ in resolved]
-    matched_all = sorted({m for _, _, ms in resolved for m in ms})
+    agents = [key for key, _, _, _ in resolved]
+    matched_all = sorted({m for _, _, ms, _ in resolved for m in ms})
+
+    # Only steps after the first can depend on anything.
+    dependent = any(dep for _, _, _, dep in resolved[1:])
+    if dependent:
+        shape = PlanShape.PIPELINE
+        rationale = "compound request: " + " then ".join(agents)
+    else:
+        shape = PlanShape.PARALLEL
+        rationale = "independent tasks: " + " + ".join(agents)
+
     return RoutingDecision(
-        plan_shape=PlanShape.PIPELINE,
+        plan_shape=shape,
         steps=[
             RouteStep(agent_key=key, intent=clause_intent)
-            for key, clause_intent, _ in resolved
+            for key, clause_intent, _, _ in resolved
         ],
-        rationale=("compound request: " + " then ".join(agents)),
+        rationale=rationale,
         confidence=0.9,
         matched_keywords=matched_all,
     )
