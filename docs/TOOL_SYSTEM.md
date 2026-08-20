@@ -98,6 +98,52 @@ Rules, in order:
 
 ---
 
+## 4b. Web search: the four outcomes
+
+`web_search` is the one tool whose *absence of a result* is as important as its
+result, so it does not return a bare list.
+
+```
+             is a live provider installed?
+                    /            \
+                  no              yes
+                   |                |
+             UNAVAILABLE      did the query succeed?
+                                /            \
+                             no               yes
+                              |                 |
+                           FAILED        any hits after dedupe?
+                                            /        \
+                                          no          yes
+                                           |            |
+                                     NO_RESULTS     AVAILABLE
+```
+
+These were one empty list before. A caller that cannot tell them apart has to
+guess which it is looking at, and the guess that gets made is "the web contains
+nothing about this" — a statement about the world, made on the strength of our
+own timeout.
+
+**Provider:** Brave Search (`BraveSearchProvider`), REST, key in the
+`X-Subscription-Token` header. Requires **both** `BRAVE_API_KEY` and
+`AGENTS_WEB_SEARCH_ENABLED=true`; `init_provider` at the composition root
+(`app/main.py`) installs it, and leaves the offline `DummySearchProvider` in
+place otherwise. There is one search seam for the whole codebase — the tool and
+the knowledge-fusion path both go through `search_service`.
+
+**The placeholder is never evidence.** `DummySearchProvider` returns clearly
+labelled mock rows so the wiring can be tested without a key. It was once
+reported to the model as a successful search, and the model relayed the mocks
+to the user as findings. `search_outcome` now returns `UNAVAILABLE` when the
+placeholder is installed, and the tool raises rather than returning rows.
+
+**Keys never leave the backend.** The failure message carries the exception
+type only — provider error bodies sometimes echo the subscription token back —
+and the key appears in no log, trace, tool result or API response. Pinned by
+tests.
+
+---
+
 ## 5. Executor
 
 `executor.py` owns everything between "the call is permitted" and "here is what

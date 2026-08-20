@@ -83,7 +83,8 @@ specialist, and then decides between two multi-agent shapes.
                      two distinct specialists
                               |
               does a later clause need an earlier result?
-                     /                                          yes                          no
+                     /                        \
+                  yes                          no
                    |                            |
                PIPELINE                     PARALLEL
            (findings handed              (asyncio.gather,
@@ -133,6 +134,21 @@ I couldn't complete the research this time, so that part is missing.
 Silence is the dangerous option here: a parallel run that quietly discards a
 failed branch reads as a complete answer to a half-answered question. The raw
 exception is not shown — it is already on the step record.
+
+### Evidence in a parallel run
+
+Each branch reports its own search outcome, so one half can be evidence-backed
+while the other is not. A Career+Research turn with no key configured records
+`career=no_results` and `research=unavailable` — different states, because
+Career's clause never needed live data and Research's did.
+
+The synthesis must carry that through. Observed live: Research correctly said
+it could not verify current information, and the synthesis summarised the
+Career half and dropped the caveat. Nothing false was said; the user was simply
+left believing the whole question had been answered. If any branch reports
+missing evidence and the synthesised text no longer says so, the notice is now
+restored by code.
+
 
 ## 3. Structured hand-off
 

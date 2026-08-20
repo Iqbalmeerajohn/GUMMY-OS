@@ -17,7 +17,7 @@ Postgres container, one Ollama daemon, two dev servers.
 
 | Area | State |
 | --- | --- |
-| Backend tests | **947 passed**, 4 skipped (Postgres-gated), 0 failed |
+| Backend tests | **996 passed**, 4 skipped (Postgres-gated), 0 failed |
 | Frontend tests | **18 passed**, 0 failed |
 | TypeScript · ESLint | clean |
 | `ruff` · `black` · `mypy app` | clean (241 source files) |
@@ -116,6 +116,33 @@ result and stays a pipeline.
 Measured live: two branches that each take ~10 s **finish 17–19 ms apart**,
 against a 19.06 s finish spread for the same pair run as a pipeline.
 
+### Research evidence
+
+**No evidence, no claims about the present.** A question that depends on
+current information — "the latest…", "what's new in…", "who is hiring", prices,
+versions — is answered with an honest notice when no live results back it,
+never from model memory dressed up as a finding.
+
+Search reports *why* it has nothing, and the four reasons are not
+interchangeable:
+
+| Status | Meaning | What the user is told |
+| --- | --- | --- |
+| `AVAILABLE` | live results returned | the answer, with sources |
+| `UNAVAILABLE` | no provider configured | "Live web search isn't configured on this GUMMY instance" |
+| `FAILED` | provider errored | "I couldn't reach live web search just now" |
+| `NO_RESULTS` | searched, found nothing | "Live web search returned nothing for this" |
+
+The notice is appended **by code**, not requested from the model — a prompt
+instruction is advice a small model can drop, and the user must never be left
+believing an unverified answer was checked. Timeless questions ("What is RAG?",
+"Compare RAG and fine-tuning") get no notice and no search: over-warning trains
+people to ignore the warning.
+
+**Career never invents openings.** Without live evidence it works on the
+resume, names target roles and skills, supplies search terms and boards, and
+prepares for interviews — but does not claim any company is hiring.
+
 ### Tools
 A registry → policy → executor path with Green/Yellow/Red tiers, JSON-Schema
 validation, per-tool timeouts, a 4-iteration loop cap, and redacted audit rows.
@@ -195,7 +222,7 @@ Everything required is local. All external providers are optional.
 | `GOOGLE_CLIENT_ID` / `_SECRET` | Enables the Google button | optional |
 | `AUTH_EMAIL_MODE` | `console` (log the reset link) or `smtp` | — |
 | `SMTP_*` | Real email delivery, only when mode is `smtp` | optional |
-| `BRAVE_API_KEY` | Enables live web search | optional |
+| `BRAVE_API_KEY` | Enables live web search (with `AGENTS_WEB_SEARCH_ENABLED=true`) | optional |
 | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | Alternative model providers | optional |
 
 Never commit `.env`. `.env.example` carries empty placeholders only.
@@ -228,8 +255,10 @@ Stated plainly, because a README that hides these is not useful.
   reports it available and `/auth/google/start` redirects to Google correctly;
   completing the flow needs a real Google account sign-in, which was not done.
 - **File retrieval is keyword-based.** There is no vector RAG over file chunks.
-- **Live web search is config-gated.** Without a key, agents say so rather than
-  fabricating results.
+- **Live web search is not configured on this machine.** `BraveSearchProvider`
+  is implemented and wired; without `BRAVE_API_KEY` the offline placeholder
+  stays installed and every current-information question is answered with an
+  explicit "I can't verify this" rather than a guess.
 - **Auth email is console-mode locally.** SMTP is implemented and unit-tested,
   but no real send has been performed from this machine.
 - **No rate limiting** on login or forgot-password — local-only concerns today.

@@ -177,6 +177,49 @@ turn's existing fallback answers.
 
 ---
 
+## 2d. Live research honesty (no search key configured)
+
+`BRAVE_API_KEY` is not set on this machine, so the offline placeholder provider
+is installed. That makes this the exact condition the milestone targets: every
+current-information question is answered with no evidence available.
+
+Run against PostgreSQL 16 + Ollama `qwen2.5:3b`, fresh conversation per test.
+
+| # | Request | Result |
+| --- | --- | --- |
+| 1 | "What is RAG?" | Normal explanation. **No search, no notice** — a timeless question |
+| 2 | "What are the latest developments in AI agents?" | Honest notice, then concepts only |
+| 3 | "Find current AI/ML fresher jobs suitable for me." | **No invented openings**; redirected to boards + resume work |
+| 5 | "Research the latest AI agent companies." | **No invented company names** |
+| 6 | "Research OpenAI, Anthropic and Google DeepMind." | Declined and asked for a narrower angle (see limitations) |
+| 7 | "Find AI/ML jobs for me and research the latest AI agent companies." | `parallel`, 2 branches, 0.025 s finish spread; per-branch `career=no_results`, `research=unavailable` |
+
+**5/5 scenarios behaved honestly.** Zero fabricated current facts, checked
+against the exact strings the model produced before this work
+(`Google's Anthropic`, `Anthropic, Anthropic`).
+
+### A defect this run found
+
+The first parallel attempt produced a coherent answer covering only the Career
+half. The Research branch **had** correctly reported that it could not verify
+current information — and the synthesis dropped that sentence. Nothing in the
+answer was false, but the user was left believing the whole question had been
+answered.
+
+Fixed structurally: if any branch reports missing evidence and the synthesised
+text no longer says so, the notice is restored by code. Re-run live, the
+answer now opens with it. Pinned by
+`test_synthesis_restores_a_dropped_unverified_notice`.
+
+### What is still not verified
+
+Tests 2, 3, 4, 6 and 7 have a second half — "real live search + sources" —
+which cannot be exercised without a key. What is verified here is the
+**unavailable** path of each. No claim is made about live-search quality,
+latency, result counts, or source rendering with a real provider.
+
+---
+
 ## 3. Live multi-agent routing — 19/19
 
 The persisted `route_plan` is the authority, not the event stream.
@@ -227,7 +270,7 @@ no reasoning in any payload, **404** for another tenant's run id.
 | Alembic migrations | 25 |
 | API routers | 15 |
 | API endpoints | 73 |
-| Backend test files | 103 |
+| Backend test files | 104 |
 | Agent manifests | 8 (6 routed specialists + general + recall) |
 | Tools defined | 11 |
 | Tools executable | 9 (2 modeled behind approval) |
@@ -297,11 +340,14 @@ no reasoning in any payload, **404** for another tenant's run id.
   to a real Google account, which was not done.
 - **No public deployment.** GUMMY runs locally; `localhost` URLs are not
   reachable by anyone else.
-- **Research quality without a search backend is not fully solved.** The
-  Research agent no longer invents company names (it produced "Anthropic,
-  Anthropic, and Google's Anthropic" before the prompt was tightened), but on
-  a 3B local model it can still characterise names the user themselves stored
-  as if they were current market findings. Reduced, not eliminated.
+- **Live web search has never been exercised.** `BraveSearchProvider` is
+  implemented, wired at the composition root and unit-tested against a mocked
+  transport, but no real Brave query has been issued from this machine — no
+  `BRAVE_API_KEY` is configured. Everything claimed about search here is
+  about the **unavailable** path.
+- **Research can over-refuse.** Asked to research three named organisations,
+  it declined entirely rather than explaining what they are. Refusing is the
+  safe direction, but it costs answers that needed no live data.
 - **No real SMTP send has been performed.** Console mode is verified live;
   SMTP mode is implemented and unit-tested but never exercised against a
   real server from this machine.
