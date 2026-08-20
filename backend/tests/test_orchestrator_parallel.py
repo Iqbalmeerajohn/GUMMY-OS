@@ -116,10 +116,12 @@ async def test_parallel_fan_out_gathers_and_traces(
         embedding_service=_embeddings(),
         llm=FakeLLMProvider(reply="general says hi"),
     )
-    # Both branches contributed → labeled deterministic merge.
-    assert f"[{RECALL_AGENT_KEY}]" in result.reply
-    assert f"[{GENERAL_AGENT_KEY}]" in result.reply
+    # Both branches contributed. Their content survives, under headings a
+    # person would recognise — the agent keys are internal and must not leak.
     assert "general says hi" in result.reply
+    assert f"[{RECALL_AGENT_KEY}]" not in result.reply
+    assert f"[{GENERAL_AGENT_KEY}]" not in result.reply
+    assert "From your memory" in result.reply
     assert result.message_metadata is not None
     assert result.message_metadata["route_shape"] == "parallel"
 
@@ -214,8 +216,14 @@ async def test_parallel_failing_branch_isolated(
         embedding_service=_embeddings(),
         llm=FakeLLMProvider(reply="survivor reply"),
     )
-    # The run still composed a reply from the surviving branch.
-    assert result.reply == "survivor reply"
+    # The surviving branch's answer is delivered in full...
+    assert "survivor reply" in result.reply
+    # ...and the failure is stated rather than silently dropped. Answering as
+    # though nothing went wrong is the failure mode this guards.
+    assert "couldn't complete" in result.reply
+    assert "the memory lookup" in result.reply
+    # The raw exception stays on the step record, not in the user's answer.
+    assert "branch exploded" not in result.reply
 
     run = (await db_session.execute(select(AgentRun))).scalar_one()
     assert run.status == RunStatus.SUCCEEDED

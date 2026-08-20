@@ -24,15 +24,51 @@ def test_parallel_single_contribution_unlabeled() -> None:
     assert compose.compose_reply(PlanShape.PARALLEL, results) == "only me"
 
 
-def test_parallel_merge_is_deterministic_and_labeled() -> None:
+def test_parallel_merge_is_deterministic_and_uses_human_headings() -> None:
+    """Agent keys are machinery. "[career]" above a paragraph tells the user
+    nothing about their jobs and everything about our package layout."""
     results = [
-        ("recall", _result("facts here")),
-        ("general", _result("answer here")),
+        ("research", _result("facts here")),
+        ("career", _result("answer here")),
     ]
+
     merged = compose.compose_reply(PlanShape.PARALLEL, results)
-    assert merged == "[recall]\nfacts here\n\n[general]\nanswer here"
+
+    assert merged == "Research\nfacts here\n\nOpportunities\nanswer here"
+    assert "[research]" not in merged and "[career]" not in merged
     # Same inputs, same output (deterministic).
     assert compose.compose_reply(PlanShape.PARALLEL, results) == merged
+
+
+def test_a_failed_branch_is_named_rather_than_dropped() -> None:
+    """Silence is the dangerous option: dropping a failed branch reads as a
+    complete answer to a half-answered question."""
+    results = [("career", _result("three roles found"))]
+    failures = [("research", "provider timeout")]
+
+    merged = compose.compose_reply(PlanShape.PARALLEL, results, failures)
+
+    assert "three roles found" in merged
+    assert "couldn't complete the research" in merged
+    # The raw error is not user-facing — it is already on the step record.
+    assert "provider timeout" not in merged
+
+
+def test_a_single_surviving_branch_needs_no_heading() -> None:
+    results = [("career", _result("three roles found"))]
+
+    merged = compose.compose_reply(PlanShape.PARALLEL, results)
+
+    assert merged == "three roles found"
+
+
+def test_two_failed_branches_are_both_named() -> None:
+    results = [("career", _result("roles"))]
+    failures = [("research", "boom"), ("learning", "boom")]
+
+    merged = compose.compose_reply(PlanShape.PARALLEL, results, failures)
+
+    assert "the research" in merged and "the learning plan" in merged
 
 
 def test_parallel_empty_contributions() -> None:
