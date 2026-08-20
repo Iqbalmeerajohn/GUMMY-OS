@@ -571,6 +571,10 @@ export interface StreamEvent {
   text?: string;
   /** Orchestrator stage: understanding | retrieving_context | answering | … */
   stage?: string;
+  /** Plan shape for this turn: single | pipeline | parallel. */
+  shape?: string;
+  /** On a parallel delegation, every branch agent running at once. */
+  agents?: string[];
   /** Tool stage: tool_requested | tool_running | tool_completed | tool_failed |
    * approval_required. */
   tool?: string;

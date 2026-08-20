@@ -29,6 +29,14 @@ export interface ActivityStep {
   /** Display label, e.g. "Searching your files". */
   label: string;
   state: "running" | "done" | "failed" | "approval";
+  /**
+   * Agents running side by side for this step.
+   *
+   * Present only on a parallel fan-out. Without it a two-agent parallel run
+   * and a one-agent delegation look identical on screen, and the user has no
+   * way to see that two specialists are working at once.
+   */
+  branches?: string[];
 }
 
 /** Orchestrator stages, in the user's language rather than the system's. */
@@ -37,6 +45,7 @@ const STAGE_LABELS: Record<string, string> = {
   retrieving_context: "Retrieving relevant memory",
   gathering: "Gathering context",
   delegating: "Delegating to a specialist",
+  synthesizing: "Bringing the results together",
   answering: "Preparing the answer",
 };
 
@@ -101,20 +110,50 @@ export function ActivityTrail({
       aria-live="polite"
     >
       {steps.map((step) => (
+        <li key={step.id} className="flex flex-col gap-1">
+          <div
+            className={cn(
+              "flex items-center gap-2",
+              step.state === "done" && "text-muted-foreground",
+              step.state === "running" && "text-foreground",
+              step.state === "failed" && "text-muted-foreground",
+              step.state === "approval" && "text-amber-300",
+            )}
+          >
+            <Icon state={step.state} />
+            <span className={cn(step.state === "failed" && "line-through")}>
+              {step.label}
+            </span>
+          </div>
+          {step.branches && step.branches.length > 1 ? (
+            <Branches agents={step.branches} />
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * The branches of a parallel fan-out, shown together.
+ *
+ * Rendered as one indented group under the delegating step rather than as
+ * separate rows, because separate rows read as a sequence — which is the one
+ * thing this shape is not. The agents here are running at the same time.
+ */
+function Branches({ agents }: { agents: string[] }) {
+  return (
+    <ul className="border-primary/20 ml-[7px] flex flex-col gap-1 border-l pl-3">
+      {agents.map((agent) => (
         <li
-          key={step.id}
-          className={cn(
-            "flex items-center gap-2",
-            step.state === "done" && "text-muted-foreground",
-            step.state === "running" && "text-foreground",
-            step.state === "failed" && "text-muted-foreground",
-            step.state === "approval" && "text-amber-300",
-          )}
+          key={agent}
+          className="text-muted-foreground flex items-center gap-2"
         >
-          <Icon state={step.state} />
-          <span className={cn(step.state === "failed" && "line-through")}>
-            {step.label}
-          </span>
+          <span
+            className="bg-primary size-1.5 shrink-0 animate-pulse rounded-full"
+            aria-hidden
+          />
+          <span>{AGENT_NAMES[agent] ?? agent}</span>
         </li>
       ))}
     </ul>

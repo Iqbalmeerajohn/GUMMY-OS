@@ -397,7 +397,13 @@ export function ChatPane({
         if (ev.type === "delta" && ev.text) {
           setStreamText((prev) => prev + ev.text);
         } else if (ev.type === "status" && ev.stage) {
-          const label = stageLabel(ev.stage, ev.agent);
+          // A parallel fan-out names every branch, so the trail can show them
+          // running together instead of as one anonymous "delegating" line.
+          const parallel =
+            ev.shape === "parallel" && (ev.agents?.length ?? 0) > 1;
+          const label = parallel
+            ? "Working on both at once"
+            : stageLabel(ev.stage, ev.agent);
           if (label) {
             // Each orchestrator stage supersedes the previous one, so earlier
             // steps settle to "done" rather than all spinning at once.
@@ -409,6 +415,7 @@ export function ChatPane({
                 id: `stage-${ev.stage}-${prev.length}`,
                 label,
                 state: "running",
+                ...(parallel ? { branches: ev.agents } : {}),
               },
             ]);
           }
