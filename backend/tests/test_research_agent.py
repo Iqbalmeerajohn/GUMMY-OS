@@ -107,6 +107,16 @@ async def test_research_agent_survives_search_failure(
         result = await handlers.dispatch(_task("latest AI news"), llm=llm)
     finally:
         set_provider(original)
-    # Search failure degrades silently — the reply still lands, no web sources.
-    assert result.output["reply"] == "Answer without live data."
+
+    # The reply still lands (a search outage never costs the user an answer),
+    # but it no longer degrades *silently*: "latest AI news" is a question
+    # about the present, so the answer says the present could not be checked.
+    # Silence here let an unverified answer read as a verified one.
+    reply = result.output["reply"]
+    assert "Answer without live data." in reply
+    assert "reliably verify current information" in reply
+    # FAILED, not UNAVAILABLE: the provider exists, it just broke. Telling the
+    # user to configure something that is already configured is a wrong fix.
+    assert result.output["search_status"] == "failed"
+    assert "couldn't reach live web search" in reply
     assert result.output["web_sources"] == []

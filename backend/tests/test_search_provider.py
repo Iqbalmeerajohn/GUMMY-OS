@@ -7,6 +7,8 @@ error, malformed body) degrades to ``[]`` rather than raising (B10).
 
 from __future__ import annotations
 
+import pytest
+
 from app.services.search import (
     BraveSearchProvider,
     DummySearchProvider,
@@ -14,6 +16,7 @@ from app.services.search import (
     get_provider,
     set_provider,
 )
+from app.services.search.provider import SearchProviderError
 
 
 async def test_dummy_provider_returns_mock_results() -> None:
@@ -107,7 +110,13 @@ async def test_brave_provider_parses_payload(monkeypatch) -> None:
     assert all(r.source == "brave" for r in results)
 
 
-async def test_brave_provider_swallows_errors(monkeypatch) -> None:
+async def test_brave_provider_reports_failure_instead_of_empty(monkeypatch) -> None:
+    """A network fault is not the same news as "the web has nothing".
+
+    This used to return [], which made a timeout indistinguishable from a
+    genuine absence of results — and the model narrated the second reading.
+    """
+
     class _Boom:
         def __init__(self, *a, **k) -> None:
             pass
@@ -124,4 +133,11 @@ async def test_brave_provider_swallows_errors(monkeypatch) -> None:
     import httpx
 
     monkeypatch.setattr(httpx, "AsyncClient", _Boom)
-    assert await BraveSearchProvider("key").search("ai jobs") == []
+
+    with pytest.raises(SearchProviderError) as excinfo:
+        await BraveSearchProvider("key").search("ai jobs")
+
+    # The message carries the exception type and nothing else: provider error
+    # bodies can echo the subscription token back.
+    assert "key" not in str(excinfo.value)
+    assert "RuntimeError" in str(excinfo.value)
