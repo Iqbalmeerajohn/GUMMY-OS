@@ -330,5 +330,10 @@ async def test_web_search_delegates_to_search_seam(
         set_provider(original)
     assert result.status == ToolRunStatus.SUCCEEDED
     # The tool delegates to the single search seam and flags results untrusted.
-    assert result.output["untrusted"] is True
+    # The payload is deliberately narrow: title/url/domain/snippet. The
+    # provider name and an "untrusted" marker used to ride along, and the
+    # model read both out to the user. Neither was consumed by code.
+    hit = result.output["results"][0]
+    assert set(hit) == {"title", "url", "domain", "snippet"}
+    assert "untrusted" not in result.output
     assert result.output["results"][0]["url"] == "https://example.com/gummy"

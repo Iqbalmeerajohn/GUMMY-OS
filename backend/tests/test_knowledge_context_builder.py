@@ -99,7 +99,10 @@ def test_search_section_rendered_only_when_present() -> None:
     )
     assert "Search" in compiled.block
     assert "https://ex.com/ai" in compiled.block
-    assert "[search:tavily]" in compiled.block
+    # Labelled [web], not [search:<provider>]: the vendor name is machinery,
+    # and having it in the model's context is how it reached an answer.
+    assert "[web]" in compiled.block
+    assert "tavily" not in compiled.block.lower()
     assert compiled.search_used == 1
 
 

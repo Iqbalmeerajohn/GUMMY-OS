@@ -71,8 +71,12 @@ def test_two_failed_branches_are_both_named() -> None:
     assert "the research" in merged and "the learning plan" in merged
 
 
-def test_parallel_empty_contributions() -> None:
-    assert compose.compose_reply(PlanShape.PARALLEL, []) == ""
+def test_parallel_with_no_contributions_says_something() -> None:
+    """An empty string reaching the user is indistinguishable from the app
+    being broken, so the last step substitutes an honest message."""
+    reply = compose.compose_reply(PlanShape.PARALLEL, [])
+
+    assert reply == compose.EMPTY_REPLY_FALLBACK
 
 
 def test_personality_hook_applied_last(

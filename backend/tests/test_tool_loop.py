@@ -605,4 +605,4 @@ async def test_web_search_runs_when_a_provider_is_configured(
     assert result.output is not None
     assert result.output["results"][0]["url"] == "https://e.com"
     # Search results are data the model may cite, never instructions.
-    assert result.output["untrusted"] is True
+    assert "untrusted" not in result.output
