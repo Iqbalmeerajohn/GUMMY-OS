@@ -7,6 +7,7 @@ account before the acting tenant — and therefore before RLS — is established
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Query, status
@@ -31,6 +32,8 @@ from app.schemas.auth import (
 from app.services.auth import auth_service, google_oauth, reset_service
 from app.services.auth.auth_service import AuthResult
 from app.services.auth.mailer import MailDeliveryError
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -247,11 +250,24 @@ async def google_callback(
     if error:
         return _redirect_failure(settings, reason=error)
 
-    next_path = google_oauth.verify_state(settings, state)
-    if not code:
-        return _redirect_failure(settings, reason="missing_code")
+    # Every failure below ends as a redirect, not JSON. This URL is opened by
+    # Google's redirect, so whatever it returns is rendered in the address bar
+    # — and an expired state is a *normal* user event (they lingered on the
+    # consent screen past the state's lifetime), not an attack. Before this,
+    # that user was shown a raw `{"error": {...}}` blob, even though the login
+    # page already carries the message for it.
+    #
+    # The rejection itself is unchanged: verify_state still raises, and a
+    # forged or expired state still never mints a session.
+    try:
+        next_path = google_oauth.verify_state(settings, state)
+        if not code:
+            return _redirect_failure(settings, reason="missing_code")
+        identity = await google_oauth.exchange_code(settings, code=code)
+    except AppError as exc:
+        logger.warning("google callback rejected: %s", exc.code)
+        return _redirect_failure(settings, reason=exc.code)
 
-    identity = await google_oauth.exchange_code(settings, code=code)
     session = await _open(sessionmaker)
     async with session:
         result = await auth_service.sign_in_with_google(

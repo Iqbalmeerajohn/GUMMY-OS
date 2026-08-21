@@ -19,6 +19,9 @@ import { cn } from "@/lib/utils";
 const OAUTH_ERRORS: Record<string, string> = {
   access_denied: "You cancelled Google sign-in.",
   oauth_state_invalid: "That sign-in link expired. Please try again.",
+  // Same user situation as an invalid state (a stale or re-opened callback),
+  // so it gets the same wording rather than the generic fallback.
+  oauth_state_missing: "That sign-in link expired. Please try again.",
   missing_code: "Google did not complete the sign-in. Please try again.",
 };
 
@@ -102,7 +105,10 @@ function LoginForm() {
         <button
           type="submit"
           disabled={submitting}
-          className={cn(buttonVariants({ size: "lg" }), "h-11 w-full text-base")}
+          className={cn(
+            buttonVariants({ size: "lg" }),
+            "h-11 w-full text-base",
+          )}
         >
           {submitting ? "Signing in…" : "Sign in"}
         </button>

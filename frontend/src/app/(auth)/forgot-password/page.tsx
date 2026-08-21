@@ -49,8 +49,16 @@ export default function ForgotPasswordPage() {
   if (sent) {
     return (
       <AuthShell
-        title="Check your email"
-        subtitle="If an account exists for that address, a password reset link is on its way."
+        // In console mode nothing was emailed, so "Check your email" would be
+        // a plain untruth — and sending someone to an inbox that will never
+        // receive anything is a worse dead end than saying so. The wording
+        // below still reveals nothing about whether the account exists.
+        title={consoleMode ? "Reset link generated" : "Check your email"}
+        subtitle={
+          consoleMode
+            ? "This server logs auth email instead of sending it, so the link is waiting in the backend console."
+            : "If an account exists for that address, a password reset link is on its way."
+        }
         footer={
           <Link href="/login" className="hover:text-foreground underline">
             Back to sign in
@@ -59,8 +67,9 @@ export default function ForgotPasswordPage() {
       >
         <div className="space-y-4">
           <p className="text-muted-foreground text-sm">
-            The link works once and expires shortly. If it doesn&apos;t arrive,
-            check your spam folder or try again.
+            {consoleMode
+              ? "The link works once and expires shortly, exactly as it would by email."
+              : "The link works once and expires shortly. If it doesn't arrive, check your spam folder or try again."}
           </p>
 
           {consoleMode ? (
@@ -68,9 +77,10 @@ export default function ForgotPasswordPage() {
               <span className="text-foreground font-medium">
                 Local development:
               </span>{" "}
-              this server logs auth email instead of sending it. The reset link
-              is in the backend console, tagged{" "}
-              <code className="text-foreground">[GUMMY AUTH]</code>.
+              find it in the backend console, tagged{" "}
+              <code className="text-foreground">[GUMMY AUTH]</code>. Set{" "}
+              <code className="text-foreground">AUTH_EMAIL_MODE=smtp</code> to
+              deliver real email.
             </p>
           ) : null}
 
