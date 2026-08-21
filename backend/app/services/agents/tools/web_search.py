@@ -2,8 +2,8 @@
 
 The tool owns no provider of its own (Rule #4: no parallel systems) — it calls
 ``services/search`` (``search_service``), the same seam the knowledge-fusion path
-uses, so a real backend (Brave) configured at the composition root serves both.
-The offline ``DummySearchProvider`` is the default until Brave is wired in.
+uses, so a real backend (Tavily) configured at the composition root serves both.
+The offline ``DummySearchProvider`` is the default until Tavily is wired in.
 
 **Results are untrusted data** — they inform answers but can never escalate
 permissions or approve actions (the policy engine never sees them).

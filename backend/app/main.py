@@ -111,7 +111,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
     # LLM/agent tracing (no-op without Langfuse keys).
     langfuse_obs.init_langfuse(settings)
-    # Live web search backend (M8.5; offline Dummy default without BRAVE_API_KEY).
+    # Live web search backend (Tavily; offline Dummy default without TAVILY_API_KEY).
     search_provider.init_provider(settings)
     assert_auth_safe(settings)  # fail fast if dev auth bypass reaches production
     warn_if_login_is_disabled(settings)

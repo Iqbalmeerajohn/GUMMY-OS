@@ -6,12 +6,13 @@ the composition root without any caller change. This is the **single** search
 seam for the whole codebase — the ``web_search`` green tool delegates here rather
 than carrying its own provider (Rule #4: no parallel systems).
 
-M8.5 ships ``BraveSearchProvider`` (Brave Search REST API, ``BRAVE_API_KEY``) as
-the first real backend; the offline ``DummySearchProvider`` remains the default
-until the composition root swaps Brave in. **Search results are untrusted data**
+The live backend is ``TavilySearchProvider`` (Tavily Search API,
+``TAVILY_API_KEY``); the offline ``DummySearchProvider`` remains the default
+until the composition root swaps it in. **Search results are untrusted data**
 — they inform answers and must never escalate permissions or approve actions.
-Every provider is best-effort: ``search`` never raises (returns ``[]`` on any
-failure), so a search outage can never take down a turn (B10).
+A provider reports a genuine fault as ``SearchProviderError`` and the service
+turns that into a ``FAILED`` outcome, so a search outage can never take down a
+turn (B10) while still being distinguishable from "the web has nothing".
 """
 
 from __future__ import annotations
@@ -26,10 +27,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Brave Search REST endpoint (web search). Token goes in the X-Subscription-Token
-# header; the response carries hits under ``web.results``.
-_BRAVE_ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
-_BRAVE_TIMEOUT_SECONDS = 6.0
+# Tavily Search API. The key travels as a bearer token rather than in the JSON
+# body: a request body is the thing most likely to end up in a debug log.
+# Results arrive under ``results`` with ``content`` as the snippet field.
+_TAVILY_ENDPOINT = "https://api.tavily.com/search"
+_TAVILY_TIMEOUT_SECONDS = 10.0
 
 
 @dataclass(frozen=True)
@@ -39,7 +41,7 @@ class SearchResult:
     title: str
     url: str
     snippet: str
-    # The provider/source name (e.g. "brave", "dummy") — surfaced for citations.
+    # The provider/source name (e.g. "tavily", "dummy") — surfaced for citations.
     source: str = ""
 
     @property
@@ -88,7 +90,7 @@ class DummySearchProvider:
                 title=f"Mock result {i + 1} for {cleaned!r}",
                 url=f"https://example.com/search?q={cleaned}&r={i + 1}",
                 snippet=(
-                    f"Placeholder snippet {i + 1}. Configure BRAVE_API_KEY for "
+                    f"Placeholder snippet {i + 1}. Configure TAVILY_API_KEY for "
                     "live web results."
                 ),
                 source="dummy",
@@ -97,16 +99,23 @@ class DummySearchProvider:
         ]
 
 
-class BraveSearchProvider:
-    """Brave Search REST backend (M8.5).
+class TavilySearchProvider:
+    """Tavily Search API backend.
 
-    Calls the Brave web-search API with ``api_key`` (``X-Subscription-Token``)
-    and maps ``web.results`` → ``SearchResult``. Best-effort by contract: any
-    network error, timeout, non-200, or malformed payload yields ``[]`` so a
-    Brave outage degrades gracefully to a search-free turn (B10).
+    POSTs the query to ``/search`` and maps ``results`` → ``SearchResult``.
+    Tavily returns the snippet under ``content`` rather than ``description``,
+    and ranks by a ``score`` it supplies; the provider's order is preserved and
+    the service re-ranks nothing.
+
+    The key is sent as a bearer token rather than in the JSON body. Both are
+    accepted by the API, but a request body is the thing most likely to be
+    echoed back in an error or captured by a debug log.
+
+    Faults are raised as :class:`SearchProviderError`, never swallowed — the
+    service needs to tell a timeout apart from an empty web.
     """
 
-    def __init__(self, api_key: str, *, timeout: float = _BRAVE_TIMEOUT_SECONDS):
+    def __init__(self, api_key: str, *, timeout: float = _TAVILY_TIMEOUT_SECONDS):
         self._api_key = api_key
         self._timeout = timeout
 
@@ -117,18 +126,23 @@ class BraveSearchProvider:
         # httpx is already a dependency (the Anthropic/OpenAI SDKs use it).
         import httpx
 
-        params: dict[str, str | int] = {
-            "q": cleaned,
-            "count": max(1, min(limit, 20)),
+        body: dict[str, object] = {
+            "query": cleaned,
+            "max_results": max(1, min(limit, 20)),
+            # "basic" is a single retrieval pass: cheaper and fast enough for a
+            # turn the user is waiting on. "advanced" costs more credits per
+            # call and mainly helps long-form research.
+            "search_depth": "basic",
         }
         headers = {
             "Accept": "application/json",
-            "X-Subscription-Token": self._api_key,
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self._api_key}",
         }
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
-                response = await client.get(
-                    _BRAVE_ENDPOINT, params=params, headers=headers
+                response = await client.post(
+                    _TAVILY_ENDPOINT, json=body, headers=headers
                 )
                 response.raise_for_status()
                 payload = response.json()
@@ -138,20 +152,23 @@ class BraveSearchProvider:
             # and the model presented the second reading to the user.
             #
             # The message deliberately carries the exception type and nothing
-            # else: provider error bodies can echo the subscription token back.
-            logger.warning("brave search failed: %s", type(exc).__name__)
+            # else: provider error bodies can echo the credential back.
+            logger.warning("tavily search failed: %s", type(exc).__name__)
             raise SearchProviderError(
-                f"Brave search failed ({type(exc).__name__})."
+                f"Tavily search failed ({type(exc).__name__})."
             ) from exc
         return self._parse(payload, limit=limit)
 
     @staticmethod
     def _parse(payload: object, *, limit: int) -> list[SearchResult]:
-        """Map a Brave web-search payload to ``SearchResult`` (defensive)."""
+        """Map a Tavily search payload to ``SearchResult`` (defensive).
+
+        Every field is coerced and every shape checked: a provider that changes
+        its response should cost us results, not raise inside a turn.
+        """
         if not isinstance(payload, dict):
             return []
-        web = payload.get("web")
-        results = web.get("results") if isinstance(web, dict) else None
+        results = payload.get("results")
         if not isinstance(results, list):
             return []
         out: list[SearchResult] = []
@@ -166,8 +183,8 @@ class BraveSearchProvider:
                 SearchResult(
                     title=title,
                     url=url,
-                    snippet=str(hit.get("description", "")).strip(),
-                    source="brave",
+                    snippet=str(hit.get("content", "")).strip(),
+                    source="tavily",
                 )
             )
             if len(out) >= limit:
@@ -175,7 +192,7 @@ class BraveSearchProvider:
         return out
 
 
-# Process-wide provider; the dummy until the composition root swaps in Brave.
+# Process-wide provider; the dummy until the composition root swaps Tavily in.
 _provider: SearchProvider = DummySearchProvider()
 
 
@@ -204,18 +221,18 @@ def set_provider(provider: SearchProvider) -> None:
 
 
 def init_provider(settings: Settings) -> bool:
-    """Activate Brave at the composition root when configured. Returns True when
+    """Activate Tavily at the composition root when configured. Returns True when
     a live provider is installed; leaves the offline Dummy default otherwise.
 
     Best-effort: a wiring failure logs and keeps the Dummy default so boot never
     fails over search config.
     """
     try:
-        if settings.web_search_enabled and settings.brave_api_key:
-            set_provider(BraveSearchProvider(settings.brave_api_key))
-            logger.info("web search enabled (Brave)")
+        if settings.web_search_enabled and settings.tavily_api_key:
+            set_provider(TavilySearchProvider(settings.tavily_api_key))
+            logger.info("web search enabled (Tavily)")
             return True
     except Exception:  # pragma: no cover - defensive
         logger.exception("search provider init failed; using offline default")
-    logger.info("web search disabled (no BRAVE_API_KEY / flag off)")
+    logger.info("web search disabled (no TAVILY_API_KEY / flag off)")
     return False

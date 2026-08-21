@@ -202,6 +202,15 @@ def is_search_eligible(agent_key: str | None, query: str) -> bool:
     """
     if not get_settings().web_search_enabled:
         return False
+    # A question that is invalid without current evidence is exactly the case
+    # worth spending a call on, whichever agent is holding it. Restricting this
+    # to the specialists produced a worse failure than the cost it saved:
+    # "What are the latest developments in AI agents?" routes to General, which
+    # could not search, so it answered "live web search isn't configured" — a
+    # statement that was false, and would send the user to check a config file
+    # that was already correct.
+    if requires_fresh_evidence(query):
+        return True
     if agent_key not in SEARCH_ELIGIBLE_AGENTS:
         return False
     lowered = query.lower()

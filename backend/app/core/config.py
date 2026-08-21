@@ -213,16 +213,16 @@ class Settings(BaseSettings):
     # path is deterministic and free, and the general agent is a safe
     # catch-all (the plan's cost rationale, §6.9).
     agents_router_llm_fallback: bool = False
-    # M8.5: live web search (Brave) fused into the knowledge engine for the
+    # Live web search (Tavily) fused into the knowledge engine for the
     # Research/Career/Learning specialists. Off by default (cost): requires both
-    # this flag AND ``brave_api_key`` to be active. When inactive, search-worthy
+    # this flag AND ``tavily_api_key`` to be active. When inactive, search-worthy
     # queries answer from the user's own knowledge with no Search section (B10).
     agents_web_search_enabled: bool = False
 
-    # ── Web search (M8.5; Brave Search API) ───────────────────────────────────
+    # ── Web search (Tavily Search API) ────────────────────────────────────────
     # The single live-search backend. Kept per-environment (a real secret). When
     # unset, the offline DummySearchProvider stays active and no live search runs.
-    brave_api_key: str | None = None
+    tavily_api_key: str | None = None
 
     # ── Memory extraction consent (Phase 2 / memory-system §2) ────────────────
     # Gates the automatic conversation→memory extraction consumer:
@@ -286,8 +286,8 @@ class Settings(BaseSettings):
 
     @property
     def web_search_enabled(self) -> bool:
-        """True only when live web search is on AND a Brave key is configured."""
-        return bool(self.agents_web_search_enabled and self.brave_api_key)
+        """True only when live web search is on AND a Tavily key is configured."""
+        return bool(self.agents_web_search_enabled and self.tavily_api_key)
 
     @property
     def google_oauth_enabled(self) -> bool:
