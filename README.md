@@ -17,7 +17,7 @@ Postgres container, one Ollama daemon, two dev servers.
 
 | Area | State |
 | --- | --- |
-| Backend tests | **1000 passed**, 4 skipped (Postgres-gated), 0 failed |
+| Backend tests | **1016 passed**, 4 skipped (Postgres-gated), 0 failed |
 | Frontend tests | **18 passed**, 0 failed |
 | TypeScript · ESLint | clean |
 | `ruff` · `black` · `mypy app` | clean (241 source files) |

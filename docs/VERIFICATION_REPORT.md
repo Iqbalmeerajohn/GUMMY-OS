@@ -12,7 +12,7 @@ What follows is engineering evidence with exact denominators.
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Backend tests | `pytest -q` | **1000 passed, 4 skipped, 0 failed** |
+| Backend tests | `pytest -q` | **1016 passed, 4 skipped, 0 failed** |
 | Frontend tests | `npm test` | **18 passed, 0 failed** |
 | TypeScript | `npm run typecheck` | **clean** |
 | ESLint | `npm run lint` | **clean** |
@@ -255,6 +255,55 @@ Tests 2, 3, 4, 6 and 7 have a second half — "real live search + sources" —
 which cannot be exercised without a key. What is verified here is the
 **unavailable** path of each. No claim is made about live-search quality,
 latency, result counts, or source rendering with a real provider.
+
+---
+
+## 2e. Auth + search UX hardening
+
+Five defects, each found by running the application rather than reading it.
+
+| # | Defect | Fix | Pinned by |
+| --- | --- | --- | --- |
+| 1 | An expired/forged OAuth `state` returned raw JSON to a browser | redirect to `/login?error=<code>`; rejection unchanged | `test_a_bad_oauth_state_redirects_instead_of_returning_json` (mutation-checked) |
+| 2 | `web_search` handed the model the vendor name and an `untrusted` flag, which it read out to users | payload narrowed to title/url/domain/snippet | `test_the_search_tool_payload_carries_only_citable_fields` |
+| 3 | Knowledge block labelled hits `[search:<provider>]` | labelled `[web]`, domain surfaced for citation | `test_the_knowledge_block_labels_hits_web_not_by_vendor` |
+| 4 | Career's invention ban covered the vacancy but not its salary, location or deadline | ban extended to every attached field | `test_career_may_not_invent_the_details_attached_to_a_vacancy` |
+| 5 | A Research turn emitted **zero characters** — the user got an empty bubble | empty/whitespace replies become an honest message | `test_an_empty_generation_becomes_an_honest_message` |
+
+### OAuth failure paths (live, port 8000)
+
+| Callback | Result |
+| --- | --- |
+| no `state` | 307 → `/login?error=oauth_state_missing` |
+| forged `state` | 307 → `/login?error=oauth_state_invalid` |
+| `error=access_denied` | 307 → `/login?error=access_denied` |
+
+Browser-verified: `?error=oauth_state_invalid` renders "That sign-in link
+expired. Please try again."
+
+### Search answer quality (live, Tavily configured)
+
+| # | Request | Time | Sources | Internal identifiers leaked |
+| --- | --- | --- | --- | --- |
+| Q1 | "Find current AI/ML fresher jobs suitable for me." | 37.8 s | 5 | none |
+| Q2 | "What are the latest developments in AI agents?" | 24.5 s | 5 | none |
+| Q3 | "Research OpenAI, Anthropic and Google DeepMind." | 50.6 s | 5 | none |
+| Q4 | "Find AI/ML jobs for me and research the latest AI agent companies" | 80.2 s | 5 + 5 | none |
+
+**4/4 clean.** Checked against `[Search result N]`, `Result N`, `[web]`,
+`[search:`, `untrusted`, `Tavily`, and "retrieved documents".
+
+Q3 is also where defect 5 surfaced: the run succeeded with five sources and
+produced an empty reply. The guard now substitutes a message; the underlying
+cause (a 3B model ending a tool loop without emitting text) is a model
+limitation, not something the guard claims to fix.
+
+### Password-reset UI in console mode
+
+The success screen no longer says "Check your email" when nothing was emailed.
+It reads **"Reset link generated"** and explains that the link is in the
+backend console. Browser-verified. The wording still reveals nothing about
+whether the account exists.
 
 ---
 

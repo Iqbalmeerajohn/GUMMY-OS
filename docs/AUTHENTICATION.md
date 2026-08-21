@@ -163,6 +163,43 @@ placeholders only.
 
 ---
 
+### Google OAuth failure paths
+
+Every rejection ends as a **redirect to the login page with a machine-readable
+reason**, never as JSON. This URL is opened by Google's redirect, so whatever it
+returns is what the browser renders — and an expired `state` is a normal user
+event (they lingered on the consent screen), not an attack. It used to render a
+raw `{"error": {...}}` blob even though the login page already carried the
+message for it.
+
+The rejection itself is unchanged: `verify_state` still raises, and a forged or
+expired state still never mints a session.
+
+| Callback | Redirect | What the user reads |
+| --- | --- | --- |
+| no `state` | `/login?error=oauth_state_missing` | "That sign-in link expired. Please try again." |
+| forged/expired `state` | `/login?error=oauth_state_invalid` | "That sign-in link expired. Please try again." |
+| `error=access_denied` | `/login?error=access_denied` | "You cancelled Google sign-in." |
+| valid `state`, no `code` | `/login?error=missing_code` | "Google did not complete the sign-in." |
+
+Verified live against the running app; a test asserts the login page carries a
+message for every code the backend can emit, so a new code cannot ship as a
+bare slug.
+
+### `redirect_uri_mismatch`
+
+GUMMY sends the value of `GOOGLE_REDIRECT_URI`, which must be registered
+**character-for-character** in the Google Cloud console under the OAuth client's
+*Authorized redirect URIs*. For local development that is:
+
+```
+http://localhost:8000/api/v1/auth/google/callback
+```
+
+`127.0.0.1` is a different origin to Google and will not match a `localhost`
+registration. A `400 redirect_uri_mismatch` means the console does not contain
+this exact string — there is nothing to change in GUMMY.
+
 ## 6. Password recovery
 
 The login screen linked to `/forgot-password` from the day local auth landed,
@@ -309,7 +346,10 @@ claimed as tested.
 
 ## 9. Known limitations
 
-- **Google sign-in is unverified end to end** — no credentials on this machine.
+- **Google sign-in is unverified end to end.** Credentials are configured and
+  the failure paths are verified live, but the successful browser round trip
+  requires registering the redirect URI above and signing in to a real Google
+  account. Not done, therefore not claimed.
 - **`aud` is not checked** on the Google ID token (defence in depth, not a hole).
 - **Tokens live in localStorage**, so XSS in the app would expose a session.
 - **No rate limiting** on `/auth/login` or `/auth/forgot-password` — a local-only concern today, blocking

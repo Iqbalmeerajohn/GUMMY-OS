@@ -63,7 +63,7 @@ scenarios live.
 
 | Metric | Value |
 | --- | --- |
-| Backend tests | 1000 passed, 4 skipped, 0 failed |
+| Backend tests | 1016 passed, 4 skipped, 0 failed |
 | Frontend tests | 18 passed, 0 failed |
 | Static analysis | `ruff`, `black`, `mypy app` clean (241 files); TS + ESLint clean |
 | Migrations | 25 |
