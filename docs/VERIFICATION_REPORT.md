@@ -12,19 +12,19 @@ What follows is engineering evidence with exact denominators.
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Backend tests | `pytest -q` | **915 passed, 4 skipped, 0 failed** |
+| Backend tests | `pytest -q` | **1000 passed, 4 skipped, 0 failed** |
 | Frontend tests | `npm test` | **18 passed, 0 failed** |
 | TypeScript | `npm run typecheck` | **clean** |
 | ESLint | `npm run lint` | **clean** |
 | Python lint | `ruff check app tests` | **clean** |
 | Formatting | `black --check app tests` | **clean** |
 | Types (app) | `mypy app` | **clean — 241 source files** |
-| Types (tests) | `mypy tests` | **57 errors in 23 files — pre-existing** |
+| Types (tests) | `mypy tests` | **64 errors in 25 files — pre-existing** |
 
 The 4 skipped backend tests are Postgres-gated and do not run against the
 in-memory SQLite suite.
 
-**The 57 `mypy tests` errors are pre-existing** and sit in files untouched by
+**The 64 `mypy tests` errors are pre-existing** and sit in files untouched by
 recent work (missing annotations on test helpers, mostly `no-untyped-def`). They
 are reported rather than hidden. `mypy app` — which CI runs — is clean.
 
@@ -177,13 +177,51 @@ turn's existing fallback answers.
 
 ---
 
-## 2d. Live research honesty (no search key configured)
+## 2d. Live research: evidence-grounded via Tavily
 
-`BRAVE_API_KEY` is not set on this machine, so the offline placeholder provider
-is installed. That makes this the exact condition the milestone targets: every
-current-information question is answered with no evidence available.
+Live web search is provided by **Tavily** (`TavilySearchProvider`) and is
+configured on this machine. Both paths are recorded below: the evidence-backed
+path now that a key is present, and the unavailable path measured before it
+was.
 
 Run against PostgreSQL 16 + Ollama `qwen2.5:3b`, fresh conversation per test.
+
+### With Tavily configured
+
+| Request | Agent | Status | Sources |
+| --- | --- | --- | --- |
+| "What is RAG?" | general | `no_results` | 0 — timeless, **no search spent** |
+| "What are the latest developments in AI agents?" | general | `available` | **5** |
+| "Research the latest AI agent companies." | research | `available` | **5** |
+| "Find current AI/ML fresher jobs suitable for me." | career | `available` | **5** |
+
+**4/4 behaved as expected.** Real source domains returned, e.g. for the jobs
+query: `aijobs.net`, `internshala.com`, `mindrift.ai`, `prosple.com`,
+`www.mercor.com`.
+
+Direct provider check: `status=available`, 5 results, **~3.0 s** latency,
+snippets 891–1498 chars.
+
+**Zero assistant messages narrated machinery** — checked by querying every
+reply for "untrusted", "Tavily platform" and "search provider": 0 matches.
+
+### Two defects this run found
+
+**A freshness question routed to General could not search.** "What are the
+latest developments in AI agents?" went to the General agent, which was not on
+the search-eligible list, so no query ran and the reply said live web search
+"isn't configured" — while it *was* configured. A false statement that would
+send someone to fix a correct config file. Eligibility now allows a search for
+any agent when the question is invalid without current evidence; the spend gate
+still applies to everything else.
+
+**The model narrated the provider and an internal flag.** It answered "These
+listings are pulled from the Tavily platform, which is considered untrusted" —
+reading the vendor name and the `untrusted` provenance marker out of the tool
+result. Both personas now say to cite the websites, never the search provider,
+and never to describe results to the user as untrusted.
+
+### Previously, with no key configured
 
 | # | Request | Result |
 | --- | --- | --- |
@@ -270,7 +308,7 @@ no reasoning in any payload, **404** for another tenant's run id.
 | Alembic migrations | 25 |
 | API routers | 15 |
 | API endpoints | 73 |
-| Backend test files | 104 |
+| Backend test files | 103 |
 | Agent manifests | 8 (6 routed specialists + general + recall) |
 | Tools defined | 11 |
 | Tools executable | 9 (2 modeled behind approval) |
@@ -340,11 +378,6 @@ no reasoning in any payload, **404** for another tenant's run id.
   to a real Google account, which was not done.
 - **No public deployment.** GUMMY runs locally; `localhost` URLs are not
   reachable by anyone else.
-- **Live web search has never been exercised.** `BraveSearchProvider` is
-  implemented, wired at the composition root and unit-tested against a mocked
-  transport, but no real Brave query has been issued from this machine — no
-  `BRAVE_API_KEY` is configured. Everything claimed about search here is
-  about the **unavailable** path.
 - **Research can over-refuse.** Asked to research three named organisations,
   it declined entirely rather than explaining what they are. Refusing is the
   safe direction, but it costs answers that needed no live data.

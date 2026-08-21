@@ -63,7 +63,7 @@ scenarios live.
 
 | Metric | Value |
 | --- | --- |
-| Backend tests | 996 passed, 4 skipped, 0 failed |
+| Backend tests | 1000 passed, 4 skipped, 0 failed |
 | Frontend tests | 18 passed, 0 failed |
 | Static analysis | `ruff`, `black`, `mypy app` clean (241 files); TS + ESLint clean |
 | Migrations | 25 |
@@ -151,5 +151,5 @@ round trip was not tested.
 Password-reset email is console-mode locally; SMTP is implemented and
 unit-tested but never sent against a real server.
 File retrieval is keyword-based, not
-vector RAG. Live web search is implemented but unconfigured on this machine. No connectors, no public
+vector RAG. Live web search runs through Tavily and is verified working. No connectors, no public
 deployment, no cloud infrastructure.

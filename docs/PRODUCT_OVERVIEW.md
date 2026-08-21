@@ -93,7 +93,7 @@ file intelligence (keyword RAG), unified knowledge layer, five-specialist routed
 workforce, streaming web client, observability.
 
 **Seam-only / not yet live at the freeze:**
-- **Live web search** — the provider seam ships; Brave/Tavily are not wired (off
+- **Live web search** — Tavily is wired into the provider seam and verified (off
   by default).
 - **Vector file RAG** — file retrieval is keyword-based; semantic ranking is the
   next layer.

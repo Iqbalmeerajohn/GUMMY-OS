@@ -124,12 +124,18 @@ guess which it is looking at, and the guess that gets made is "the web contains
 nothing about this" — a statement about the world, made on the strength of our
 own timeout.
 
-**Provider:** Brave Search (`BraveSearchProvider`), REST, key in the
-`X-Subscription-Token` header. Requires **both** `BRAVE_API_KEY` and
-`AGENTS_WEB_SEARCH_ENABLED=true`; `init_provider` at the composition root
-(`app/main.py`) installs it, and leaves the offline `DummySearchProvider` in
-place otherwise. There is one search seam for the whole codebase — the tool and
-the knowledge-fusion path both go through `search_service`.
+**Provider:** Tavily (`TavilySearchProvider`), `POST https://api.tavily.com/search`,
+key sent as a bearer token rather than in the JSON body — a request body is the
+thing most likely to be echoed back in an error or captured by a debug log.
+Requires **both** `TAVILY_API_KEY` and `AGENTS_WEB_SEARCH_ENABLED=true`;
+`init_provider` at the composition root (`app/main.py`) installs it and leaves
+the offline `DummySearchProvider` in place otherwise. There is one search seam
+for the whole codebase — the tool and the knowledge-fusion path both go through
+`search_service`.
+
+Results map `title` → title, `url` → url, `content` → snippet, with `source`
+set to `tavily` so citations name the provider internally while the user only
+ever sees the **websites**.
 
 **The placeholder is never evidence.** `DummySearchProvider` returns clearly
 labelled mock rows so the wiring can be tested without a key. It was once
@@ -138,7 +144,7 @@ to the user as findings. `search_outcome` now returns `UNAVAILABLE` when the
 placeholder is installed, and the tool raises rather than returning rows.
 
 **Keys never leave the backend.** The failure message carries the exception
-type only — provider error bodies sometimes echo the subscription token back —
+type only — provider error bodies sometimes echo the credential back —
 and the key appears in no log, trace, tool result or API response. Pinned by
 tests.
 

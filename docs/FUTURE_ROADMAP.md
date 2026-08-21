@@ -119,7 +119,7 @@ M9–M11 / Phase 5 (full detail in `PROJECT_AUDIT.md §9`):
 
 1. **Externalize the worker queue** (in-process → Redis/Celery) — do it as part of
    M10 Automation, which needs durable scheduling anyway.
-2. **Wire live web search** (Brave primary / Tavily fallback) into the M8.5 seam —
+2. ~~**Wire live web search**~~ — **done**: Tavily is wired into the search seam and live-verified. Remaining:
    natural companion to M9/Research.
 3. **Vector file RAG** — swap a vector retriever under `file_context_service`.
 4. **Move file processing off the request path** — reuse the worker pattern.

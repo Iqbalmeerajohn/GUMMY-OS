@@ -145,7 +145,7 @@ reply path → search_service.maybe_search(agent_key, query)
    ├─ is_search_eligible:  web_search_enabled  ∧  agent∈{research,career,learning}
    │                        ∧  (recency/lookup cue ∨ year≥2024)
    ├─ get_provider() → SearchProvider Protocol
-   │     · DummySearchProvider (ships)   · Brave primary / Tavily fallback (planned)
+   │     · DummySearchProvider (offline)  · TavilySearchProvider (live, keyed)
    └─ normalize → dedupe (url, domain+title) → rank → limit  → SearchResult[]
 ```
 
