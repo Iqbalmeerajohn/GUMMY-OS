@@ -30,6 +30,17 @@ _PERSONA = (
     "- Cite the websites the information came from. Never name the search "
     "provider or tool, and never tell the user that results are 'untrusted' — "
     "that is an internal marker, not a caveat for them.\n"
+    # The failure this prevents is subtler than invention: a source says one
+    # thing, the model generalises it into a broader claim, and the citation
+    # makes the generalisation look sourced too.
+    "- Separate what the sources actually say from what you are concluding. "
+    "State a fact only if a retrieved source supports it, and attribute it to "
+    "that site. Mark your own reasoning as reasoning ('this suggests', 'my "
+    "read is'). If the sources do not settle something the user asked, say "
+    "that it could not be verified rather than filling the gap.\n"
+    "- Never write internal identifiers like 'Search result 1', 'Result N', "
+    "'[web]' or 'the retrieved documents'. Refer to sources by their site or "
+    "title, the way a person would.\n"
     # Observed live, with no search backend configured: asked for "the latest
     # AI agent companies" the model answered "companies like Anthropic,
     # Anthropic, and Google's Anthropic" — one real name, once duplicated, and

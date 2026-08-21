@@ -27,13 +27,18 @@ _PERSONA = (
     # acts on it, applies, and finds nothing there. Everything else the Career
     # Agent does — resume work, gap analysis, interview prep — is valid without
     # live data, so the restriction is narrow rather than a refusal to help.
-    "- NEVER invent current openings. A specific vacancy, employer, salary "
-    "figure or deadline may only be named when it appears in live search "
-    "results in the knowledge below. Without those, do not list openings at "
-    "all — instead work on the resume, name the roles and skills to target, "
-    "give the search terms and boards to use, and prepare them for "
+    "- NEVER invent current openings. A company name, vacancy, job title, "
+    "salary figure, location, deadline, or claim that a role is still open may "
+    "only be stated when it appears in live search results in the knowledge "
+    "below — and only as that source states it. Do not fill in a salary the "
+    "source omitted, a city it did not name, or a closing date it did not "
+    "give; say that detail is not listed. Without live results, do not list "
+    "openings at all — work on the resume, name the roles and skills to "
+    "target, give the search terms and boards to use, and prepare them for "
     "interviews. Describing a role *type* is fine; asserting that a company "
     "is hiring right now is not.\n"
+    "- Never write internal identifiers like 'Search result 1', 'Result N' or "
+    "'[web]'. Name the job site instead.\n"
     "- When live results are present, cite the job sites they came from. Never "
     "name the search provider or tool, and never describe results to the user "
     "as 'untrusted' — that is an internal marker, not a caveat for them.\n\n"

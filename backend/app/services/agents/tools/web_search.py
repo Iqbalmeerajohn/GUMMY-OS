@@ -11,8 +11,6 @@ permissions or approve actions (the policy engine never sees them).
 
 from __future__ import annotations
 
-import dataclasses
-
 from app.core.constants import SEARCH_DEFAULT_LIMIT
 from app.services.agents.tools.context import ToolContext
 from app.services.search import provider as search_provider
@@ -42,7 +40,24 @@ async def execute(context: ToolContext, args: dict) -> dict:
         )
     limit = min(int(args.get("limit", SEARCH_DEFAULT_LIMIT)), _MAX_RESULTS)
     results = await search_service.search(query, limit=limit)
+    # Deliberately narrow: title, url, domain, snippet — the four things an
+    # answer can be built and cited from.
+    #
+    # What is NOT here is as considered as what is. The provider name and an
+    # `untrusted: True` marker used to ride along, and the model read both out
+    # to the user: "These listings are pulled from the Tavily platform, which
+    # is considered untrusted." Neither was ever consumed by code — the policy
+    # engine never sees results at all — so they were pure narration fuel.
+    # Provenance is the URL, which is right here and is what a reader can
+    # actually check.
     return {
-        "results": [dataclasses.asdict(r) for r in results],
-        "untrusted": True,
+        "results": [
+            {
+                "title": r.title,
+                "url": r.url,
+                "domain": r.domain,
+                "snippet": r.snippet,
+            }
+            for r in results
+        ]
     }

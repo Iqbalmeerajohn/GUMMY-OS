@@ -89,12 +89,21 @@ def _render_file(item: KnowledgeItem) -> str:
 
 
 def _render_search(item: KnowledgeItem) -> str:
-    """Render a web-search hit with source/title/url/snippet (B8)."""
+    """Render a web-search hit as title, domain and url, plus its snippet.
+
+    Labelled ``[web]`` rather than ``[search:<provider>]``. The vendor name is
+    machinery, and putting it in the model's context is how it reached an
+    answer ("pulled from the Tavily platform"). The domain is the part a reader
+    should see, so it is what the model is given to cite.
+    """
     title = item.metadata.get("title", item.content)
     url = item.metadata.get("url", "")
+    domain = item.metadata.get("domain", "")
     snippet = str(item.metadata.get("snippet", ""))[:KNOWLEDGE_SEARCH_SNIPPET_CHAR_CAP]
-    provider = item.metadata.get("provider", "web")
-    line = f"- [search:{provider}] {title} ({url})"
+    head = f"- [web] {title}"
+    if domain:
+        head += f" — {domain}"
+    line = f"{head} ({url})" if url else head
     return f"{line}\n  {snippet}" if snippet else line
 
 
