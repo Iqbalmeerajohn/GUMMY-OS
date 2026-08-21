@@ -70,7 +70,7 @@ async def test_research_agent_fuses_web_search(
                     title="Latest AI breakthroughs",
                     url="https://news.example.com/ai",
                     snippet="New model released.",
-                    source="brave",
+                    source="tavily",
                 )
             ]
 

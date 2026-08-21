@@ -1,8 +1,9 @@
 """Search provider seam tests (Phase 3, M8 → M8.5).
 
-Pins the seam contract (Dummy default, swappable) and the M8.5 Brave backend:
-payload parsing, and the best-effort guarantee that any failure (no key, network
-error, malformed body) degrades to ``[]`` rather than raising (B10).
+Pins the seam contract (Dummy default, swappable) and the Tavily backend:
+payload parsing, bearer-token auth, and the guarantee that a genuine fault is
+reported as ``SearchProviderError`` rather than as an empty list — a timeout
+must never be readable as "the web has nothing".
 """
 
 from __future__ import annotations
@@ -10,9 +11,9 @@ from __future__ import annotations
 import pytest
 
 from app.services.search import (
-    BraveSearchProvider,
     DummySearchProvider,
     SearchResult,
+    TavilySearchProvider,
     get_provider,
     set_provider,
 )
@@ -33,9 +34,9 @@ async def test_dummy_provider_respects_limit_bounds() -> None:
 
 def test_search_result_carries_source_and_domain() -> None:
     r = SearchResult(
-        title="t", url="https://news.example.com/a", snippet="s", source="brave"
+        title="t", url="https://news.example.com/a", snippet="s", source="tavily"
     )
-    assert r.source == "brave"
+    assert r.source == "tavily"
     assert r.domain == "news.example.com"
 
 
@@ -55,28 +56,31 @@ def test_default_provider_is_dummy_and_swappable() -> None:
         set_provider(original)
 
 
-async def test_brave_provider_without_key_returns_empty() -> None:
+async def test_tavily_provider_without_key_returns_empty() -> None:
     # No key → no network call, no raise (B10).
-    assert await BraveSearchProvider("").search("ai jobs", limit=3) == []
+    assert await TavilySearchProvider("").search("ai jobs", limit=3) == []
 
 
-async def test_brave_provider_parses_payload(monkeypatch) -> None:
+async def test_tavily_provider_parses_payload(monkeypatch) -> None:
+    sent: dict[str, object] = {}
+
+    # Tavily's shape: a flat `results` list, snippet under `content`.
     payload = {
-        "web": {
-            "results": [
-                {
-                    "title": "AI Engineer Jobs",
-                    "url": "https://example.com/ai",
-                    "description": "Open AI roles.",
-                },
-                {"title": "", "url": "https://example.com/skip"},  # dropped
-                {
-                    "title": "Data Roles",
-                    "url": "https://data.example.com/x",
-                    "description": "Data jobs.",
-                },
-            ]
-        }
+        "results": [
+            {
+                "title": "AI Engineer Jobs",
+                "url": "https://example.com/ai",
+                "content": "Open AI roles.",
+                "score": 0.93,
+            },
+            {"title": "", "url": "https://example.com/skip"},  # dropped
+            {
+                "title": "Data Roles",
+                "url": "https://data.example.com/x",
+                "content": "Data jobs.",
+                "score": 0.81,
+            },
+        ]
     }
 
     class _Resp:
@@ -96,21 +100,32 @@ async def test_brave_provider_parses_payload(monkeypatch) -> None:
         async def __aexit__(self, *a) -> None:
             return None
 
-        async def get(self, *a, **k) -> _Resp:
+        async def post(self, url: str, **kwargs: object) -> _Resp:
+            sent["url"] = url
+            sent["json"] = kwargs.get("json")
+            sent["headers"] = kwargs.get("headers")
             return _Resp()
 
     import httpx
 
     monkeypatch.setattr(httpx, "AsyncClient", _Client)
-    results = await BraveSearchProvider("key").search("ai jobs", limit=5)
+    results = await TavilySearchProvider("secret-key").search("ai jobs", limit=5)
+
     assert [r.url for r in results] == [
         "https://example.com/ai",
         "https://data.example.com/x",
     ]
-    assert all(r.source == "brave" for r in results)
+    assert all(r.source == "tavily" for r in results)
+    assert [r.snippet for r in results] == ["Open AI roles.", "Data jobs."]
+
+    # The key travels as a bearer token, never in the request body: a body is
+    # the thing most likely to be echoed back in an error or a debug log.
+    assert sent["headers"]["Authorization"] == "Bearer secret-key"
+    assert "secret-key" not in str(sent["json"])
+    assert sent["json"]["query"] == "ai jobs"
 
 
-async def test_brave_provider_reports_failure_instead_of_empty(monkeypatch) -> None:
+async def test_tavily_provider_reports_failure_instead_of_empty(monkeypatch) -> None:
     """A network fault is not the same news as "the web has nothing".
 
     This used to return [], which made a timeout indistinguishable from a
@@ -127,7 +142,7 @@ async def test_brave_provider_reports_failure_instead_of_empty(monkeypatch) -> N
         async def __aexit__(self, *a) -> None:
             return None
 
-        async def get(self, *a, **k):
+        async def post(self, *a, **k):
             raise RuntimeError("network down")
 
     import httpx
@@ -135,9 +150,9 @@ async def test_brave_provider_reports_failure_instead_of_empty(monkeypatch) -> N
     monkeypatch.setattr(httpx, "AsyncClient", _Boom)
 
     with pytest.raises(SearchProviderError) as excinfo:
-        await BraveSearchProvider("key").search("ai jobs")
+        await TavilySearchProvider("key").search("ai jobs")
 
     # The message carries the exception type and nothing else: provider error
-    # bodies can echo the subscription token back.
+    # bodies can echo the credential back.
     assert "key" not in str(excinfo.value)
     assert "RuntimeError" in str(excinfo.value)

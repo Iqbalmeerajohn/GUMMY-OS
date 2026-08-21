@@ -56,7 +56,7 @@ def _hit(n: int, url: str | None = None) -> SearchResult:
         title=f"Result {n}",
         url=url or f"https://example.com/{n}",
         snippet=f"Snippet {n}",
-        source="brave",
+        source="tavily",
     )
 
 
@@ -202,7 +202,7 @@ async def test_results_carry_title_url_and_snippet(
 
     (result,) = outcome.results
     assert result.title and result.url and result.snippet
-    assert result.source == "brave"
+    assert result.source == "tavily"
     assert result.domain == "example.com"
 
 
@@ -226,7 +226,7 @@ async def test_duplicate_urls_are_removed(
 async def test_a_result_missing_a_url_is_dropped(
     live_settings: None, restore_provider: None
 ) -> None:
-    partial = [SearchResult(title="No link", url="", snippet="x", source="brave")]
+    partial = [SearchResult(title="No link", url="", snippet="x", source="tavily")]
     search_provider.set_provider(_Provider(results=partial))
 
     outcome = await search_service.search_outcome("latest ai news")
@@ -351,13 +351,19 @@ def test_research_persona_forbids_naming_specifics_without_search() -> None:
 
 
 @pytest.mark.parametrize("agent", ["general", "memory", "planner", "automation"])
-def test_non_search_agents_never_reach_the_network(
+def test_non_search_agents_do_not_search_for_ordinary_queries(
     agent: str, live_settings: None, restore_provider: None
 ) -> None:
+    """The spend gate still holds where it should.
+
+    It no longer holds for freshness-critical questions — see
+    ``test_a_freshness_question_is_search_eligible_for_any_agent`` — because
+    refusing to search there produced a false "search isn't configured".
+    """
     probe = _Provider(results=[_hit(1)])
     search_provider.set_provider(probe)
 
-    assert not search_service.is_search_eligible(agent, "latest ai news")
+    assert not search_service.is_search_eligible(agent, "find me a good tutorial")
 
 
 def test_search_agents_are_eligible_for_search_worthy_queries(
@@ -408,7 +414,7 @@ async def test_a_provider_failure_message_never_carries_the_api_key() -> None:
     """Provider error bodies sometimes echo the subscription token back."""
     import httpx
 
-    secret = "brave-secret-key-do-not-log"
+    secret = "tavily-secret-key-do-not-log"
 
     class _Boom:
         def __init__(self, *a: Any, **k: Any) -> None:
@@ -427,7 +433,7 @@ async def test_a_provider_failure_message_never_carries_the_api_key() -> None:
     httpx.AsyncClient = _Boom  # type: ignore[misc, assignment]
     try:
         with pytest.raises(SearchProviderError) as excinfo:
-            await search_provider.BraveSearchProvider(secret).search("x")
+            await search_provider.TavilySearchProvider(secret).search("x")
     finally:
         httpx.AsyncClient = original  # type: ignore[misc]
 
@@ -437,8 +443,8 @@ async def test_a_provider_failure_message_never_carries_the_api_key() -> None:
 async def test_the_search_outcome_never_carries_the_api_key(
     live_settings: None, restore_provider: None
 ) -> None:
-    secret = "brave-secret-key-do-not-log"
-    search_provider.set_provider(search_provider.BraveSearchProvider(secret))
+    secret = "tavily-secret-key-do-not-log"
+    search_provider.set_provider(search_provider.TavilySearchProvider(secret))
 
     outcome = await search_service.search_outcome("latest ai news")
 
@@ -451,7 +457,7 @@ def test_settings_never_expose_the_key_through_the_capability_block() -> None:
 
     block = identity.capability_block()
 
-    assert "BRAVE_API_KEY" not in block
+    assert "TAVILY_API_KEY" not in block
     assert "api key" not in block.lower()
 
 
@@ -557,3 +563,43 @@ async def test_synthesis_does_not_duplicate_a_notice_it_kept() -> None:
     reply = await synthesis.synthesize_parallel(results, [], llm=_Faithful())  # type: ignore[arg-type]
 
     assert reply.lower().count("reliably verify") == 1
+
+
+# ── Tavily-era regressions found by live testing ────────────────────────────
+
+
+def test_a_freshness_question_is_search_eligible_for_any_agent(
+    live_settings: None,
+) -> None:
+    """Found live: "What are the latest developments in AI agents?" routed to
+    the General agent, which was not on the eligible list, so no search ran and
+    the reply said live search "isn't configured" — while it was configured.
+    A false statement that sends the user to fix a correct config file.
+
+    A question that is invalid without current evidence is exactly the one
+    worth spending a call on, whichever agent is holding it.
+    """
+    assert search_service.is_search_eligible(
+        "general", "What are the latest developments in AI agents?"
+    )
+
+
+def test_a_timeless_question_still_does_not_search_for_a_general_agent(
+    live_settings: None,
+) -> None:
+    """The eligibility gate still conserves spend where it should."""
+    assert not search_service.is_search_eligible("general", "What is RAG?")
+
+
+def test_personas_forbid_naming_the_search_vendor() -> None:
+    """Observed live: "These listings are pulled from the Tavily platform,
+    which is considered untrusted." The model read the provider name and an
+    internal provenance flag out of the tool result and narrated both."""
+    from app.services.agents.prompts import career_agent_prompt, research_agent_prompt
+
+    for persona in (
+        research_agent_prompt.build_persona("x", ""),
+        career_agent_prompt.build_persona("x", ""),
+    ):
+        assert "Never name the search provider" in persona
+        assert "untrusted" in persona  # named so it can be forbidden

@@ -28,7 +28,7 @@ def _search(title: str, url: str, snippet: str = "snip") -> KnowledgeItem:
             "title": title,
             "url": url,
             "snippet": snippet,
-            "provider": "brave",
+            "provider": "tavily",
             "order": 0,
         },
     )
@@ -99,7 +99,7 @@ def test_search_section_rendered_only_when_present() -> None:
     )
     assert "Search" in compiled.block
     assert "https://ex.com/ai" in compiled.block
-    assert "[search:brave]" in compiled.block
+    assert "[search:tavily]" in compiled.block
     assert compiled.search_used == 1
 
 

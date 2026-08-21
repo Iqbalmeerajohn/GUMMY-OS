@@ -25,10 +25,23 @@ def _search_on(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(search_service, "get_settings", lambda: _SettingsOn())
 
 
-def test_ineligible_agent_never_searches(_search_on: None) -> None:
-    assert search_service.is_search_eligible("memory", "latest AI news") is False
+def test_ineligible_agent_does_not_search_for_ordinary_queries(
+    _search_on: None,
+) -> None:
+    """The spend gate keeps live search off the agents that answer from the
+    user's own knowledge."""
+    assert search_service.is_search_eligible("memory", "find jobs") is False
     assert search_service.is_search_eligible("planner", "find jobs") is False
-    assert search_service.is_search_eligible(None, "latest news") is False
+    assert search_service.is_search_eligible(None, "write me a resume") is False
+
+
+def test_a_freshness_question_overrides_the_agent_gate(_search_on: None) -> None:
+    """Found live: "latest developments in AI agents" routed to General, which
+    could not search, so the reply claimed live search "isn't configured" while
+    it was configured. Where an answer is invalid without current evidence, the
+    call is worth making whichever agent is holding the question."""
+    assert search_service.is_search_eligible("memory", "latest AI news") is True
+    assert search_service.is_search_eligible(None, "latest news") is True
 
 
 def test_eligible_agent_with_search_cue(_search_on: None) -> None:

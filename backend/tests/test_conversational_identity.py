@@ -201,7 +201,7 @@ def test_web_search_is_claimed_once_it_is_configured(
     """The generated block tracks configuration rather than a stale comment."""
     settings = get_settings()
     monkeypatch.setattr(settings, "agents_web_search_enabled", True)
-    monkeypatch.setattr(settings, "brave_api_key", "test-key")
+    monkeypatch.setattr(settings, "tavily_api_key", "test-key")
 
     block = identity.capability_block()
 

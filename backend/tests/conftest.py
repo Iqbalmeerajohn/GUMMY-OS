@@ -31,6 +31,15 @@ os.environ["GUMMY_JWT_SECRET"] = "test-local-jwt-secret"
 # which would make tests depend on a running daemon.
 os.environ["EMBEDDINGS_PROVIDER"] = "fake"
 os.environ["LLM_PROVIDER"] = "fake"
+# Same rule for web search, and it bites harder: `create_app()` runs at import
+# time and calls `init_provider`, so a developer with a real TAVILY_API_KEY in
+# their `.env` would have the live backend installed for the whole suite —
+# making unit tests issue billed network calls and quietly changing the result
+# of every "search is unconfigured" assertion. Forced off here so the suite
+# behaves identically with and without a key. Tests that need live search on
+# patch `get_settings` themselves.
+os.environ["TAVILY_API_KEY"] = ""
+os.environ["AGENTS_WEB_SEARCH_ENABLED"] = "false"
 
 import uuid
 from collections.abc import AsyncIterator
