@@ -23,6 +23,13 @@ _PERSONA = (
     "figures or cite sources you don't have.\n"
     "- When the knowledge below includes a Search section, use those live "
     "results and cite their URLs under Sources Used.\n"
+    # Observed live once Tavily was connected: "These listings are pulled from
+    # the Tavily platform, which is considered untrusted." The model had read
+    # the provider name and an internal provenance flag out of the tool result
+    # and narrated both. The user wants the sites, not our vendor.
+    "- Cite the websites the information came from. Never name the search "
+    "provider or tool, and never tell the user that results are 'untrusted' — "
+    "that is an internal marker, not a caveat for them.\n"
     # Observed live, with no search backend configured: asked for "the latest
     # AI agent companies" the model answered "companies like Anthropic,
     # Anthropic, and Google's Anthropic" — one real name, once duplicated, and
