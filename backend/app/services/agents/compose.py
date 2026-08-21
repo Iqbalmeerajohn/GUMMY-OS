@@ -110,6 +110,17 @@ def merge_parallel(
     return f"{body}\n\n{note}" if note else body
 
 
+# Shown when the model produces nothing at all. Observed live: a Research turn
+# that ran its search, got five sources, called a tool, and then emitted zero
+# characters — the user received an empty message bubble. Rare, but an empty
+# answer is indistinguishable from the app being broken, and it is never the
+# right thing to show.
+EMPTY_REPLY_FALLBACK = (
+    "I wasn't able to put an answer together for that one. Could you try "
+    "rephrasing it, or narrowing it to the part you most want?"
+)
+
+
 def compose_reply(
     plan_shape: PlanShape,
     results: list[tuple[str, AgentResult]],
@@ -120,4 +131,6 @@ def compose_reply(
         reply = merge_parallel(results, failures)
     else:
         reply = _reply_of(results[-1][1]) if results else ""
+    if not reply.strip():
+        reply = EMPTY_REPLY_FALLBACK
     return shape_voice(reply)
