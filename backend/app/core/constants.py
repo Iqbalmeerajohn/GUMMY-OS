@@ -290,6 +290,29 @@ KNOWLEDGE_CONTEXT_TOKEN_BUDGET = 2500
 KNOWLEDGE_MAX_MEMORIES = 12
 KNOWLEDGE_MAX_GOALS = 5
 KNOWLEDGE_MAX_FILES = 8
+
+# ── Document retrieval (RAG 2.0) ──────────────────────────────────────────────
+# Candidates pulled from each retriever before fusion. Wider than the final
+# limit on purpose: fusion can only reward a chunk both retrievers found, and it
+# cannot see one that neither list reached.
+FILE_RETRIEVAL_CANDIDATES = 30
+# Reciprocal Rank Fusion damping. The standard 60 from the original RRF paper;
+# large enough that positions 1 and 2 are not wildly far apart, so agreement
+# between the two retrievers outweighs a single retriever's confidence.
+FILE_RETRIEVAL_RRF_K = 60
+# Minimum raw cosine similarity for a chunk found ONLY by vector search.
+#
+# Measured, not inherited from the memory floor: nomic-embed-text over real
+# document chunks put labelled relevant pairs at median 0.613 (min 0.480) and
+# no-answer queries at median 0.430 (max 0.505). The two distributions overlap
+# slightly, so no threshold is perfect. 0.50 rejects every cross-document
+# distractor and 17 of 18 no-answer queries while keeping 92% of relevant pairs;
+# the single leak is a genuine semantic collision (a question about a boiling
+# point matching a baking temperature), which a similarity floor cannot separate
+# without cutting into real recall. Chosen over the 0.51 F1 argmax because a
+# fixture-sized sample does not justify that last decimal.
+# See docs/KNOWLEDGE_RAG.md and tests/test_file_retrieval_calibration.py.
+FILE_RETRIEVAL_MIN_SIMILARITY = 0.50
 # Max characters of a file chunk rendered into the unified block (defensive cap,
 # mirrors FILE_CONTEXT_CHUNK_CHAR_CAP).
 KNOWLEDGE_FILE_CHUNK_CHAR_CAP = 1500
