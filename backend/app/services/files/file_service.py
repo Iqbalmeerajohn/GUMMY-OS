@@ -17,9 +17,11 @@ succeeds, so the bytes are never lost and processing can be retried later.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,7 +36,11 @@ from app.models.file import File
 from app.observability import langfuse as langfuse_obs
 from app.repositories import file_chunk_repository as chunk_repo
 from app.repositories import file_repository as repo
-from app.services.files import chunking_service, extraction_service
+from app.services.files import (
+    chunking_service,
+    extraction_service,
+    indexing_service,
+)
 from app.services.files.storage.base import FileStorage
 from app.services.files.storage.factory import get_file_storage
 
@@ -136,6 +142,20 @@ async def upload_file(
         raise FileTooLargeError(size_bytes)
     mime_type = resolve_mime_type(filename=original_filename, content_type=content_type)
 
+    # Re-uploading the same bytes returns the file already held rather than
+    # storing a second copy. Without this, "upload again to refresh it" quietly
+    # doubles every chunk in the index, and the same passage comes back twice in
+    # every search. Scoped to this user: two people uploading the same public
+    # PDF each keep their own, and a shared checksum must never reveal that
+    # someone else already has it.
+    checksum = hashlib.sha256(data).hexdigest()
+    existing = await repo.get_by_checksum(session, user_id=user_id, checksum=checksum)
+    if existing is not None:
+        logger.info(
+            "duplicate upload for user %s; returning file %s", user_id, existing.id
+        )
+        return existing
+
     with langfuse_obs.observe_operation(
         "file.upload",
         metadata={
@@ -154,6 +174,7 @@ async def upload_file(
             mime_type=mime_type,
             size_bytes=size_bytes,
             storage_path=key,
+            checksum=checksum,
             upload_status=UploadStatus.UPLOADED,
             processing_status=ProcessingStatus.PENDING,
         )
@@ -183,13 +204,20 @@ async def _process_file(session: AsyncSession, *, file: File, data: bytes) -> No
                 "mime_type": file.mime_type,
             },
         ) as span:
-            text = extraction_service.extract_text(data=data, mime_type=file.mime_type)
-            span.update(metadata={"extracted_chars": len(text)})
+            segments = extraction_service.extract_segments(
+                data=data, mime_type=file.mime_type
+            )
+            span.update(
+                metadata={
+                    "segments": len(segments),
+                    "extracted_chars": sum(len(s.content) for s in segments),
+                }
+            )
 
         with langfuse_obs.observe_operation(
             "file.chunk", metadata={"file_id": str(file.id)}
         ) as span:
-            chunks = chunking_service.chunk_text(text)
+            chunks = chunking_service.chunk_segments(segments)
             if chunks:
                 await chunk_repo.bulk_create_chunks(
                     session,
@@ -200,28 +228,35 @@ async def _process_file(session: AsyncSession, *, file: File, data: bytes) -> No
                             "chunk_index": c.index,
                             "content": c.content,
                             "token_count": c.token_count,
-                            "metadata_json": {
-                                "start_offset": c.start_offset,
-                                "end_offset": c.end_offset,
-                            },
+                            "metadata_json": c.as_metadata(),
                         }
                         for c in chunks
                     ],
                 )
             file.chunk_count = len(chunks)
-            file.processing_status = ProcessingStatus.COMPLETED
-            file.error_message = None
             span.update(
                 metadata={
                     "chunk_count": len(chunks),
                     "duration_ms": round((time.perf_counter() - started) * 1000, 2),
                 }
             )
+
+        # Embedding is part of processing, not a later nicety: a file that is
+        # chunked but not embedded is invisible to search, and reporting it as
+        # completed would be a lie the user only discovers by asking a question
+        # and getting nothing.
+        await indexing_service.embed_file_chunks(
+            session, user_id=file.user_id, file_id=file.id
+        )
+        file.indexed_at = datetime.now(UTC)
+        file.processing_status = ProcessingStatus.COMPLETED
+        file.error_message = None
     except Exception as exc:
         logger.exception("file processing failed for %s", file.id)
         file.processing_status = ProcessingStatus.FAILED
         file.error_message = str(exc)[:1000]
         file.chunk_count = 0
+        file.indexed_at = None
         capture_exception(exc, component="file_processing", file_id=str(file.id))
     await session.flush()
 
@@ -267,3 +302,42 @@ async def delete_file(
             capture_exception(exc, component="file_delete", file_id=str(file.id))
     await repo.delete_file(session, file=file)
     await session.commit()
+
+
+async def reindex_file(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    file_id: uuid.UUID,
+    storage: FileStorage | None = None,
+) -> File:
+    """Re-run extraction, chunking and embedding for a file the user owns.
+
+    The path back from ``failed``, and the way to pick up an improved extractor
+    or a changed embedding model without asking the user to upload again.
+
+    Old chunks are deleted first rather than updated in place: chunking is
+    deterministic but not stable across code changes — a better extractor
+    produces a different number of segments — so merging would leave orphans
+    from the previous run in the index, quietly returning text that is no
+    longer part of the document.
+    """
+    file = await get_file(session, user_id=user_id, file_id=file_id)
+    if not file.storage_path:
+        raise AppError(
+            "This file has no stored content to re-index.",
+            code="file_not_stored",
+            status_code=409,
+        )
+    storage = storage or get_file_storage()
+    data = await storage.load(key=file.storage_path)
+
+    await chunk_repo.delete_for_file(session, user_id=user_id, file_id=file_id)
+    file.chunk_count = 0
+    file.indexed_at = None
+    await session.flush()
+
+    await _process_file(session, file=file, data=data)
+    await session.commit()
+    await session.refresh(file)
+    return file

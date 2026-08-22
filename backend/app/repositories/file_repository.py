@@ -24,6 +24,7 @@ async def create_file(
     mime_type: str,
     size_bytes: int,
     storage_path: str | None = None,
+    checksum: str | None = None,
     upload_status: UploadStatus = UploadStatus.PENDING,
     processing_status: ProcessingStatus = ProcessingStatus.PENDING,
 ) -> File:
@@ -35,6 +36,7 @@ async def create_file(
         mime_type=mime_type,
         size_bytes=size_bytes,
         storage_path=storage_path,
+        checksum=checksum,
         upload_status=upload_status,
         processing_status=processing_status,
     )
@@ -104,3 +106,11 @@ async def delete_file(session: AsyncSession, *, file: File) -> None:
     """Delete a file and (cascade) its chunks. Caller owns the commit."""
     await session.delete(file)
     await session.flush()
+
+
+async def get_by_checksum(
+    session: AsyncSession, *, user_id: uuid.UUID, checksum: str
+) -> File | None:
+    """The tenant's file with these exact bytes, if they already uploaded it."""
+    stmt = select(File).where(File.user_id == user_id, File.checksum == checksum)
+    return (await session.execute(stmt)).scalars().first()
