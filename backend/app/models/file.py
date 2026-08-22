@@ -14,10 +14,12 @@ the standard fail-closed, direct-column RLS policy.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
+    DateTime,
     ForeignKey,
     Index,
     Integer,
@@ -80,6 +82,15 @@ class File(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     # Set when processing_status == failed, for surfacing/observability.
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # SHA-256 of the uploaded bytes, unique per user. Two people uploading
+    # the same public PDF each keep their own copy; the same person
+    # uploading it twice does not.
+    checksum: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # When embedding finished. Distinct from processing_status: a file can
+    # be chunked (processed) without yet being searchable (indexed).
+    indexed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     chunks: Mapped[list[FileChunk]] = relationship(
         back_populates="file",
@@ -90,6 +101,7 @@ class File(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     __table_args__ = (
         Index("ix_files_user_id", "user_id"),
+        Index("ix_files_user_id_checksum", "user_id", "checksum"),
         Index("ix_files_user_id_created_at", "user_id", "created_at"),
         CheckConstraint(
             f"upload_status IN ({_UPLOAD_STATUS_VALUES})",

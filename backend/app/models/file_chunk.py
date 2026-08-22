@@ -16,18 +16,21 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
     CheckConstraint,
     ForeignKey,
     Index,
     Integer,
+    String,
     Text,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.constants import EMBEDDING_DIMENSION
 from app.database.base import Base, CreatedAtMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
@@ -60,6 +63,20 @@ class FileChunk(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         JSONB().with_variant(JSON(), "sqlite"),
         nullable=True,
     )
+
+    # The chunk's vector, on the row rather than in a side table: a chunk is
+    # embedded once by the configured model and re-embedded wholesale on
+    # re-index, so the per-model uniqueness that justifies a separate
+    # memory_embeddings table buys nothing here — only a join on the
+    # hottest read path. Nullable: a chunk exists before it is embedded,
+    # and that gap is exactly what `indexed_at` reports.
+    embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(EMBEDDING_DIMENSION).with_variant(JSON(), "sqlite"),
+        nullable=True,
+    )
+    # Which model produced it, so a model change is detectable rather than
+    # silently mixing incompatible vectors in one index.
+    embedding_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     file: Mapped[File] = relationship(back_populates="chunks")
 
