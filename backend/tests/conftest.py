@@ -40,6 +40,16 @@ os.environ["LLM_PROVIDER"] = "fake"
 # patch `get_settings` themselves.
 os.environ["TAVILY_API_KEY"] = ""
 os.environ["AGENTS_WEB_SEARCH_ENABLED"] = "false"
+# And auth email. With real SMTP credentials in a developer's `.env`, the suite
+# would otherwise attempt live sends from unit tests — and every assertion about
+# console mode would invert. This is the third setting to need pinning here for
+# the same reason (search and Google were the others), which is why they all
+# live in one block: anything that changes behaviour and can be set in `.env`
+# belongs in this list.
+os.environ["AUTH_EMAIL_MODE"] = "console"
+os.environ["SMTP_HOST"] = ""
+os.environ["SMTP_USERNAME"] = ""
+os.environ["SMTP_PASSWORD"] = ""
 
 import uuid
 from collections.abc import AsyncIterator
