@@ -210,12 +210,19 @@ def _catalog() -> dict[str, ToolSpec]:
             category="files",
             tier=PermissionTier.GREEN,
             description=(
-                "Read a stored document by reference (the document store "
-                "arrives in a later phase - empty result until then)."
+                "Read one of the user's own uploaded documents by filename, "
+                "for when they ask about a specific document rather than "
+                "searching across all of them. Returns the document's text "
+                "with page or section markers."
             ),
             parameters={
                 "type": "object",
-                "properties": {"ref": _arg("The document reference.")},
+                "properties": {
+                    "ref": _arg(
+                        "The document's filename, or part of it "
+                        "(e.g. 'Resume.pdf' or 'resume')."
+                    )
+                },
                 "required": ["ref"],
             },
             executor=doc_read.execute,

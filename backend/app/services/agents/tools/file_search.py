@@ -29,7 +29,7 @@ async def execute(context: ToolContext, args: dict) -> dict:
         raise ValueError("file_search requires a non-empty 'query'")
     limit = max(1, min(int(args.get("limit", 5)), _MAX_RESULTS))
 
-    chunks = await file_retrieval_service.search_chunks(
+    hits = await file_retrieval_service.hybrid_search(
         context.session,
         user_id=context.user_id,
         query=query,
@@ -37,14 +37,16 @@ async def execute(context: ToolContext, args: dict) -> dict:
     )
     results = [
         {
-            # Provenance travels with every excerpt so the answer can cite the
-            # file it came from rather than asserting it unattributed.
-            "filename": chunk.file.original_filename if chunk.file else "unknown",
-            "file_id": str(chunk.file_id),
-            "chunk_index": chunk.chunk_index,
-            "excerpt": chunk.content[:_MAX_EXCERPT_CHARS],
+            # `source` is the citable string — "Resume.pdf — page 2" — built
+            # from what extraction actually recorded, so the model can attribute
+            # an answer without inventing a page. Chunk indices, ids, scores and
+            # vectors stay out: they are our bookkeeping, and a model handed
+            # them writes "[document_chunk_17]" at the user.
+            "source": hit.source_label,
+            "filename": hit.filename,
+            "excerpt": hit.chunk.content[:_MAX_EXCERPT_CHARS],
         }
-        for chunk in chunks
+        for hit in hits
     ]
     return {"query": query, "match_count": len(results), "results": results}
 
@@ -68,7 +70,11 @@ async def execute_list(context: ToolContext, args: dict) -> dict:
                 "size_bytes": f.size_bytes,
                 "uploaded_at": f.created_at.isoformat() if f.created_at else None,
                 "processing_status": f.processing_status.value,
-                "indexed": f.processing_status.value == "processed",
+                # Searchable means embedded, which is what `indexed_at` records.
+                # A chunked-but-unembedded file answers no questions.
+                "searchable": f.indexed_at is not None,
+                "indexed_at": f.indexed_at.isoformat() if f.indexed_at else None,
+                "chunk_count": f.chunk_count,
             }
             for f in files
         ],

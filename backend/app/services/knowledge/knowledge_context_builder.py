@@ -85,7 +85,15 @@ def _render_goal(item: KnowledgeItem) -> str:
 
 
 def _render_file(item: KnowledgeItem) -> str:
-    return f"- [file] [{item.metadata.get('filename', 'file')}] {item.content}"
+    """One document excerpt, labelled with where in the document it came from.
+
+    The label is the whole reason a grounded answer can be checked: "page 2 of
+    Resume.pdf" is verifiable, "your resume" is not. It comes from extraction,
+    so a format that records no location (a plain .txt) degrades to the filename
+    rather than to a guessed page number.
+    """
+    label = item.metadata.get("citation") or item.metadata.get("filename", "file")
+    return f"- [file] [{label}] {item.content}"
 
 
 def _render_search(item: KnowledgeItem) -> str:

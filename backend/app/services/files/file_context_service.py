@@ -6,10 +6,16 @@ Two modes, both tenant-scoped and traced to Langfuse:
 * **attachment** — when the turn carries ``attached_file_ids``, use *only* those
   files' chunks (in order). The user pointed at specific documents; we never
   dilute that with a broad search. Ownership is enforced (foreign id → 404).
-* **search** — otherwise, keyword-retrieve the most relevant chunks across all
-  the user's files (OR of ILIKE term matches, re-ranked in Python by how many
-  distinct query terms each chunk contains). No embeddings — keyword retrieval
-  is the M6.5 contract; this is the seam the future RAG layer swaps under.
+* **search** — otherwise, hybrid-retrieve the most relevant chunks across all
+  the user's files: vector similarity fused with Postgres full-text, gated by a
+  calibrated relevance floor (see ``hybrid_retrieval``). This is the seam M6.5
+  left for RAG, now filled.
+
+  The original keyword path is still here, as a fallback rather than a rival.
+  Hybrid retrieval needs pgvector and ``websearch_to_tsquery``; the test suite
+  runs on SQLite, and a provider or index outage should degrade document search
+  rather than delete it. So a failure drops to ILIKE term matching, which finds
+  strictly less but needs nothing but SQL.
 
 The service also returns a lightweight **inventory** (recent files' metadata) so
 the assistant can answer "what files do I have?" from the same context block.
@@ -109,6 +115,14 @@ class FileExcerpt:
     filename: str
     chunk_index: int
     content: str
+    # How to cite this excerpt: "Resume.pdf — page 2" when extraction recorded
+    # a location, otherwise just the filename. Never invented — see
+    # RetrievedChunk.source_label.
+    source_label: str = ""
+
+    @property
+    def citation(self) -> str:
+        return self.source_label or self.filename
 
 
 @dataclass(frozen=True)
@@ -198,6 +212,47 @@ async def _attachment_excerpts(
 
 
 async def _search_excerpts(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    query: str,
+    max_chunks: int,
+) -> list[FileExcerpt]:
+    """Hybrid-retrieve grounding chunks, falling back to keyword matching.
+
+    The fallback is deliberately silent to the caller: whether an answer was
+    grounded by vectors or by ILIKE is our business, and both produce the same
+    excerpts. What the caller must never see is an exception, because a document
+    search outage would then take the whole conversation turn with it.
+    """
+    from app.services.files.file_retrieval_service import file_retrieval_service
+
+    try:
+        hits = await file_retrieval_service.hybrid_search(
+            session, user_id=user_id, query=query, limit=max_chunks
+        )
+    except Exception:
+        logger.warning(
+            "hybrid file retrieval unavailable; falling back to keyword search",
+            exc_info=True,
+        )
+    else:
+        return [
+            FileExcerpt(
+                file_id=hit.chunk.file_id,
+                filename=hit.filename,
+                chunk_index=hit.chunk.chunk_index,
+                content=hit.chunk.content[:FILE_CONTEXT_CHUNK_CHAR_CAP],
+                source_label=hit.source_label,
+            )
+            for hit in hits
+        ]
+    return await _keyword_excerpts(
+        session, user_id=user_id, query=query, max_chunks=max_chunks
+    )
+
+
+async def _keyword_excerpts(
     session: AsyncSession,
     *,
     user_id: uuid.UUID,

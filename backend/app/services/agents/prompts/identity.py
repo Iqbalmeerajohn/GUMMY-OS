@@ -66,11 +66,11 @@ def _tool_phrases() -> list[str]:
             {
                 "calculator": "do exact calculations",
                 "memory_read": "search what you already know about the user",
-                "file_search": "search inside the user's uploaded files",
+                "file_search": "search inside the user's uploaded documents",
                 "file_list": "list the user's uploaded files",
                 "current_time": "check the current date and time",
                 "web_search": "search the live web",
-                "doc_read": "read a stored document",
+                "doc_read": "read one of the user's uploaded documents",
                 "automation_create": "create scheduled reminders and check-ins",
                 "automation_list": "list the user's scheduled automations",
             }.get(spec.key, spec.name.lower())

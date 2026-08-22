@@ -276,6 +276,11 @@ async def _retrieve_files(
                 source_score=0.0,
                 metadata={
                     "filename": excerpt.filename,
+                    # The citable location ("Resume.pdf — page 2") when
+                    # extraction recorded one, so the reply can attribute a
+                    # claim to a place in the document instead of the whole of
+                    # it. Falls back to the filename; never invented.
+                    "citation": excerpt.citation,
                     "chunk_index": excerpt.chunk_index,
                     "attached": attached,
                     "order": order,
