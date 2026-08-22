@@ -4,7 +4,7 @@ import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { useAuth } from "@/components/auth/AuthProvider";
-import { storeSession } from "@/lib/auth/session";
+import { clearSession, storeSession } from "@/lib/auth/session";
 
 /**
  * OAuth landing page — receives the session the backend minted after Google.
@@ -33,6 +33,12 @@ function CallbackHandler() {
       return;
     }
 
+    // Drop whatever session was here first. Signing in with Google while
+    // already signed in as someone else must land on the Google account, and
+    // clearing before storing means any refresh still in flight for the
+    // previous account finds its token gone and discards its own result
+    // instead of overwriting this one.
+    clearSession();
     storeSession({
       access_token: accessToken,
       refresh_token: refreshToken,

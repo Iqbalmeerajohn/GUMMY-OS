@@ -89,11 +89,25 @@ async function refreshAccessToken(): Promise<string | null> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ refresh_token: refresh }),
   });
+
+  // A different session may have been stored while this request was in flight
+  // — signing in with Google while already signed in as someone else is the
+  // case that surfaced it. Observed live: the Google session was minted, then
+  // an already-running refresh for the *previous* account completed and
+  // overwrote it, so /auth/me answered as the old user.
+  //
+  // Whatever this call returns belongs to the token it started with. If that
+  // token is no longer the stored one, this result is stale and must be
+  // dropped — including the failure branch, where clearing would sign the
+  // newly authenticated user out.
+  if (getRefreshToken() !== refresh) return null;
+
   if (!response.ok) {
     clearSession();
     return null;
   }
   const data = (await response.json()) as SessionPayload;
+  if (getRefreshToken() !== refresh) return null;
   storeSession(data);
   return data.access_token;
 }
