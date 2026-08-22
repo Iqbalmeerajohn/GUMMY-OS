@@ -9,6 +9,7 @@ import {
   deleteFile,
   fetchFileStats,
   fetchFiles,
+  reindexFile,
   uploadFile,
   type FileItem,
 } from "@/lib/api/resources";
@@ -85,6 +86,27 @@ export function useFileActions() {
     onError,
   });
 
+  const reindex = useMutation({
+    mutationFn: (id: string) => reindexFile(id),
+    onSuccess: (file) => {
+      // Re-indexing is the recovery path, so its outcome has to be stated
+      // plainly. Silently returning a still-broken file is how a user ends up
+      // asking the same unanswerable question twice.
+      if (file.indexed_at) {
+        toast.success(`"${file.original_filename}" is searchable.`);
+      } else if (file.processing_status === "failed") {
+        toast.error(
+          `"${file.original_filename}" could not be indexed.` +
+            (file.error_message ? ` ${file.error_message}` : ""),
+        );
+      } else {
+        toast.info(`"${file.original_filename}" is being indexed.`);
+      }
+      invalidate();
+    },
+    onError,
+  });
+
   const remove = useMutation({
     mutationFn: (id: string) => deleteFile(id),
     onSuccess: (_void, id) => {
@@ -98,8 +120,10 @@ export function useFileActions() {
     () => ({
       upload: (file: File) => upload.mutateAsync(file),
       remove: (id: string) => remove.mutate(id),
+      reindex: (id: string) => reindex.mutate(id),
       isUploading: upload.isPending,
+      reindexingId: reindex.isPending ? reindex.variables : null,
     }),
-    [upload, remove],
+    [upload, remove, reindex],
   );
 }

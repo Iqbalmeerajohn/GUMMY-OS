@@ -328,6 +328,15 @@ export interface FileItem {
   processing_status: FileProcessingStatus;
   chunk_count: number;
   error_message: string | null;
+  /**
+   * When the file's chunks finished embedding, or null if they never did.
+   *
+   * Distinct from `processing_status: "completed"`, which only means the text
+   * was extracted and chunked. Files uploaded before the embedding layer
+   * existed are completed but unindexed: they look ready and answer nothing.
+   * Searchability is this field, not the status.
+   */
+  indexed_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -403,6 +412,17 @@ export async function uploadFile(file: File): Promise<FileItem> {
 
 export function deleteFile(id: string) {
   return apiFetch<void>(`/api/v1/files/${id}`, { method: "DELETE" });
+}
+
+/**
+ * Re-extract, re-chunk and re-embed a file from the bytes already stored.
+ *
+ * The way back from a failed extraction, and how a file uploaded before the
+ * embedding layer becomes searchable without the user finding and re-uploading
+ * the original.
+ */
+export function reindexFile(id: string) {
+  return apiFetch<FileItem>(`/api/v1/files/${id}/reindex`, { method: "POST" });
 }
 
 // ── Conversations / messages / turns (workspace) ──────────────────────────────
