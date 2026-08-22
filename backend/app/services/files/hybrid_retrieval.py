@@ -32,8 +32,10 @@ import re
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import Float, func, literal, select
+from sqlalchemy import Float, func, literal, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import Select
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.constants import (
     FILE_RETRIEVAL_CANDIDATES,
@@ -119,6 +121,41 @@ async def _vector_candidates(
     return [(chunk, name, 1.0 - float(dist)) for chunk, name, dist in rows]
 
 
+def _text_candidates_stmt(
+    *,
+    user_id: uuid.UUID,
+    terms: str,
+    limit: int,
+    file_id: uuid.UUID | None,
+) -> Select[tuple[FileChunk, str]]:
+    """Build the lexical query. Separate from executing it so it can be tested.
+
+    The unit suite runs on SQLite, which accepts SQL that Postgres rejects, so
+    the only cheap way to check this statement is to compile it against the
+    Postgres dialect — which needs the statement without a session.
+    """
+    # The config must be emitted as a bare SQL literal, not a bound parameter.
+    # A bind renders as $1::VARCHAR, and there is no to_tsvector(varchar, text)
+    # — only to_tsvector(regconfig, text) — so the query fails outright. It also
+    # has to match ix_file_chunks_content_fts character for character, because
+    # Postgres only uses an expression index when the expression is identical;
+    # a cast spelled differently here would silently sequential-scan instead.
+    english: ColumnElement[str] = literal_column("'english'")
+    vector = func.to_tsvector(english, FileChunk.content)
+    tsquery = func.websearch_to_tsquery(english, literal(terms))
+    rank = func.ts_rank(vector, tsquery).cast(Float).label("rank")
+    stmt = (
+        select(FileChunk, File.original_filename)
+        .join(File, File.id == FileChunk.file_id)
+        .where(FileChunk.user_id == user_id, vector.op("@@")(tsquery))
+        .order_by(rank.desc())
+        .limit(limit)
+    )
+    if file_id is not None:
+        stmt = stmt.where(FileChunk.file_id == file_id)
+    return stmt
+
+
 async def _text_candidates(
     session: AsyncSession,
     *,
@@ -131,18 +168,9 @@ async def _text_candidates(
     terms = _to_tsquery_input(query)
     if not terms:
         return []
-    vector = func.to_tsvector(literal("english"), FileChunk.content)
-    tsquery = func.websearch_to_tsquery(literal("english"), literal(terms))
-    rank = func.ts_rank(vector, tsquery).cast(Float).label("rank")
-    stmt = (
-        select(FileChunk, File.original_filename)
-        .join(File, File.id == FileChunk.file_id)
-        .where(FileChunk.user_id == user_id, vector.op("@@")(tsquery))
-        .order_by(rank.desc())
-        .limit(limit)
+    stmt = _text_candidates_stmt(
+        user_id=user_id, terms=terms, limit=limit, file_id=file_id
     )
-    if file_id is not None:
-        stmt = stmt.where(FileChunk.file_id == file_id)
     return [(chunk, name) for chunk, name in (await session.execute(stmt)).all()]
 
 
