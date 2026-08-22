@@ -44,11 +44,16 @@ async def test_upload_and_get(api_client: AsyncClient) -> None:
 
 
 async def test_list_and_stats(api_client: AsyncClient) -> None:
-    for name in ("a.txt", "b.md"):
+    # Distinct content per file: identical bytes are now deduplicated by
+    # checksum, so uploading the same text twice yields one file, not two.
+    for name, body in (
+        ("a.txt", b"alpha content here"),
+        ("b.md", b"beta content here"),
+    ):
         await api_client.post(
             "/api/v1/files/upload",
             params=_q(),
-            files={"file": (name, b"some text content here", "text/plain")},
+            files={"file": (name, body, "text/plain")},
         )
     listed = await api_client.get("/api/v1/files", params=_q())
     assert listed.status_code == 200

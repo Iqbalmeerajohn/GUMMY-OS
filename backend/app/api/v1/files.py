@@ -128,6 +128,25 @@ async def list_file_chunks(
     )
 
 
+@router.post(
+    "/{file_id}/reindex",
+    response_model=FileResponse,
+    summary="Re-extract, re-chunk and re-embed a file",
+)
+async def reindex_file(
+    file_id: uuid.UUID,
+    session: DbSession,
+    user_id: CurrentUserId,
+) -> FileResponse:
+    """Rebuild a file's searchable knowledge from the bytes already stored.
+
+    The way back from a failed extraction, and how an improved extractor or a
+    changed embedding model reaches documents that were uploaded before it.
+    """
+    file = await file_service.reindex_file(session, user_id=user_id, file_id=file_id)
+    return FileResponse.model_validate(file)
+
+
 @router.delete(
     "/{file_id}",
     status_code=status.HTTP_204_NO_CONTENT,

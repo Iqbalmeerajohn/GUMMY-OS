@@ -25,8 +25,16 @@ class FileResponse(BaseModel):
     processing_status: ProcessingStatus
     chunk_count: int
     error_message: str | None
+    # When embedding finished. None means chunked-but-not-searchable, which the
+    # UI shows as Indexing rather than Ready — a distinction the user can act on
+    # (wait) versus one they cannot (a file that silently answers nothing).
+    indexed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+
+    @property
+    def searchable(self) -> bool:
+        return self.indexed_at is not None
 
 
 class FileListResponse(BaseModel):
