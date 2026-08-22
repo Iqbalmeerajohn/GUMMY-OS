@@ -100,3 +100,11 @@ tmp/
 temp/
 .cache/
 *.bak
+
+# ── User-uploaded documents (GUMMY knowledge store) ───────────────────────────
+# Whatever a user uploads lands under FILES_STORAGE_DIR. Those are their
+# private documents — resumes, notes, research — and they must never reach a
+# public repository. The default location is backend/var/files; the pattern is
+# broad so a relocated store cannot slip through.
+backend/var/
+var/files/
