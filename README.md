@@ -18,7 +18,7 @@ Postgres container, one Ollama daemon, two dev servers.
 | Area | State |
 | --- | --- |
 | Backend tests | **1016 passed**, 4 skipped (Postgres-gated), 0 failed |
-| Frontend tests | **18 passed**, 0 failed |
+| Frontend tests | **25 passed**, 0 failed |
 | TypeScript · ESLint | clean |
 | `ruff` · `black` · `mypy app` | clean (241 source files) |
 | `mypy tests` | 57 pre-existing errors — [reported, not hidden](docs/VERIFICATION_REPORT.md#1-automated-checks) |
@@ -251,9 +251,10 @@ time they were written.
 
 Stated plainly, because a README that hides these is not useful.
 
-- **Google sign-in is configured but the round trip is untested.** The backend
-  reports it available and `/auth/google/start` redirects to Google correctly;
-  completing the flow needs a real Google account sign-in, which was not done.
+- **Google sign-in is verified for an existing account** (full browser round
+  trip). Creating a brand-new Google-only account is untested.
+- **Password-reset email is verified against Gmail** via SMTP; other relays
+  are untested.
 - **File retrieval is keyword-based.** There is no vector RAG over file chunks.
 - **Live web search runs through Tavily** and is verified working. Without
   `TAVILY_API_KEY` the offline placeholder stays installed and every

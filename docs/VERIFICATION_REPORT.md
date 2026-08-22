@@ -13,7 +13,7 @@ What follows is engineering evidence with exact denominators.
 | Check | Command | Result |
 | --- | --- | --- |
 | Backend tests | `pytest -q` | **1016 passed, 4 skipped, 0 failed** |
-| Frontend tests | `npm test` | **18 passed, 0 failed** |
+| Frontend tests | `npm test` | **25 passed, 0 failed** |
 | TypeScript | `npm run typecheck` | **clean** |
 | ESLint | `npm run lint` | **clean** |
 | Python lint | `ruff check app tests` | **clean** |
@@ -307,6 +307,41 @@ whether the account exists.
 
 ---
 
+## 2f. Auth verification: Google round trip and real SMTP
+
+Both previously-blocked items are now verified. Full detail in
+[AUTHENTICATION.md](AUTHENTICATION.md); measured results below.
+
+| Area | Result |
+| --- | --- |
+| Google round trip (existing account) | **verified** — consent, callback, fragment cleared, `/auth/me` 200, logout revokes server-side (old refresh token 401) |
+| Google new-account signup | **not tested** — needs a second Google account |
+| SMTP real delivery | **verified** — email arrived in the Gmail inbox, 6.1 s, 2 sends / 0 failures |
+| Reset link single-use | **verified** — reuse 400, old *and* attacker passwords still 401 |
+| Reset link expiry | **verified** — expired token 400 through the live endpoint, password unchanged |
+| Old / new password | **verified** — 401 / 200 |
+| Anti-enumeration under SMTP | **verified** — known vs unknown byte-identical |
+| Credential leakage | **0 occurrences** of SMTP username, password or host in the backend log, API responses, or agent step records |
+
+### A defect this verification found
+
+Signed in as Account A, a successful Google sign-in for Account B was
+**overwritten 48 seconds later**. A refresh already in flight for A completed
+after B's session was stored and clobbered it, and its failure branch would
+have cleared B's session outright. Fixed client-side only; server rotation and
+revocation unchanged. Re-verified live: the Google session held after 75 s and
+after forcing the refresh path that caused the original overwrite.
+
+### And a third instance of an old pattern
+
+`AUTH_EMAIL_MODE=smtp` in the developer `.env` broke a unit test asserting
+console mode — the same environment-coupling that Google credentials and the
+Tavily key each caused before. The hermetic block in `conftest.py` now pins the
+mail settings alongside the database, auth, embeddings, LLM and search. Without
+it the suite would attempt live SMTP sends from unit tests.
+
+---
+
 ## 3. Live multi-agent routing — 19/19
 
 The persisted `route_plan` is the authority, not the event stream.
@@ -378,7 +413,7 @@ no reasoning in any payload, **404** for another tenant's run id.
 | Session refresh + rotation | **Working** | automated |
 | Multi-user isolation | **Working** | live 15–19, 24; RLS on 25 tables |
 | Display name handling | **Working** | live 7, 13, 22 |
-| **Google sign-in** | **Configured, round trip untested** | `google_enabled: true`; `/google/start` 307s to Google with correct scopes; full flow needs a real account sign-in |
+| **Google sign-in** | **Verified (existing account)** | full browser round trip: consent → callback → `/auth/me` → logout with server-side revocation. New-account signup untested |
 | Persistent memory | **Working** | live recall across conversations |
 | Memory relevance gating | **Working** | calibrated 0.45; 0 injected for unrelated query |
 | Silent memory | **Working** | no narration in live replies |
@@ -420,19 +455,16 @@ no reasoning in any payload, **404** for another tenant's run id.
 
 ## 9. What is explicitly NOT claimed
 
-- **Google sign-in is configured but the round trip is untested.** Credentials
-  are present, `/auth/config` reports `google_enabled: true`, and
-  `/auth/google/start` returns a 307 to `accounts.google.com` with the
-  correct scopes and redirect URI. Completing the flow requires signing in
-  to a real Google account, which was not done.
+- **Google new-account signup is untested.** The verified round trip linked
+  an existing account; creating a brand-new Google-only account needs a
+  second Google account.
 - **No public deployment.** GUMMY runs locally; `localhost` URLs are not
   reachable by anyone else.
 - **Research can over-refuse.** Asked to research three named organisations,
   it declined entirely rather than explaining what they are. Refusing is the
   safe direction, but it costs answers that needed no live data.
-- **No real SMTP send has been performed.** Console mode is verified live;
-  SMTP mode is implemented and unit-tested but never exercised against a
-  real server from this machine.
+- **SMTP is verified against Gmail only**, from this machine, with one
+  provider and one recipient. Other relays are untested.
 - **No rate limiting** on login or forgot-password.
 - **No vector file RAG.**
 - **No accuracy percentage.** Nothing here was benchmarked against a labelled

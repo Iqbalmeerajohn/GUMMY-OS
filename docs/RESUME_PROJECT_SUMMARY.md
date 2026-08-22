@@ -64,7 +64,7 @@ scenarios live.
 | Metric | Value |
 | --- | --- |
 | Backend tests | 1016 passed, 4 skipped, 0 failed |
-| Frontend tests | 18 passed, 0 failed |
+| Frontend tests | 25 passed, 0 failed |
 | Static analysis | `ruff`, `black`, `mypy app` clean (241 files); TS + ESLint clean |
 | Migrations | 25 |
 | API | 73 endpoints, 15 routers |
@@ -146,10 +146,9 @@ names, and attributes are parse-level failures.
 
 ## Honest limitations
 
-Google sign-in is configured and its entry point verified, but the full
-round trip was not tested.
-Password-reset email is console-mode locally; SMTP is implemented and
-unit-tested but never sent against a real server.
+Google sign-in is verified end to end for an existing account; new-account
+signup is untested. SMTP password-reset delivery is verified against Gmail.
+
 File retrieval is keyword-based, not
 vector RAG. Live web search runs through Tavily and is verified working. No connectors, no public
 deployment, no cloud infrastructure.

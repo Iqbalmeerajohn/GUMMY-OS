@@ -296,6 +296,66 @@ is identical either way.
 
 ---
 
+### Verified: Google round trip (existing account)
+
+Run in a real browser against the running app, with the redirect URI registered.
+
+| Step | Result |
+| --- | --- |
+| `/google/start` | 307 to `accounts.google.com`, scopes `openid email profile` |
+| Account chooser | account selected; no credential entry required |
+| Consent | name + email only |
+| Callback | real `code` + valid `state`; backend called Google's token endpoint |
+| Landing | `/auth/callback#access_token=…` → `/`, **fragment cleared** |
+| `/auth/me` | **200**, the Google account |
+| Logout | tokens cleared, anonymous `/auth/me` **401**, old refresh token **401** |
+
+That last row is the one that matters: revocation is server-side, not the
+client discarding its copy.
+
+**What this did not cover:** signup by Google for an account that did not
+already exist. The account used was pre-existing and became Google-linked
+(`google_sub` set), so this is the *login/link* path.
+
+### The already-signed-in race
+
+Found during that verification. Signed in as Account A, a successful Google
+sign-in for Account B was **overwritten 48 seconds later** and `/auth/me`
+answered as A again.
+
+`refreshAccessToken` read the refresh token, awaited the network, then stored
+the result unconditionally. A refresh already in flight for A therefore landed
+*after* B's session and clobbered it. The failure branch was worse: it cleared
+the session, which would have signed B out because A's token was revoked.
+
+Fixed on the client only — the server's rotation and revocation are unchanged.
+A refresh result now belongs to the token it started with, and is discarded if
+the stored token changed mid-flight; the OAuth callback also clears the previous
+session before storing the new one. Re-verified live: the Google session held
+after 75 seconds and after forcing the refresh path that caused the original
+overwrite. Pinned by `src/lib/auth/sessionRace.test.ts`.
+
+### Verified: real SMTP password reset
+
+`AUTH_EMAIL_MODE=smtp` against Gmail, from this machine.
+
+| Step | Result |
+| --- | --- |
+| `forgot-password` | 200 generic message; `SMTP delivery ok` in 6.1 s |
+| Delivery | **email arrived in the Gmail inbox** (not spam) |
+| Email content | reset link, "works once", "expires in 45 minutes" (matches `PASSWORD_RESET_TTL_MINUTES`) |
+| Link opened | reset form rendered from the real emailed URL |
+| Reset | "Your password has been reset successfully." |
+| Old password | **401** |
+| New password | **200** |
+| Same link reused | **400** `invalid_reset_token`; old *and* attacker passwords still 401 |
+| Expired token | **400**; password unchanged |
+| Anti-enumeration | known vs unknown address: byte-identical body and status |
+
+Two SMTP sends, zero failures. **No credential appeared anywhere**: the backend
+log, the API responses and the agent step records were each scanned for the
+configured username, password and host — 0 occurrences of each.
+
 ## 7. User isolation
 
 Enforced at three independent layers:
@@ -346,10 +406,11 @@ claimed as tested.
 
 ## 9. Known limitations
 
-- **Google sign-in is unverified end to end.** Credentials are configured and
-  the failure paths are verified live, but the successful browser round trip
-  requires registering the redirect URI above and signing in to a real Google
-  account. Not done, therefore not claimed.
+- **Google new-account signup is unverified.** The round trip below exercised
+  an *existing* account being linked to Google. Creating a brand-new
+  Google-only account was not tested — it needs a second Google account.
+- **SMTP is verified for Gmail only**, from this machine, with one provider.
+  Other relays are untested.
 - **`aud` is not checked** on the Google ID token (defence in depth, not a hole).
 - **Tokens live in localStorage**, so XSS in the app would expose a session.
 - **No rate limiting** on `/auth/login` or `/auth/forgot-password` — a local-only concern today, blocking
