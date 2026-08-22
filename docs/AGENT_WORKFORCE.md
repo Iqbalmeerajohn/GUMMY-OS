@@ -220,10 +220,11 @@ honest; the script's phrase list missed "is not available").
   the panel; nothing pushes it to the user.
 - **No connectors.** Gmail, Calendar, GitHub, Slack are not implemented. The
   `Signal`/`ingest` seam exists (calendar `.ics` import) but no OAuth token store.
-- **Live web search** is config-gated (`BRAVE_API_KEY` + flag). Without it every
+- **Live web search** is config-gated (`TAVILY_API_KEY` + flag). Without it every
   agent honestly reports unavailability.
-- **File RAG is keyword-based.** `file_search` uses substring matching; vector
-  file retrieval is not implemented.
+- **File RAG is hybrid.** `file_search` fuses vector similarity with Postgres
+  full-text and gates results on a calibrated relevance floor, so "nothing
+  relevant" is an outcome it can report. `doc_read` reads a named document.
 - **Approval-gated actions** record the decision but do not execute; no Yellow
   or Red tool has an executor.
 - **Timezone** is stored per automation but scheduling arithmetic is UTC-only.

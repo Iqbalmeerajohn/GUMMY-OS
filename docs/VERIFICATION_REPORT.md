@@ -444,6 +444,8 @@ no reasoning in any payload, **404** for another tenant's run id.
 | Direct-id access to another user's record | ✅ 404 |
 | Another tenant's agent-run trace | ✅ 404 |
 | RLS enforced at the database | ✅ `gummy_app` is `NOBYPASSRLS`; 25 tables |
+| Cross-user document retrieval | ✅ live; 6 paths probed, 2 real users |
+| Another tenant's document by exact filename | ✅ `doc_read` resolves nothing |
 | No arbitrary code execution | ✅ AST allowlist; `eval` never used |
 | No shell execution | ✅ no tool spawns a process |
 | Tool ceilings across a pipeline | ✅ automated |
@@ -466,6 +468,12 @@ no reasoning in any payload, **404** for another tenant's run id.
 - **SMTP is verified against Gmail only**, from this machine, with one
   provider and one recipient. Other relays are untested.
 - **No rate limiting** on login or forgot-password.
-- **No vector file RAG.**
+- **The retrieval floor was calibrated on fixtures, not real user documents.**
+  30 labelled pairs across three synthetic documents. The relevant and
+  no-answer distributions overlap, so roughly 8% of true positives are
+  dropped and one semantic collision survives the gate. No accuracy figure
+  is claimed for a real corpus, because none was measured.
+- **Hybrid retrieval is verified against PostgreSQL only.** On SQLite it
+  falls back to keyword matching, which is what the unit suite exercises.
 - **No accuracy percentage.** Nothing here was benchmarked against a labelled
   dataset, so no such number is offered.

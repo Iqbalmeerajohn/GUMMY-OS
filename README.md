@@ -255,7 +255,12 @@ Stated plainly, because a README that hides these is not useful.
   trip). Creating a brand-new Google-only account is untested.
 - **Password-reset email is verified against Gmail** via SMTP; other relays
   are untested.
-- **File retrieval is keyword-based.** There is no vector RAG over file chunks.
+- **Document retrieval is hybrid** — vector similarity fused with Postgres
+  full-text, gated by a floor calibrated against real embeddings (0.50, see
+  [docs/KNOWLEDGE_RAG.md](docs/KNOWLEDGE_RAG.md)). The floor was measured on
+  controlled fixtures, not a corpus of real user documents, and the relevant
+  and no-answer distributions overlap slightly, so a small number of true
+  positives are dropped and one semantic collision survives.
 - **Live web search runs through Tavily** and is verified working. Without
   `TAVILY_API_KEY` the offline placeholder stays installed and every
   current-information question is answered with an explicit "I can't verify
@@ -275,13 +280,11 @@ Stated plainly, because a README that hides these is not useful.
 
 ## Roadmap
 
-1. **Vector file RAG** — `file_chunk_embeddings` mirroring the proven
-   `memory_embeddings` HNSW pattern.
-2. **Model gateway tiering** — per-call provider selection; `qwen3:8b` is
+1. **Model gateway tiering** — per-call provider selection; `qwen3:8b` is
    already on disk as the local complex tier.
-3. **Connector credentials** — an encrypted token store, unblocking Gmail and
+2. **Connector credentials** — an encrypted token store, unblocking Gmail and
    Drive.
-4. **LangGraph**, evaluated only once the tool loop and delegation are proven.
+3. **LangGraph**, evaluated only once the tool loop and delegation are proven.
 
 ---
 

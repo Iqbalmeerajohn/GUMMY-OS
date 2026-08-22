@@ -322,7 +322,7 @@ The orchestrator does not change.
   paused call after approval is not implemented.
 - Tool-using turns do not stream the reply token-by-token (§7).
 - `doc_read` returns empty — the document store is a later phase.
-- `web_search` returns `UNAVAILABLE` unless `BRAVE_API_KEY` and
+- `web_search` returns `UNAVAILABLE` unless `TAVILY_API_KEY` and
   `AGENTS_WEB_SEARCH_ENABLED=true` are set. It deliberately does **not** fall
   back to the offline placeholder: doing so previously made the model relay mock
   rows to the user as real findings.

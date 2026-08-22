@@ -149,6 +149,8 @@ names, and attributes are parse-level failures.
 Google sign-in is verified end to end for an existing account; new-account
 signup is untested. SMTP password-reset delivery is verified against Gmail.
 
-File retrieval is keyword-based, not
-vector RAG. Live web search runs through Tavily and is verified working. No connectors, no public
+Document retrieval is hybrid — vector plus full-text, fused with reciprocal rank
+fusion and gated on a floor calibrated against real embeddings — though that
+calibration used controlled fixtures rather than a corpus of real user
+documents. Live web search runs through Tavily and is verified working. No connectors, no public
 deployment, no cloud infrastructure.
