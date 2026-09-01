@@ -79,6 +79,10 @@ class Settings(BaseSettings):
     # ── Database (wired for readiness checks; ORM models land Day 2) ──────────
     database_url: str | None = None
     direct_database_url: str | None = None
+    # Whether DATABASE_URL points at a transaction pooler (PgBouncer, Supabase
+    # pooler) rather than Postgres itself. Leave unset to detect it from the
+    # URL; set it explicitly for a pooler this heuristic cannot recognise.
+    db_transaction_pooler: bool | None = None
 
     # ── Authentication ────────────────────────────────────────────────────────
     auth_enabled: bool = True
@@ -332,6 +336,29 @@ class Settings(BaseSettings):
         if not self.is_database_configured or url is None:
             return None
         return _normalize_asyncpg(url)
+
+    @property
+    def uses_transaction_pooler(self) -> bool:
+        """Whether the app talks to a transaction pooler rather than Postgres.
+
+        This decides whether asyncpg needs its prepared-statement caches turned
+        off, which is a correctness requirement behind a pooler and a
+        significant per-request cost without one (measured at ~45 ms), so
+        guessing wrong in either direction has a real consequence.
+
+        Explicit configuration wins. Otherwise it is inferred from the URL:
+        poolers advertise themselves by hostname or by their own port, and a
+        direct Postgres connection looks like neither.
+        """
+        if self.db_transaction_pooler is not None:
+            return self.db_transaction_pooler
+        url = (self.database_url or "").lower()
+        if not url:
+            return False
+        if "pgbouncer" in url or "pooler." in url:
+            return True
+        # 6543 is the Supabase transaction pooler; 6432 the PgBouncer default.
+        return ":6543/" in url or ":6432/" in url
 
     @property
     def migration_async_url(self) -> str | None:

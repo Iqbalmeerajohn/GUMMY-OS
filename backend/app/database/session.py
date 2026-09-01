@@ -50,11 +50,24 @@ _auth_sessionmaker: async_sessionmaker[AsyncSession] | None = None
 # each statement is prepared and used within a single transaction (same backend),
 # and give every prepared statement a unique name so names are never reused across
 # backends. This is SQLAlchemy's documented asyncpg-behind-PgBouncer remedy.
+# These are applied ONLY behind a pooler. They are a correctness requirement
+# there and an expensive mistake without one: disabling the caches means every
+# statement is prepared and discarded, and `pool_pre_ping` issues one such
+# statement on every checkout. Measured against a direct local Postgres, that
+# combination cost 48.5 ms per request versus 3.5 ms with caching left on —
+# roughly 45 ms added to every API call for a pooler that was not there.
 _ASYNCPG_PGBOUNCER_CONNECT_ARGS: dict[str, Any] = {
     "statement_cache_size": 0,  # asyncpg: no server-side prepared-statement cache
     "prepared_statement_cache_size": 0,  # SQLAlchemy asyncpg dialect: cache nothing
     "prepared_statement_name_func": lambda: f"__asyncpg_{uuid4()}__",  # unique names
 }
+
+
+def _connect_args() -> dict[str, Any]:
+    """Driver arguments for the current database topology."""
+    if get_settings().uses_transaction_pooler:
+        return _ASYNCPG_PGBOUNCER_CONNECT_ARGS
+    return {}
 
 
 @event.listens_for(Session, "after_begin")
@@ -90,7 +103,7 @@ def get_engine() -> AsyncEngine | None:
             pool_pre_ping=True,
             pool_size=5,
             max_overflow=5,
-            connect_args=_ASYNCPG_PGBOUNCER_CONNECT_ARGS,
+            connect_args=_connect_args(),
         )
         logger.info("database engine initialized")
     return _engine
@@ -143,7 +156,7 @@ def get_auth_engine() -> AsyncEngine | None:
             pool_pre_ping=True,
             pool_size=2,
             max_overflow=2,
-            connect_args=_ASYNCPG_PGBOUNCER_CONNECT_ARGS,
+            connect_args=_connect_args(),
         )
         logger.info("auth database engine initialized (owner connection)")
     return _auth_engine
