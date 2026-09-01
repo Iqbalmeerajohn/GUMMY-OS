@@ -23,7 +23,12 @@ cd backend
 cp ../.env.example .env          # PowerShell: Copy-Item ..\.env.example .env
 uv sync --all-extras
 uv run alembic upgrade head
-uv run uvicorn app.main:app --reload --port 8000
+uv run python scripts/serve.py
+
+`scripts/serve.py` binds a dual-stack socket. Plain `uvicorn app.main:app` binds
+IPv4 only, so clients that resolve `localhost` to `::1` first wait out a Happy
+Eyeballs fallback — about 200 ms on every request, measured. Use it unless you
+have a reason not to.
 ```
 
 Then open:
@@ -42,7 +47,12 @@ python -m venv .venv
 # Windows:  .venv\Scripts\activate     macOS/Linux:  source .venv/bin/activate
 pip install -r requirements-dev.txt
 cp ../.env.example .env
-uvicorn app.main:app --reload --port 8000
+python scripts/serve.py
+
+`scripts/serve.py` binds a dual-stack socket. Plain `uvicorn app.main:app` binds
+IPv4 only, so clients that resolve `localhost` to `::1` first wait out a Happy
+Eyeballs fallback — about 200 ms on every request, measured. Use it unless you
+have a reason not to.
 ```
 </details>
 

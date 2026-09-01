@@ -193,7 +193,7 @@ docker compose up -d
 ```
 
 ```bash
-cd backend && cp .env.example .env && uv sync && uv run alembic upgrade head && uv run uvicorn app.main:app --reload
+cd backend && cp .env.example .env && uv sync && uv run alembic upgrade head && uv run python scripts/serve.py
 ```
 
 ```bash
