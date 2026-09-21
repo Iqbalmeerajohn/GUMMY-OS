@@ -55,4 +55,3 @@ export function useDeleteConversation() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["conversations"] }),
   });
 }
-

@@ -81,9 +81,7 @@ export function GoalForm({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>
-            {mode === "add" ? "New goal" : "Edit goal"}
-          </DialogTitle>
+          <DialogTitle>{mode === "add" ? "New goal" : "Edit goal"}</DialogTitle>
           <DialogDescription>
             {mode === "add"
               ? "Tell GUMMY what you're working toward."
@@ -204,9 +202,7 @@ function Fieldset({
 }) {
   return (
     <div className="space-y-1.5">
-      <span className="text-muted-foreground text-xs font-medium">
-        {label}
-      </span>
+      <span className="text-muted-foreground text-xs font-medium">{label}</span>
       <div className="flex flex-wrap gap-1.5">{children}</div>
     </div>
   );

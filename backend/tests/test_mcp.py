@@ -32,8 +32,7 @@ from app.services.mcp.client import MCPClient, MCPError, StdioServer
 from app.services.mcp.registry import MCPConfigError, MCPServerConfig, tool_key
 
 # A complete, minimal MCP server: initialize, tools/list, tools/call.
-_FAKE_SERVER = textwrap.dedent(
-    """
+_FAKE_SERVER = textwrap.dedent("""
     import json, sys
 
     def send(msg):
@@ -74,8 +73,7 @@ _FAKE_SERVER = textwrap.dedent(
         else:
             send({"jsonrpc": "2.0", "id": mid,
                   "error": {"code": -32601, "message": "no such method"}})
-    """
-)
+    """)
 
 
 @pytest.fixture

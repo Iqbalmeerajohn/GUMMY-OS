@@ -287,13 +287,9 @@ def observe_operation(
 # ── LLM generation decorator ──────────────────────────────────────────────────
 
 
-def observe_generation[
-    **P
-](
+def observe_generation[**P](
     fn: Callable[P, Awaitable[LLMResponse]],
-) -> Callable[
-    P, Coroutine[Any, Any, LLMResponse]
-]:
+) -> Callable[P, Coroutine[Any, Any, LLMResponse]]:
     """Wrap an LLM gateway ``generate`` coroutine to emit a Langfuse generation.
 
     Captures the prompt, resolved model, token usage, latency, and cost. The

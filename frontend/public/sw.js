@@ -39,7 +39,9 @@ self.addEventListener("activate", (event) => {
     caches
       .keys()
       .then((keys) =>
-        Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))),
+        Promise.all(
+          keys.filter((key) => key !== CACHE).map((key) => caches.delete(key)),
+        ),
       )
       .then(() => self.clients.claim()),
   );
@@ -56,7 +58,8 @@ self.addEventListener("fetch", (event) => {
 
   // Never touch the API or auth. Stale personal data is both a privacy
   // problem and a correctness problem.
-  if (url.pathname.startsWith("/api") || url.pathname.startsWith("/auth")) return;
+  if (url.pathname.startsWith("/api") || url.pathname.startsWith("/auth"))
+    return;
 
   // Cross-origin requests are left entirely alone.
   if (url.origin !== self.location.origin) return;
@@ -64,15 +67,16 @@ self.addEventListener("fetch", (event) => {
   // Navigations: network first, offline page as the fallback. Never serve a
   // cached page — it would show someone else's session state or yesterday's.
   if (request.mode === "navigate") {
-    event.respondWith(
-      fetch(request).catch(() => caches.match(OFFLINE_URL)),
-    );
+    event.respondWith(fetch(request).catch(() => caches.match(OFFLINE_URL)));
     return;
   }
 
   // Static assets: cache first. These are content-hashed by the build, so a
   // cached copy can never be the wrong version of itself.
-  if (SHELL.includes(url.pathname) || url.pathname.startsWith("/_next/static")) {
+  if (
+    SHELL.includes(url.pathname) ||
+    url.pathname.startsWith("/_next/static")
+  ) {
     event.respondWith(
       caches.match(request).then(
         (hit) =>

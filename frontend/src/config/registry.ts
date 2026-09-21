@@ -467,8 +467,7 @@ export function getAgents(): Feature[] {
   // Live agents first: the directory should read as "here is what answers you
   // today", with the plan phase below it rather than mixed through it.
   return FEATURES.filter((f) => f.category === "agent").sort(
-    (a, b) =>
-      Number(b.status === "released") - Number(a.status === "released"),
+    (a, b) => Number(b.status === "released") - Number(a.status === "released"),
   );
 }
 

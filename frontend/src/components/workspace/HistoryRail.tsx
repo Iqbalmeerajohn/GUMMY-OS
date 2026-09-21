@@ -56,7 +56,9 @@ export function HistoryRail({
     () =>
       all.filter((c) => {
         const inTab =
-          tab === "archived" ? c.status === "archived" : c.status !== "archived";
+          tab === "archived"
+            ? c.status === "archived"
+            : c.status !== "archived";
         const title = (c.title ?? "Untitled conversation").toLowerCase();
         return inTab && (!term || title.includes(term));
       }),
@@ -152,7 +154,9 @@ export function HistoryRail({
                 ))}
               </Section>
             ) : null}
-            <Section label={pinned.length > 0 && tab === "active" ? "All" : null}>
+            <Section
+              label={pinned.length > 0 && tab === "active" ? "All" : null}
+            >
               {rest.map((c) => (
                 <ConversationRow
                   key={c.id}
@@ -190,7 +194,9 @@ export function HistoryRail({
           <DialogFooter>
             <DialogClose
               render={
-                <button className={cn(buttonVariants({ variant: "outline" }))} />
+                <button
+                  className={cn(buttonVariants({ variant: "outline" }))}
+                />
               }
             >
               Cancel
@@ -267,7 +273,7 @@ function ConversationRow({
             if (e.key === "Enter") onRenameCommit(e.currentTarget.value);
             if (e.key === "Escape") onRenameCancel();
           }}
-          className="border-primary/50 ring-primary/30 w-full rounded-lg border bg-transparent px-3 py-2 text-sm outline-none ring-2"
+          className="border-primary/50 ring-primary/30 w-full rounded-lg border bg-transparent px-3 py-2 text-sm ring-2 outline-none"
         />
       </li>
     );
@@ -279,9 +285,7 @@ function ConversationRow({
         onClick={onSelect}
         className={cn(
           "group relative flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 transition-colors",
-          active
-            ? "bg-primary/10 ring-primary/20 ring-1"
-            : "hover:bg-muted/60",
+          active ? "bg-primary/10 ring-primary/20 ring-1" : "hover:bg-muted/60",
         )}
       >
         {c.pinned ? (

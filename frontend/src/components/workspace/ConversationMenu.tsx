@@ -63,7 +63,9 @@ export function ConversationMenu({
         )}
       >
         <MenuRow
-          icon={pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
+          icon={
+            pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />
+          }
           label={pinned ? "Unpin conversation" : "Pin conversation"}
           accent="emerald"
           onClick={onPin}

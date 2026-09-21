@@ -12,18 +12,11 @@ import { Reveal } from "@/components/motion/Reveal";
 import { Stagger, StaggerItem } from "@/components/motion/Stagger";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  MEMORY_CATEGORIES,
-  type MemoryCategory,
-} from "@/config/memory";
+import { MEMORY_CATEGORIES, type MemoryCategory } from "@/config/memory";
 import { getIcon } from "@/lib/icons";
 import { cn } from "@/lib/utils";
 import type { MemoryDraft } from "@/lib/memory/types";
-import type {
-  Memory,
-  MemorySort,
-  MemoryStatus,
-} from "@/lib/memory/types";
+import type { Memory, MemorySort, MemoryStatus } from "@/lib/memory/types";
 import {
   useMemory,
   useMemoryActions,
@@ -313,10 +306,7 @@ function Filters({
 }) {
   return (
     <div className="flex flex-wrap gap-1.5">
-      <FilterChip
-        active={category === "all"}
-        onClick={() => onCategory("all")}
-      >
+      <FilterChip active={category === "all"} onClick={() => onCategory("all")}>
         All
       </FilterChip>
       {MEMORY_CATEGORIES.map((c) => {

@@ -97,10 +97,7 @@ export function fromApi(item: MemoryItem): Memory {
 /** Map a UI Memory back onto the backend write shape (importance → score). */
 export function toApi(
   memory: Memory,
-): Pick<
-  MemoryItem,
-  "category" | "content" | "importance_score" | "status"
-> {
+): Pick<MemoryItem, "category" | "content" | "importance_score" | "status"> {
   return {
     category: memory.category,
     content: memory.content,

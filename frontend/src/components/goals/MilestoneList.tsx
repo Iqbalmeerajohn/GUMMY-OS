@@ -38,9 +38,7 @@ export function MilestoneList({
             <li key={m.id} className="flex items-center gap-2">
               <button
                 type="button"
-                aria-label={
-                  m.completed ? "Mark incomplete" : "Mark complete"
-                }
+                aria-label={m.completed ? "Mark incomplete" : "Mark complete"}
                 onClick={() => actions.toggleMilestone(m.id, !m.completed)}
                 className={cn(
                   "grid size-4.5 shrink-0 place-items-center rounded-[6px] border transition-colors",

@@ -24,7 +24,11 @@
         padding: 24px;
         background: var(--bg);
         color: var(--fg);
-        font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+        font:
+          16px/1.6 system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
       }
       main {
         max-width: 26rem;
@@ -35,7 +39,12 @@
         height: 64px;
         margin: 0 auto 24px;
         border-radius: 50%;
-        background: radial-gradient(circle at 38% 32%, #bdffe2, #3fe0a0 42%, #0c7a52);
+        background: radial-gradient(
+          circle at 38% 32%,
+          #bdffe2,
+          #3fe0a0 42%,
+          #0c7a52
+        );
         opacity: 0.55;
       }
       h1 {
@@ -73,8 +82,8 @@
         currently reach that machine. Saying so points at the real fix.
       -->
       <p>
-        Your phone can’t reach the machine GUMMY runs on. Check that it’s
-        awake, and that you’re on the same network or your tunnel is up.
+        Your phone can’t reach the machine GUMMY runs on. Check that it’s awake,
+        and that you’re on the same network or your tunnel is up.
       </p>
       <button onclick="location.reload()">Try again</button>
     </main>

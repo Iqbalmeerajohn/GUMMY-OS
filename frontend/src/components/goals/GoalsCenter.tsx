@@ -8,7 +8,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { GoalCard } from "@/components/goals/GoalCard";
 import { GoalForm } from "@/components/goals/GoalForm";
 import { getPriorityMeta } from "@/config/goals";
-import { useGoalActions, useGoalsQuery, useGoalStats } from "@/lib/goals/useGoals";
+import {
+  useGoalActions,
+  useGoalsQuery,
+  useGoalStats,
+} from "@/lib/goals/useGoals";
 import type { GoalCreateBody, GoalItem, GoalStatus } from "@/lib/api/resources";
 import { cn } from "@/lib/utils";
 
