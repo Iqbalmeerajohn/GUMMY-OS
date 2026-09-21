@@ -731,3 +731,118 @@ export function toggleAutomation(id: string, enabled: boolean) {
 export function deleteAutomation(id: string) {
   return apiFetch<void>(`/api/v1/automations/${id}`, { method: "DELETE" });
 }
+
+// ── Action approvals (the confirm-before-acting queue) ───────────────────────
+
+/** Permission tier, mirroring the backend's Green/Yellow/Red. */
+export type ApprovalTier = "green" | "yellow" | "red";
+export type ApprovalStatus = "pending" | "approved" | "rejected" | "expired";
+
+export interface ActionApproval {
+  id: string;
+  run_id: string | null;
+  agent_key: string;
+  /** The tool key for tool-driven approvals. */
+  action_kind: string;
+  tier: ApprovalTier;
+  /** Exactly what would happen: `{ tool_key, args }` for a tool call. */
+  preview: Record<string, unknown>;
+  status: ApprovalStatus;
+  decided_at: string | null;
+  expires_at: string;
+  created_at: string;
+}
+
+export interface ActionApprovalList {
+  items: ActionApproval[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/**
+ * What happened when an approved action actually ran.
+ *
+ * Reported separately from the approval because the two can disagree: the
+ * approval succeeds while the action it authorised fails on contact with the
+ * machine. Collapsing them would make a failed command look like a failed
+ * approval.
+ */
+export interface ActionExecution {
+  executed: boolean;
+  tool_key: string;
+  outcome: string | null;
+  output: Record<string, unknown> | null;
+  error: string | null;
+  duration_ms: number;
+  invocation_id: string | null;
+}
+
+export interface ActionDecision {
+  approval: ActionApproval;
+  execution: ActionExecution | null;
+}
+
+export function listApprovals(status?: ApprovalStatus, limit = 50) {
+  return apiFetch<ActionApprovalList>("/api/v1/actions", {
+    query: { status, limit },
+  });
+}
+
+/** Approve AND run. The backend reads the call from the stored preview. */
+export function approveAction(id: string) {
+  return apiFetch<ActionDecision>(`/api/v1/actions/${id}/approve`, {
+    method: "POST",
+  });
+}
+
+export function rejectAction(id: string) {
+  return apiFetch<ActionApproval>(`/api/v1/actions/${id}/reject`, {
+    method: "POST",
+  });
+}
+
+// ── Activity & capabilities (the audit feed and what GUMMY can do) ──────────
+
+export interface ActivityItem {
+  id: string;
+  run_id: string | null;
+  agent_key: string;
+  tool_key: string;
+  tier: ApprovalTier;
+  decision: string;
+  status: string;
+  decision_reason: string | null;
+  error: string | null;
+  created_at: string;
+}
+
+export function listActivity(limit = 50) {
+  return apiFetch<ActivityItem[]>("/api/v1/activity", { query: { limit } });
+}
+
+export interface CapabilityItem {
+  key: string;
+  name: string;
+  description: string;
+  category: string;
+  tier: ApprovalTier;
+  executable: boolean;
+  external: boolean;
+}
+
+export interface CapabilityReport {
+  tools: CapabilityItem[];
+  total: number;
+  executable: number;
+  by_tier: Record<string, number>;
+  workspace_configured: boolean;
+  workspace_roots: string[];
+  telegram_enabled: boolean;
+  external_tools_enabled: boolean;
+  energy_accounting: boolean;
+}
+
+export function fetchCapabilities() {
+  return apiFetch<CapabilityReport>("/api/v1/activity/capabilities");
+}
