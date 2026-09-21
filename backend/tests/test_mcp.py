@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import sys
 import textwrap
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -84,7 +85,7 @@ def fake_server(tmp_path: Path) -> StdioServer:
 
 
 @pytest.fixture(autouse=True)
-def _unseal_catalog():
+def _unseal_catalog() -> Iterator[None]:
     """Each test starts with no external tools and an unsealed catalog."""
     reset_external_tools_for_tests()
     yield
@@ -259,7 +260,7 @@ async def test_installed_external_tool_actually_runs(
 
     spec = TOOL_CATALOG["mcp__fake__echo"]
     assert spec.executor is not None
-    out = await spec.executor(None, {"text": "round trip"})
+    out = await spec.executor(None, {"text": "round trip"})  # type: ignore[arg-type]
     assert out["content"] == "echo:round trip"
 
 
@@ -273,7 +274,7 @@ async def test_in_band_error_raises_so_it_records_as_failed(
     spec = TOOL_CATALOG["mcp__fake__boom"]
     assert spec.executor is not None
     with pytest.raises(MCPError):
-        await spec.executor(None, {})
+        await spec.executor(None, {})  # type: ignore[arg-type]
 
 
 def test_external_tools_cannot_shadow_a_builtin() -> None:

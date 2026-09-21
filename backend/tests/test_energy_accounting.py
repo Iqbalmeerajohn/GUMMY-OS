@@ -18,16 +18,26 @@ from app.services.telemetry.energy import (
 )
 
 
-def _reading(joules: float | None, **kwargs) -> EnergyMeasurement:
+def _reading(
+    joules: float | None,
+    *,
+    duration: float = 10.0,
+    watts: float | None = None,
+    samples: int = 1,
+    basis: str = "gpu",
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
+) -> EnergyMeasurement:
+    """A measurement with everything but the interesting field defaulted."""
     return EnergyMeasurement(
-        duration_seconds=kwargs.pop("duration", 10.0),
+        duration_seconds=duration,
         energy_joules=joules,
-        average_watts=kwargs.pop("watts", None),
+        average_watts=watts,
         peak_watts=None,
-        samples=kwargs.pop("samples", 1),
-        basis=kwargs.pop("basis", "gpu"),
-        prompt_tokens=kwargs.pop("prompt_tokens", 0),
-        completion_tokens=kwargs.pop("completion_tokens", 0),
+        samples=samples,
+        basis=basis,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
     )
 
 
@@ -56,7 +66,7 @@ async def test_measurement_never_raises_into_the_caller(
 ) -> None:
     """A broken sampler must not take down the generation it is watching."""
 
-    def explode(self) -> bool:
+    def explode(_self: object) -> bool:
         raise RuntimeError("nvml is on fire")
 
     monkeypatch.setattr(

@@ -133,7 +133,7 @@ async def test_client_builds_its_base_url() -> None:
 # ── worker refusal paths ─────────────────────────────────────────────────────
 
 
-def _worker(**overrides) -> TelegramWorker:
+def _worker(**overrides: object) -> TelegramWorker:
     worker = TelegramWorker()
     config = {
         "sessionmaker": object(),  # only presence is checked before starting

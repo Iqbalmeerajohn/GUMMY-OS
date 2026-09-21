@@ -11,6 +11,7 @@ import asyncio
 import os
 import shutil
 import subprocess
+import sys
 import uuid
 from pathlib import Path
 
@@ -152,7 +153,7 @@ async def test_shell_refuses_an_implicit_cwd(sandbox: Path) -> None:
 async def test_shell_runs_and_captures_output(sandbox: Path) -> None:
     out = await shell.execute(
         _ctx(sandbox),
-        {"command": f'"{os.sys.executable}" -c "print(6*7)"', "cwd": str(sandbox)},
+        {"command": f'"{sys.executable}" -c "print(6*7)"', "cwd": str(sandbox)},
     )
     assert out["ok"] is True
     assert "42" in out["stdout"]
@@ -164,7 +165,7 @@ async def test_shell_reports_a_failing_exit_code_as_data(sandbox: Path) -> None:
     out = await shell.execute(
         _ctx(sandbox),
         {
-            "command": f'"{os.sys.executable}" -c "raise SystemExit(3)"',
+            "command": f'"{sys.executable}" -c "raise SystemExit(3)"',
             "cwd": str(sandbox),
         },
     )
