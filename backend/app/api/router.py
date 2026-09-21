@@ -14,6 +14,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     actions,
+    activity,
     agents,
     auth,
     automations,
@@ -42,3 +43,4 @@ api_router.include_router(agents.router)
 api_router.include_router(connectors.router)
 api_router.include_router(automations.router)
 api_router.include_router(runs.router)
+api_router.include_router(activity.router)

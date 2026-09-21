@@ -68,3 +68,26 @@ async def list_for_run(
         .order_by(ToolInvocation.created_at.asc())
     )
     return list((await session.execute(stmt)).scalars().all())
+
+
+async def list_recent(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    limit: int = 50,
+) -> list[ToolInvocation]:
+    """The tenant's most recent tool calls across every run, newest first.
+
+    ``list_for_run`` answers "what happened in this turn". This answers "what
+    has GUMMY been doing", which is a different question and the one an
+    activity view asks. Capped by ``limit`` rather than paginated: an audit
+    feed is read from the top, and an unbounded scan of an append-only table
+    gets slower every day it runs.
+    """
+    stmt = (
+        select(ToolInvocation)
+        .where(ToolInvocation.user_id == user_id)
+        .order_by(ToolInvocation.created_at.desc())
+        .limit(limit)
+    )
+    return list((await session.execute(stmt)).scalars().all())
