@@ -282,3 +282,62 @@ async def test_double_approval_is_refused(
         await approval_service.approve(
             db_session, user_id=seed_user, approval_id=approval.id
         )
+
+
+# ── the Engineer reaches the queue ───────────────────────────────────────────
+
+
+async def test_engineer_shell_call_becomes_an_approval(
+    db_session: AsyncSession, seed_user: uuid.UUID, tmp_path: Path
+) -> None:
+    """The end-to-end reason the Engineer agent exists.
+
+    Every other agent has a Green ceiling, so a shell_exec call from them is
+    BLOCKED at the manifest check and never reaches a human. The Engineer's
+    raised ceiling is what turns that same call into a pending approval — the
+    whole Yellow/Red half of the catalog is unreachable without it.
+    """
+    from app.services.agents.tools import interface
+    from app.services.agents.tools.executor import ToolOutcome
+
+    run = await run_repo.create_run(db_session, user_id=seed_user)
+    await db_session.flush()
+
+    result = await interface.invoke(
+        db_session,
+        tool_key="shell_exec",
+        args={"command": "python --version", "cwd": str(tmp_path)},
+        agent_key="engineer",
+        run_id=run.id,
+        user_id=seed_user,
+        context=_ctx(db_session, seed_user, tmp_path),
+    )
+
+    assert result.outcome is ToolOutcome.APPROVAL_REQUIRED
+    assert result.approval_id is not None
+    assert result.status is ToolRunStatus.NOT_EXECUTED
+
+
+async def test_a_green_ceiling_agent_cannot_reach_shell(
+    db_session: AsyncSession, seed_user: uuid.UUID, tmp_path: Path
+) -> None:
+    """The counterpart: general is Green, so the same call is refused outright
+    rather than queued for a human."""
+    from app.services.agents.tools import interface
+    from app.services.agents.tools.executor import ToolOutcome
+
+    run = await run_repo.create_run(db_session, user_id=seed_user)
+    await db_session.flush()
+
+    result = await interface.invoke(
+        db_session,
+        tool_key="shell_exec",
+        args={"command": "python --version", "cwd": str(tmp_path)},
+        agent_key="general",
+        run_id=run.id,
+        user_id=seed_user,
+        context=_ctx(db_session, seed_user, tmp_path),
+    )
+
+    assert result.outcome is ToolOutcome.DENIED
+    assert result.approval_id is None

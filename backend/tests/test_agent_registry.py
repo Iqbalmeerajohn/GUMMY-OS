@@ -68,12 +68,11 @@ def test_every_declared_tool_exists_and_respects_its_agents_ceiling() -> None:
             ), f"{key} declares {tool_key!r} above its {manifest.ceiling} ceiling"
 
 
-def test_m8_specialists_registered_with_keywords() -> None:
-    """All five M8 specialists are registered, Green-only, and have keywords."""
+def test_specialists_registered_with_keywords() -> None:
+    """Every specialist is registered and routable."""
     registry = get_registry()
     for key in SPECIALIST_AGENT_KEYS:
         manifest = registry.get(key)
-        assert manifest.ceiling == PermissionTier.GREEN
         assert manifest.keywords, f"{key} must declare routing keywords"
     assert set(SPECIALIST_AGENT_KEYS) == {
         "career",
@@ -82,7 +81,47 @@ def test_m8_specialists_registered_with_keywords() -> None:
         "memory",
         "research",
         "automation",
+        "engineer",
     }
+
+
+def test_only_the_engineer_reaches_above_green() -> None:
+    """Exactly one agent may propose a consequential action.
+
+    A raised ceiling is the single thing that lets a Yellow or Red tool past
+    the manifest check, so the set of agents holding one is the real blast
+    radius. Asserting it by name means widening that set is a deliberate edit
+    to this test rather than a side effect of adding an agent.
+    """
+    registry = get_registry()
+    above_green = {
+        key
+        for key in SPECIALIST_AGENT_KEYS
+        if registry.get(key).ceiling != PermissionTier.GREEN
+    }
+    assert above_green == {"engineer"}
+
+
+def test_consequential_tools_still_stop_at_a_human() -> None:
+    """A raised ceiling lets the proposal through, never past the user.
+
+    This is the property the Engineer's existence depends on being true: it
+    can *ask* to write a file or run a command, and both still become an
+    approval rather than an action.
+    """
+    from app.services.agents.policy_engine import PolicyDecision, evaluate
+    from app.services.agents.tools.catalog import TOOL_CATALOG
+
+    engineer = get_registry().get("engineer")
+    for tool_key in ("workspace_write", "shell_exec"):
+        assert tool_key in engineer.tools
+        verdict = evaluate(
+            manifest=engineer,
+            tool_key=tool_key,
+            tool_tier=TOOL_CATALOG[tool_key].tier,
+            standing_allowances=frozenset(),
+        )
+        assert verdict.decision is PolicyDecision.PROMPT, tool_key
 
 
 def test_priority_breaks_keyword_ties() -> None:

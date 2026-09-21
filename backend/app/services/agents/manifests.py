@@ -25,7 +25,25 @@ _BASE_TOOLS: tuple[str, ...] = (
 # Adds live web search. Only for specialists whose work genuinely needs current
 # external information — search costs a network round-trip and, once a provider
 # key is configured, money.
-_RESEARCH_TOOLS: tuple[str, ...] = (*_BASE_TOOLS, "web_search")
+_RESEARCH_TOOLS: tuple[str, ...] = (*_BASE_TOOLS, "web_search", "http_fetch")
+
+# Read-only access to the machine, scoped to GUMMY_WORKSPACE_ROOTS. Safe to
+# hand out widely: every one of these refuses any path outside the configured
+# roots, and refuses protected filenames inside them. With no roots configured
+# they refuse everything, so granting them costs nothing until the user opts in.
+_CODE_READ_TOOLS: tuple[str, ...] = (
+    "git_status",
+    "git_log",
+    "git_diff",
+    "workspace_read",
+    "workspace_list",
+)
+
+# Tools that change something. Only the Engineer carries these, and only
+# because its ceiling is high enough to propose them — the Policy gate still
+# stops every one at a human. A Green-ceilinged agent that listed these would
+# have them blocked on every call, which is worse than not listing them.
+_CODE_WRITE_TOOLS: tuple[str, ...] = ("workspace_write", "shell_exec")
 
 # The Automation agent gets a deliberately narrow set: the clock (so it can
 # resolve "tomorrow" correctly), memory (to know what the user cares about),
@@ -51,7 +69,9 @@ GENERAL_AGENT = AgentManifest(
         "thread history, and rolling summary."
     ),
     ceiling=PermissionTier.GREEN,
-    tools=_BASE_TOOLS,
+    # Read-only machine access too: "what changed in my repo" is an everyday
+    # question, and these tools are inert until a workspace is configured.
+    tools=(*_BASE_TOOLS, *_CODE_READ_TOOLS),
     keywords=(),
     model_tier="default",
 )
@@ -310,6 +330,54 @@ AUTOMATION_AGENT = AgentManifest(
     model_tier="default",
 )
 
+ENGINEER_AGENT_KEY = "engineer"
+
+# The only agent whose ceiling is above Green, and the reason the Yellow/Red
+# half of the catalog is reachable at all. A Green-ceilinged agent listing
+# shell_exec would have it blocked by the Policy gate on every call — the
+# ceiling is what lets the proposal through to a human, not past one.
+#
+# Nothing here runs unattended. workspace_write pauses for confirmation;
+# shell_exec pauses for confirmation on every individual command and no
+# standing allowance can cover it. So the worst case for a mis-routed request
+# is an approval you decline, not an action you discover afterwards.
+ENGINEER_AGENT = AgentManifest(
+    key=ENGINEER_AGENT_KEY,
+    display_name="Engineer Agent",
+    mission=(
+        "Work on code and files on this machine: read repositories and their "
+        "history, explain what changed, and — with your approval — edit files "
+        "or run a command."
+    ),
+    ceiling=PermissionTier.RED,
+    tools=(*_BASE_TOOLS, *_CODE_READ_TOOLS, *_CODE_WRITE_TOOLS, "http_fetch"),
+    keywords=(
+        "code",
+        "repo",
+        "repository",
+        "git",
+        "commit",
+        "diff",
+        "branch",
+        "build",
+        "compile",
+        "test",
+        "tests",
+        "debug",
+        "refactor",
+        "script",
+        "terminal",
+        "command",
+        "install",
+        "dependency",
+        "lint",
+    ),
+    # Above Research: "compare these two commits" is repository work, and both
+    # agents claim "compare". Below Automation, which owns scheduling outright.
+    priority=7,
+    model_tier="default",
+)
+
 SPECIALIST_AGENT_KEYS: tuple[str, ...] = (
     CAREER_AGENT_KEY,
     LEARNING_AGENT_KEY,
@@ -317,6 +385,7 @@ SPECIALIST_AGENT_KEYS: tuple[str, ...] = (
     MEMORY_AGENT_KEY,
     RESEARCH_AGENT_KEY,
     AUTOMATION_AGENT_KEY,
+    ENGINEER_AGENT_KEY,
 )
 
 BUILTIN_MANIFESTS: tuple[AgentManifest, ...] = (
@@ -328,4 +397,5 @@ BUILTIN_MANIFESTS: tuple[AgentManifest, ...] = (
     MEMORY_AGENT,
     RESEARCH_AGENT,
     AUTOMATION_AGENT,
+    ENGINEER_AGENT,
 )
