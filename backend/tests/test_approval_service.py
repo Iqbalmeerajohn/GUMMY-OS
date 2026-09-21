@@ -95,24 +95,27 @@ async def test_gate_prompt_creates_previewed_pending(
     assert approval.decided_at is None
 
 
-async def test_approve_records_decision_and_no_executor_fires(
+async def test_approve_records_decision_without_dispatching(
     db_session: AsyncSession,
     seed_user: uuid.UUID,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """``approve`` itself still only decides.
+
+    Phase 4 moved execution into ``action_dispatch``, called by the API layer
+    *after* the decision commits. Keeping the service free of side effects is
+    what makes the decision and the execution independently auditable — and
+    means a caller that only wants to record consent still can.
+    """
     approval_id, _ = await _pending_from_gate(db_session, seed_user, monkeypatch)
     approved = await approval_service.approve(
         db_session, user_id=seed_user, approval_id=approval_id
     )
     assert approved.status == ApprovalStatus.APPROVED
     assert approved.decided_at is not None
-    # The Phase 3 invariant, structurally: no non-Green executor exists
-    # anywhere in the catalog, so approving cannot possibly run anything.
-    assert all(
-        spec.executor is None
-        for spec in TOOL_CATALOG.values()
-        if spec.tier != PermissionTier.GREEN
-    )
+    # email_send is modeled (no executor), so even the dispatcher would have
+    # nothing to run here — asserted so this stays true if it ever gains one.
+    assert TOOL_CATALOG["email_send"].executor is None
 
 
 async def test_reject_and_already_decided_conflict(

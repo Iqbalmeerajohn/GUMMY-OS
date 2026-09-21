@@ -1,9 +1,14 @@
 """Action-approval endpoints (``/api/v1/actions``) — thin HTTP (M10).
 
-The confirm-before-acting surface. Approving records a decision only;
-no executor exists in Phase 3, so no endpoint here can fire a side effect.
-A step-up-auth requirement for Red actions is a reserved seam for the
-approval UI phase.
+The confirm-before-acting surface. As of Phase 4, approving a tool-backed
+action **does** fire its executor: the decision is committed first, then the
+action runs from the stored preview and lands in the audit trail like any
+other invocation (see ``services/agents/action_dispatch``). Rejecting still
+records a decision and nothing else.
+
+The tool and its arguments are read from the approval row, never from the
+approve request, so this endpoint cannot be used to run an arbitrary call
+under the authority of an approval granted for something else.
 """
 
 from __future__ import annotations
@@ -17,10 +22,14 @@ from app.api.deps import CurrentUserId, DbSession
 from app.core.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from app.models.enums import ApprovalStatus
 from app.schemas.action import (
+    ActionApprovalDecisionResponse,
     ActionApprovalListResponse,
     ActionApprovalResponse,
+    ActionExecutionResult,
 )
-from app.services.agents import approval_service
+from app.services.agents import action_dispatch, approval_service
+from app.services.agents.tools import workspace as workspace_config
+from app.services.agents.tools.context import ToolContext
 
 router = APIRouter(prefix="/actions", tags=["actions"])
 
@@ -66,18 +75,44 @@ async def get_action(
 
 @router.post(
     "/{approval_id}/approve",
-    response_model=ActionApprovalResponse,
-    summary="Approve a pending action (records the decision; no executor)",
+    response_model=ActionApprovalDecisionResponse,
+    summary="Approve a pending action and run it",
 )
 async def approve_action(
     approval_id: uuid.UUID,
     user_id: CurrentUserId,
     db: DbSession,
-) -> ActionApprovalResponse:
+) -> ActionApprovalDecisionResponse:
+    """Approve, then execute, then report both outcomes separately.
+
+    The decision commits first. If the action then fails, the approval stays
+    approved and the failure is reported in ``execution`` — re-approving is
+    refused, so a side-effecting command cannot be replayed by retrying.
+    """
     approval = await approval_service.approve(
         db, user_id=user_id, approval_id=approval_id
     )
-    return ActionApprovalResponse.model_validate(approval)
+    result = await action_dispatch.dispatch_approved(
+        db,
+        approval,
+        context=ToolContext(
+            session=db,
+            user_id=user_id,
+            workspace=workspace_config.from_settings(),
+        ),
+    )
+    return ActionApprovalDecisionResponse(
+        approval=ActionApprovalResponse.model_validate(approval),
+        execution=ActionExecutionResult(
+            executed=result.executed,
+            tool_key=result.tool_key,
+            outcome=result.outcome.value if result.outcome else None,
+            output=result.output,
+            error=result.error,
+            duration_ms=result.duration_ms,
+            invocation_id=result.invocation_id,
+        ),
+    )
 
 
 @router.post(

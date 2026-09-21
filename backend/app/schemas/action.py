@@ -36,3 +36,28 @@ class ActionApprovalListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class ActionExecutionResult(BaseModel):
+    """What happened when an approved action actually ran (Phase 4).
+
+    Kept separate from the approval because the two can disagree: the approval
+    is always recorded, while the action it authorises may still fail on
+    contact with the machine. Collapsing them would make a failed shell
+    command look like a failed approval.
+    """
+
+    executed: bool
+    tool_key: str
+    outcome: str | None = None
+    output: dict | None = None
+    error: str | None = None
+    duration_ms: float = 0.0
+    invocation_id: uuid.UUID | None = None
+
+
+class ActionApprovalDecisionResponse(BaseModel):
+    """The decided approval, plus whatever execution it triggered."""
+
+    approval: ActionApprovalResponse
+    execution: ActionExecutionResult | None = None
