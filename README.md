@@ -17,15 +17,16 @@ Postgres container, one Ollama daemon, two dev servers.
 
 | Area | State |
 | --- | --- |
-| Backend tests | **1016 passed**, 4 skipped (Postgres-gated), 0 failed |
-| Frontend tests | **25 passed**, 0 failed |
+| Backend tests | **1205 passed**, 5 skipped (Postgres/symlink-gated), 0 failed |
+| Frontend tests | **30 passed**, 0 failed |
 | TypeScript · ESLint | clean |
-| `ruff` · `black` · `mypy app` | clean (241 source files) |
+| `ruff` · `black` · `mypy app` | clean (259 source files) |
 | `mypy tests` | 57 pre-existing errors — [reported, not hidden](docs/VERIFICATION_REPORT.md#1-automated-checks) |
 | Migrations | 25 Alembic revisions |
 | API | 73 endpoints across 15 routers |
 | Agents | 6 routed specialists + general + recall |
-| Tools | 9 executable, 2 modeled behind approval |
+| Tools | **17 executable**, 2 modeled behind approval, plus any MCP server you attach |
+| Reach | Browser, installable PWA, and Telegram |
 
 Every number above was produced by running the thing. See the
 [Verification Report](docs/VERIFICATION_REPORT.md) for exact denominators.
@@ -148,6 +149,68 @@ A registry → policy → executor path with Green/Yellow/Red tiers, JSON-Schema
 validation, per-tool timeouts, a 4-iteration loop cap, and redacted audit rows.
 The calculator parses with an AST allowlist — `eval` is never used, so
 `__import__('os').system(...)` is rejected at parse level.
+
+**Approved actions now run.** Green tools execute immediately; Yellow and Red
+create a previewed approval and execute *only* once you approve, from the
+stored preview rather than the approve request — so an approval authorises the
+exact call you read, not whatever arrives later. Red (`shell_exec`) requires
+per-action approval and no standing allowance can cover it.
+
+**Machine-facing tools are workspace-scoped.** `git_status` / `git_log` /
+`git_diff`, `workspace_read` / `workspace_list` (Green), `workspace_write`
+(Yellow) and `shell_exec` (Red) resolve every path through one boundary:
+`GUMMY_WORKSPACE_ROOTS`. Empty by default, which means they refuse everything —
+a missing variable is never the difference between a sandbox and your whole
+disk. Paths resolve and follow symlinks *before* containment, so neither `..`
+nor a link escapes, and names like `.env` or `id_rsa` are refused inside an
+allowed root.
+
+`shell_exec` runs one program with arguments via `shlex` + argv — **not a
+shell**. Pipes, `;`, `&&` and redirection are rejected rather than executed, so
+the entire shell-injection class does not apply. There is no command allowlist,
+deliberately: `python` and `git` both trivially run arbitrary code, so a list
+of program names would be reassurance rather than security. The boundary is the
+human approval and the workspace root.
+
+`http_fetch` reads one page so an agent can stop answering from search
+snippets. Every hop is resolved to its IPs and refused unless all of them are
+public, and redirects are followed manually so a public host cannot bounce the
+request to `127.0.0.1` after the first check passed.
+
+### External tools (MCP)
+Any [Model Context Protocol](https://modelcontextprotocol.io) server can be
+attached in `GUMMY_MCP_SERVERS`. Tools are discovered **once at startup and
+then the catalog is sealed** — a running process never gains a capability, so
+the set of things GUMMY can do is decided by a human and fixed for the life of
+the process.
+
+A server does not get to say how dangerous it is: everything it exposes is
+Yellow unless you list it in that server's `green` array. Tools are namespaced
+`mcp__<server>__<tool>`, so two servers cannot collide and nothing external can
+shadow a built-in.
+
+### Energy and cost
+The claim that running your own model is cheaper is measured rather than
+asserted. GPU power is sampled during generation and integrated into joules —
+not tokens multiplied by a constant, because a partly CPU-offloaded model draws
+a very different profile from one resident in VRAM. Each run reports what it
+drew, what the electricity cost, and what the same tokens would have cost on a
+hosted frontier model.
+
+It is careful about what it does not know: only the GPU rail is measured (so
+the figure is a floor, not a total), idle draw is included rather than
+subtracted, and on a machine with no NVIDIA GPU there are simply **no joules**
+rather than a fabricated estimate.
+
+### Telegram
+Gummy on your phone, with the model and the database still on your hardware.
+Long polling, not webhooks: the machine only makes outbound connections, so
+nothing is exposed and no port is opened. Each chat maps to a persistent
+conversation, so context survives restarts.
+
+The allowlist is not optional — the worker refuses to start without one. A bot
+token addresses a globally reachable endpoint, so an empty allowlist would let
+any Telegram user talk to your assistant with your memory and your tools.
 
 ### Automation
 Reminders and recurring check-ins persisted in PostgreSQL, **surviving a

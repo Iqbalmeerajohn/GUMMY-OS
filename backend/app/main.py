@@ -30,10 +30,12 @@ from app.observability import langfuse as langfuse_obs
 from app.services.agents.registry import get_registry
 from app.services.embeddings.factory import get_embedding_service
 from app.services.llm.factory import get_llm_provider
+from app.services.mcp import bridge as mcp_bridge
 from app.services.search import provider as search_provider
 from app.workers.automation_scheduler import automation_scheduler
 from app.workers.embedding_worker import embedding_worker
 from app.workers.enrichment_worker import enrichment_worker
+from app.workers.telegram_worker import telegram_worker
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +60,17 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     warm = getattr(llm, "warm", None)
     if warm is not None:
         await warm()
+
+    # Discover external (MCP) tools and seal the catalog. This is the single
+    # moment the capability set can change; from here the process's tools are
+    # fixed. Never fatal — a broken third-party server costs its own tools
+    # and nothing else.
+    try:
+        installed = await mcp_bridge.install_configured_servers()
+        if installed:
+            logger.info("external tools available: %s", ", ".join(installed))
+    except Exception:
+        logger.exception("external tool discovery failed; continuing without it")
 
     # Start the background workers when a database is configured.
     sessionmaker = get_sessionmaker()
@@ -85,6 +98,17 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         )
         automation_scheduler.start()
 
+        # Telegram, if configured. Outbound polling only — no inbound port is
+        # opened. The worker declines to start unless an allowlist names the
+        # chats it may serve; see its own logging for exactly why it is off.
+        telegram_worker.configure(
+            sessionmaker=sessionmaker,
+            token=settings.gummy_telegram_bot_token,
+            allowed_chat_ids=settings.gummy_telegram_allowed_chat_ids,
+            owner_user_id=settings.gummy_telegram_owner_user_id,
+        )
+        telegram_worker.start()
+
         # Seed the agent registry catalog (idempotent upsert of built-in
         # manifests; runs with no tenant GUC — the agents_global_seed path).
         # Best-effort: a seeding failure must not block boot.
@@ -98,6 +122,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
     yield
 
+    await telegram_worker.stop()
     await automation_scheduler.stop()
     await enrichment_worker.stop()
     await embedding_worker.stop()

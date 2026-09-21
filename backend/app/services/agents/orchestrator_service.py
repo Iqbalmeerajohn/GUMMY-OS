@@ -64,6 +64,7 @@ from app.services.agents import (
 from app.services.agents.handlers import grounding
 from app.services.agents.manifests import GENERAL_AGENT_KEY
 from app.services.agents.registry import get_registry
+from app.services.agents.tools import workspace as workspace_config
 from app.services.agents.tools.context import ToolContext
 from app.services.agents.tools.loop import ToolLoopResult, run_tool_loop
 from app.services.embeddings.embedding_service import EmbeddingService
@@ -865,6 +866,7 @@ async def orchestrate_stream(
                             session=session,
                             user_id=user_id,
                             embedding_service=embedding_service,
+                            workspace=workspace_config.from_settings(),
                         ),
                     ):
                         if event["type"] == "step":
