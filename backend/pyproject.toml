@@ -36,6 +36,13 @@ dependencies = [
 embeddings = [
     "sentence-transformers>=3.0",
 ]
+# GPU power sampling for energy/cost accounting. Optional because the feature
+# degrades to token-only accounting without it rather than failing, and
+# because the package is meaningless on a machine with no NVIDIA card.
+# Install with `uv sync --extra energy`.
+energy = [
+    "nvidia-ml-py>=12.560",
+]
 dev = [
     "ruff>=0.7",
     "black>=24.10",
