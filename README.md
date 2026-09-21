@@ -1,5 +1,11 @@
 # GUMMY OS
 
+[![CI](https://github.com/Iqbalmeerajohn/GUMMY-OS/actions/workflows/ci.yml/badge.svg)](https://github.com/Iqbalmeerajohn/GUMMY-OS/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)
+![Node 22](https://img.shields.io/badge/node-22-blue.svg)
+![Local-first](https://img.shields.io/badge/cloud-optional-brightgreen.svg)
+
 > A local-first personal AI operating system: persistent memory, multi-agent
 > orchestration, safe tool execution, and durable automation — running entirely
 > on your own machine.
@@ -232,6 +238,22 @@ account. With no email provider configured the reset link is written to the
 backend log tagged `[GUMMY AUTH]` — the whole flow is testable locally, and
 nothing ever claims an email was sent when none was. Verified live: **19/19**,
 plus the full browser round trip.
+
+---
+
+## Quickstart
+
+**Windows** — one command, from a cold machine. It starts Docker, waits for
+Postgres, checks the schema, starts Ollama, the backend and the frontend in
+dependency order, and opens the app:
+
+```bash
+gummy
+```
+
+`gummy stop` · `gummy rebuild` · `gummy dev`
+
+Everything else — including macOS and Linux — is below.
 
 ---
 

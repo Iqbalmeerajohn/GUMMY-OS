@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "GUMMY OS backend — memory engine & agent runtime (Phase 1)."
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "UNLICENSED" }
+license = { text = "MIT" }
 authors = [{ name = "GUMMY OS" }]
 
 # Runtime dependencies. Day 1 needs the web + config + (optional) DB-readiness
