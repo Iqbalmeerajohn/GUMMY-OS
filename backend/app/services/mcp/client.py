@@ -31,7 +31,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import shutil
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -120,12 +123,62 @@ class MCPClient:
 
         await self._handshake()
 
+    @staticmethod
+    def _resolve_launcher(command: str, args: list[str]) -> tuple[str, list[str]]:
+        """Replace a Windows ``.cmd`` npm shim with a direct node invocation.
+
+        Measured, not theorised. Spawning ``npx.cmd`` succeeds — the process
+        starts and stays alive — but nothing ever arrives on its stdout, so
+        the handshake times out after 90s with an empty stderr and no clue
+        why. Running the same server's ``dist/index.js`` under ``node``
+        responds instantly.
+
+        The cause is that a ``.cmd`` shim is a batch script: cmd.exe runs it,
+        it launches node as a *child*, and the pipe this process created does
+        not chain through to that grandchild. So the shim has to be unwrapped
+        rather than worked around with a longer timeout.
+
+        Falls through unchanged when the package is not already in the npx
+        cache — a first run still has to go through npx to install it, and
+        the honest failure ("timed out") is better than a fabricated path.
+        """
+        if os.name != "nt" or not command.lower().endswith(".cmd"):
+            return command, args
+        if "npx" not in Path(command).stem.lower():
+            return command, args
+
+        # npx invocation shape: [-y] <package> [server args...]
+        package = next((a for a in args if not a.startswith("-")), None)
+        if package is None:
+            return command, args
+
+        node = shutil.which("node")
+        if node is None:
+            return command, args
+
+        cache = Path.home() / "AppData" / "Local" / "npm-cache" / "_npx"
+        if not cache.is_dir():
+            return command, args
+
+        for entry in cache.iterdir():
+            candidate = entry / "node_modules" / package / "dist" / "index.js"
+            if candidate.is_file():
+                rest = args[args.index(package) + 1 :]
+                logger.info(
+                    "unwrapping %s shim: running %s under node", command, package
+                )
+                return node, [str(candidate), *rest]
+        return command, args
+
     async def _start_process(self) -> None:
         assert isinstance(self._transport, StdioServer)
+        command, args = self._resolve_launcher(
+            self._transport.command, list(self._transport.args)
+        )
         try:
             self._process = await asyncio.create_subprocess_exec(
-                self._transport.command,
-                *self._transport.args,
+                command,
+                *args,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,

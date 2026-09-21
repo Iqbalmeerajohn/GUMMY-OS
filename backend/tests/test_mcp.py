@@ -314,3 +314,28 @@ async def test_bridge_is_a_no_op_when_disabled(monkeypatch: pytest.MonkeyPatch) 
 
 def _should_not_be_called(*_args: object, **_kwargs: object) -> list[str]:
     raise AssertionError("install_external_tools must not run when MCP is disabled")
+
+
+# ── Windows launcher unwrapping ──────────────────────────────────────────────
+
+
+def test_launcher_is_untouched_off_windows_or_for_a_real_binary() -> None:
+    """The unwrap is narrow: only a Windows npx .cmd shim is rewritten."""
+    resolve = MCPClient._resolve_launcher
+    assert resolve("node", ["server.js"]) == ("node", ["server.js"])
+    assert resolve("python", ["-m", "srv"]) == ("python", ["-m", "srv"])
+    # A .cmd that is not npx is left alone — we only know npx's layout.
+    assert resolve("mytool.cmd", ["--flag"]) == ("mytool.cmd", ["--flag"])
+
+
+def test_launcher_falls_through_when_the_package_is_not_cached() -> None:
+    """A first run still has to go through npx to install the package.
+
+    Returning the original command means the honest failure ("timed out")
+    rather than a fabricated path that fails more confusingly.
+    """
+    command, args = MCPClient._resolve_launcher(
+        "npx.cmd", ["-y", "@example/definitely-not-installed-xyz", "/tmp"]
+    )
+    assert command == "npx.cmd"
+    assert args == ["-y", "@example/definitely-not-installed-xyz", "/tmp"]
