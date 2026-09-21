@@ -70,8 +70,15 @@ async def test_approve_then_conflict(
         f"/api/v1/actions/{approval_id}/approve", params=_q()
     )
     assert approved.status_code == 200
-    assert approved.json()["status"] == "approved"
-    assert approved.json()["decided_at"] is not None
+    # Phase 4: approve returns the decision AND the execution it triggered,
+    # because the two can disagree — the approval succeeds while the action
+    # it authorised fails. They are reported separately for that reason.
+    body = approved.json()
+    assert body["approval"]["status"] == "approved"
+    assert body["approval"]["decided_at"] is not None
+    # The seeded approval is for a modeled tool with no executor, so nothing
+    # ran — reported as not-executed rather than as a failure.
+    assert body["execution"]["executed"] is False
 
     again = await api_client.post(f"/api/v1/actions/{approval_id}/reject", params=_q())
     assert again.status_code == 409
