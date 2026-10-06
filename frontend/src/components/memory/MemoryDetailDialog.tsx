@@ -3,7 +3,10 @@
 import { useState } from "react";
 import { Archive, ArchiveRestore, History, Pencil, Trash2 } from "lucide-react";
 
-import { CategoryChip, ImportanceBadge } from "@/components/memory/MemoryBadges";
+import {
+  CategoryChip,
+  ImportanceBadge,
+} from "@/components/memory/MemoryBadges";
 import { ConfirmDialog } from "@/components/memory/ConfirmDialog";
 import {
   Dialog,
@@ -64,24 +67,22 @@ export function MemoryDetailDialog({
 
             <dl className="border-border/60 grid grid-cols-2 gap-x-4 gap-y-2.5 rounded-xl border p-3 text-xs">
               <Meta label="Source" value={getSourceLabel(memory.source)} />
-              <Meta
-                label="Created"
-                value={formatFullDate(memory.created_at)}
-              />
+              <Meta label="Created" value={formatFullDate(memory.created_at)} />
               <Meta
                 label="Last updated"
                 value={formatFullDate(memory.updated_at)}
               />
-              <Meta
-                label="Revisions"
-                value={String(memory.versions.length)}
-              />
+              <Meta label="Revisions" value={String(memory.versions.length)} />
             </dl>
 
             <VersionHistory memory={memory} />
 
             <div className="flex flex-wrap gap-2 pt-1">
-              <Button size="sm" variant="outline" onClick={() => onEdit(memory)}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onEdit(memory)}
+              >
                 <Pencil className="size-3.5" />
                 Edit
               </Button>

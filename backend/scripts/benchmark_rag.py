@@ -42,8 +42,7 @@ from app.services.files.extraction_service import extract_segments
 from app.services.files.file_retrieval_service import file_retrieval_service
 from app.services.files.hybrid_retrieval import search as hybrid_search
 
-DOC = (
-    """# Engineering Handbook
+DOC = """# Engineering Handbook
 
 ## Deployment
 Services deploy through a blue-green rollout. The health check must pass for
@@ -61,9 +60,7 @@ backups are tested by restore every quarter.
 ## Access Control
 Production access requires hardware MFA. Break-glass credentials live in the
 vault and their use pages the security team automatically.
-"""
-    * 6
-)
+""" * 6
 
 # Make every repetition textually distinct so no two chunks collide in the
 # embedding cache; otherwise "embedding latency" measures a dict lookup.

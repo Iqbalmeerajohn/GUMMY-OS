@@ -147,14 +147,18 @@ async def invoke(
         decision, status = ToolDecision.PENDING, ToolRunStatus.NOT_EXECUTED
         output, error = None, None
         outcome = ToolOutcome.APPROVAL_REQUIRED
-    elif spec.tier != PermissionTier.GREEN or spec.executor is None:
-        # ALLOW above Green (standing allowance), or a modeled tool with no
-        # executor: nothing may run. Recorded as pending/unavailable.
+    elif spec.executor is None:
+        # A modeled tool: declared and gated so it can be routed and audited,
+        # but nothing is wired to run it. Recorded as pending/unavailable.
         decision, status = ToolDecision.PENDING, ToolRunStatus.NOT_EXECUTED
         output = None
         error = f"{spec.name} is declared but not available in this build."
         outcome = ToolOutcome.UNAVAILABLE
     else:
+        # ALLOW: Green (read-only), or a Yellow tool the user granted a
+        # standing allowance for. Red never reaches here — the policy engine
+        # returns PROMPT for it unconditionally, so every Red action is
+        # approved individually and runs through ``action_dispatch`` instead.
         decision = ToolDecision.ALLOWED
         # Execution, validation, and the timeout all live in the executor, so a
         # tool cannot opt out of any of them and nothing here can raise.

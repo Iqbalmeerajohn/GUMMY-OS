@@ -17,6 +17,7 @@ from collections.abc import Callable
 from app.services.agents.manifests import (
     AUTOMATION_AGENT_KEY,
     CAREER_AGENT_KEY,
+    ENGINEER_AGENT_KEY,
     LEARNING_AGENT_KEY,
     MEMORY_AGENT_KEY,
     PLANNER_AGENT_KEY,
@@ -25,6 +26,7 @@ from app.services.agents.manifests import (
 from app.services.agents.prompts import (
     automation_agent_prompt,
     career_agent_prompt,
+    engineer_agent_prompt,
     learning_agent_prompt,
     memory_agent_prompt,
     planner_agent_prompt,
@@ -37,6 +39,7 @@ PersonaBuilder = Callable[[str, str], str]
 PERSONA_BUILDERS: dict[str, PersonaBuilder] = {
     AUTOMATION_AGENT_KEY: automation_agent_prompt.build_persona,
     CAREER_AGENT_KEY: career_agent_prompt.build_persona,
+    ENGINEER_AGENT_KEY: engineer_agent_prompt.build_persona,
     LEARNING_AGENT_KEY: learning_agent_prompt.build_persona,
     PLANNER_AGENT_KEY: planner_agent_prompt.build_persona,
     MEMORY_AGENT_KEY: memory_agent_prompt.build_persona,

@@ -20,11 +20,14 @@ rather than trusting the model to read prose.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from app.models.enums import PermissionTier
 from app.services.agents.tools.context import ToolContext
+
+logger = logging.getLogger(__name__)
 
 # Per-tool default. Every tool is local and read-only today, so seconds are
 # generous; the executor enforces it so a wedged tool cannot hold a turn open.
@@ -92,7 +95,11 @@ def _catalog() -> dict[str, ToolSpec]:
         clock,
         doc_read,
         file_search,
+        git_inspect,
+        host_files,
+        http_fetch,
         memory_read,
+        shell,
         web_search,
     )
 
@@ -265,6 +272,177 @@ def _catalog() -> dict[str, ToolSpec]:
             parameters={"type": "object", "properties": {}},
             executor=automation_tools.execute_list,
         ),
+        # ── Machine-facing: git (read-only, workspace-scoped) ─────────────
+        # One tool per git verb rather than a `git(command=...)` tool: the verb
+        # decides the tier, so it must not be a model-supplied string.
+        ToolSpec(
+            key="git_status",
+            display_name="Git Status",
+            category="code",
+            tier=PermissionTier.GREEN,
+            description=(
+                "Show the working-tree status of a git repository on this "
+                "machine: current branch and which files are modified, staged, "
+                "or untracked. Read-only. The repository must be inside the "
+                "configured workspace."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "repo_path": _arg("Absolute path to the repository."),
+                },
+                "required": ["repo_path"],
+            },
+            executor=git_inspect.execute_status,
+            timeout_seconds=25.0,
+        ),
+        ToolSpec(
+            key="git_log",
+            display_name="Git Log",
+            category="code",
+            tier=PermissionTier.GREEN,
+            description=(
+                "List recent commits in a git repository with sha, author, "
+                "date and subject. Read-only. Use before describing what "
+                "changed in a project."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "repo_path": _arg("Absolute path to the repository."),
+                    "count": _int_arg("How many commits (1-50, default 10)."),
+                },
+                "required": ["repo_path"],
+            },
+            executor=git_inspect.execute_log,
+            timeout_seconds=25.0,
+        ),
+        ToolSpec(
+            key="git_diff",
+            display_name="Git Diff",
+            category="code",
+            tier=PermissionTier.GREEN,
+            description=(
+                "Show the unified diff of uncommitted changes in a git "
+                "repository, or of the staged set. Read-only."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "repo_path": _arg("Absolute path to the repository."),
+                    "staged": {
+                        "type": "boolean",
+                        "description": "Diff the staged set instead of the "
+                        "working tree. Default false.",
+                    },
+                },
+                "required": ["repo_path"],
+            },
+            executor=git_inspect.execute_diff,
+            timeout_seconds=25.0,
+        ),
+        # ── Machine-facing: host files ────────────────────────────────────
+        ToolSpec(
+            key="workspace_read",
+            display_name="Read Workspace File",
+            category="code",
+            tier=PermissionTier.GREEN,
+            description=(
+                "Read a text file from this machine. Only paths inside the "
+                "configured workspace are allowed, and protected names such as "
+                ".env or private keys are refused. For files the user uploaded "
+                "to GUMMY, use doc_read instead."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {"path": _arg("Absolute path to the file.")},
+                "required": ["path"],
+            },
+            executor=host_files.execute_read,
+        ),
+        ToolSpec(
+            key="workspace_list",
+            display_name="List Workspace Directory",
+            category="code",
+            tier=PermissionTier.GREEN,
+            description=(
+                "List the immediate contents of a directory on this machine "
+                "(not recursive). Only paths inside the configured workspace "
+                "are allowed."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {"path": _arg("Absolute path to the directory.")},
+                "required": ["path"],
+            },
+            executor=host_files.execute_list,
+        ),
+        # ── Machine-facing: network read ──────────────────────────────────
+        ToolSpec(
+            key="http_fetch",
+            display_name="Fetch URL",
+            category="research",
+            tier=PermissionTier.GREEN,
+            description=(
+                "Fetch a single public web page or API endpoint over HTTP GET "
+                "and return its text. Use after web_search to actually read a "
+                "result rather than answering from its snippet. Internal and "
+                "loopback addresses are refused."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {"url": _arg("Full http(s) URL to fetch.")},
+                "required": ["url"],
+            },
+            executor=http_fetch.execute,
+            timeout_seconds=20.0,
+        ),
+        # ── Consequential: executes only after a human approves ───────────
+        ToolSpec(
+            key="workspace_write",
+            display_name="Write Workspace File",
+            category="code",
+            tier=PermissionTier.YELLOW,
+            description=(
+                "Write text to a file on this machine, replacing it entirely. "
+                "Only paths inside the configured workspace are allowed. "
+                "Requires your approval before it runs."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": _arg("Absolute path to the file to write."),
+                    "content": _arg("Full new contents of the file."),
+                },
+                "required": ["path", "content"],
+            },
+            executor=host_files.execute_write,
+        ),
+        ToolSpec(
+            key="shell_exec",
+            display_name="Run Shell Command",
+            category="system",
+            tier=PermissionTier.RED,
+            description=(
+                "Run a single program with arguments inside the workspace and "
+                "return its output. Not a shell: pipes, redirection and ';' are "
+                "not supported, so run steps as separate calls. Requires your "
+                "approval for every command."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "command": _arg(
+                        "One program and its arguments, e.g. 'pytest -q tests'."
+                    ),
+                    "cwd": _arg("Absolute directory to run in, inside the workspace."),
+                    "timeout_seconds": _int_arg("Kill after this long (1-120)."),
+                },
+                "required": ["command", "cwd"],
+            },
+            executor=shell.execute,
+            timeout_seconds=130.0,
+        ),
         # ── Modeled, executor-deferred (approval UI first) ────────────────
         ToolSpec(
             key="email_send",
@@ -304,6 +482,63 @@ TOOL_CATALOG: dict[str, ToolSpec] = _catalog()
 TOOL_TIERS: dict[str, PermissionTier] = {
     key: spec.tier for key, spec in TOOL_CATALOG.items()
 }
+
+# Set once external tools have been installed. The catalog is immutable at
+# runtime; this makes the guarantee precise — it is frozen after boot, not at
+# import — and the flag is what enforces "after boot" being a single moment.
+_EXTERNAL_INSTALLED = False
+
+
+class CatalogSealedError(RuntimeError):
+    """External tools were installed twice, or after the catalog was sealed."""
+
+
+def install_external_tools(specs: list[ToolSpec]) -> list[str]:
+    """Add externally-discovered tools (MCP) to the catalog, once, at startup.
+
+    This is the single controlled exception to "code-defined and immutable".
+    The reasoning: MCP servers are chosen by an operator in configuration, but
+    the tools they expose are only knowable by asking them, so the set cannot
+    be written out in advance. What must stay true is that the capability set
+    is decided by a human and fixed for the life of the process — so this runs
+    exactly once during startup and refuses a second call.
+
+    A spec whose key collides with an existing tool is **rejected**, not
+    overwritten: a third-party server must never be able to replace a built-in
+    (and with namespacing this can only happen between two external sources).
+
+    Returns the keys actually installed.
+    """
+    global _EXTERNAL_INSTALLED
+    if _EXTERNAL_INSTALLED:
+        raise CatalogSealedError(
+            "external tools have already been installed; the catalog is sealed"
+        )
+
+    installed: list[str] = []
+    for spec in specs:
+        if spec.key in TOOL_CATALOG:
+            logger.warning(
+                "refusing external tool %r: that key already exists", spec.key
+            )
+            continue
+        TOOL_CATALOG[spec.key] = spec
+        TOOL_TIERS[spec.key] = spec.tier
+        installed.append(spec.key)
+
+    _EXTERNAL_INSTALLED = True
+    if installed:
+        logger.info("installed %d external tool(s): %s", len(installed), installed)
+    return installed
+
+
+def reset_external_tools_for_tests() -> None:
+    """Drop installed external tools and unseal. Tests only."""
+    global _EXTERNAL_INSTALLED
+    for key in [k for k in TOOL_CATALOG if k.startswith("mcp__")]:
+        TOOL_CATALOG.pop(key, None)
+        TOOL_TIERS.pop(key, None)
+    _EXTERNAL_INSTALLED = False
 
 
 # ── Registry surface ─────────────────────────────────────────────────────────

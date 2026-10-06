@@ -8,8 +8,10 @@ import {
   FileText,
   MessagesSquare,
   Plus,
+  Activity,
   Search,
   Settings,
+  ShieldCheck,
   Target,
   Users,
   X,
@@ -18,6 +20,8 @@ import {
 } from "lucide-react";
 
 import { LivingOrb } from "@/components/brand/LivingOrb";
+import { ApprovalsCenter } from "@/components/actions/ApprovalsCenter";
+import { ActivityCenter } from "@/components/activity/ActivityCenter";
 import { AgentDirectory } from "@/components/agents/AgentDirectory";
 import { AutomationsCenter } from "@/components/automations/AutomationsCenter";
 import { FilesCenter } from "@/components/files/FilesCenter";
@@ -43,10 +47,18 @@ type PanelId =
   | "files"
   | "agents"
   | "automations"
+  | "approvals"
+  | "activity"
   | "settings";
 
 /** Panels wide enough to need it get a roomier sheet; the rest stay narrow. */
-const WIDE: ReadonlySet<PanelId> = new Set(["memory", "goals", "files"]);
+const WIDE: ReadonlySet<PanelId> = new Set([
+  "memory",
+  "goals",
+  "files",
+  "approvals",
+  "activity",
+]);
 
 const RAIL: { id: PanelId; label: string; icon: LucideIcon }[] = [
   { id: "history", label: "Chats", icon: MessagesSquare },
@@ -56,6 +68,8 @@ const RAIL: { id: PanelId; label: string; icon: LucideIcon }[] = [
   { id: "files", label: "Files", icon: FileText },
   { id: "agents", label: "Agents", icon: Users },
   { id: "automations", label: "Automations", icon: Zap },
+  { id: "approvals", label: "Approvals", icon: ShieldCheck },
+  { id: "activity", label: "Activity", icon: Activity },
 ];
 
 const TITLES: Record<PanelId, string> = {
@@ -66,6 +80,8 @@ const TITLES: Record<PanelId, string> = {
   files: "Files",
   agents: "Agents",
   automations: "Automations",
+  approvals: "Approvals",
+  activity: "Activity",
   settings: "Settings",
 };
 
@@ -297,6 +313,10 @@ function SlideOver({
                 <AgentDirectory />
               ) : panel === "automations" ? (
                 <AutomationsCenter />
+              ) : panel === "approvals" ? (
+                <ApprovalsCenter />
+              ) : panel === "activity" ? (
+                <ActivityCenter />
               ) : (
                 <SettingsPanel />
               )}

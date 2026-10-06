@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "GUMMY OS backend — memory engine & agent runtime (Phase 1)."
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "UNLICENSED" }
+license = { text = "MIT" }
 authors = [{ name = "GUMMY OS" }]
 
 # Runtime dependencies. Day 1 needs the web + config + (optional) DB-readiness
@@ -36,12 +36,29 @@ dependencies = [
 embeddings = [
     "sentence-transformers>=3.0",
 ]
+# GPU power sampling for energy/cost accounting. Optional because the feature
+# degrades to token-only accounting without it rather than failing, and
+# because the package is meaningless on a machine with no NVIDIA card.
+# Install with `uv sync --extra energy`.
+energy = [
+    "nvidia-ml-py>=12.560",
+]
 dev = [
     "ruff>=0.7",
-    "black>=24.10",
+    # Pinned, not floating. A formatter's output is a CI gate, so an open
+    # bound means a new release silently reformats untouched files and turns
+    # main red with no commit to blame. Bump it deliberately, in its own
+    # commit, with the reformat it causes.
+    "black==26.5.1",
     "mypy>=1.13",
-    "pytest>=8.3",
-    "pytest-asyncio>=0.24",
+    # Upper bounds, not just floors. A fresh `uv sync` resolved pytest 9 and
+    # pytest-asyncio 1.x, and 1.x is a rewrite of event-loop and fixture
+    # scoping that hangs this suite's async database tests outright — with no
+    # commit to blame, because nothing in the repo changed. Test tooling is a
+    # CI gate like the formatters, so it gets the same treatment: bump
+    # deliberately, in its own commit, with whatever fallout that causes.
+    "pytest>=8.3,<9",
+    "pytest-asyncio>=0.24,<1",
     "httpx>=0.27",
     "aiosqlite>=0.20",
 ]

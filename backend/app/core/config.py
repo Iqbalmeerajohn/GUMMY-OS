@@ -248,6 +248,63 @@ class Settings(BaseSettings):
     # backend working directory; override per-environment.
     files_storage_dir: str = "var/files"
 
+    # ── Workspace (host access for the machine-facing tools) ─────────────────
+    # Directories the git / shell / host-file tools may touch, separated by the
+    # platform path separator (';' on Windows, ':' elsewhere). EMPTY BY DEFAULT,
+    # which means those tools refuse every path: a missing variable must never
+    # be the difference between a sandbox and full host access. Paths are
+    # resolved and symlink-followed before containment (see tools/workspace.py).
+    gummy_workspace_roots: str = ""
+    # Ceiling on how long one shell command may run. The executor's per-tool
+    # timeout applies too; whichever is lower wins.
+    gummy_shell_timeout_seconds: float = 30.0
+
+    # ── Telegram (reach Gummy from a phone) ──────────────────────────────────
+    # Outbound long-polling only: no inbound port, no public hostname, no
+    # webhook. Get a token from @BotFather. The worker REFUSES to start
+    # without an allowlist — a bot token is a bearer credential for a
+    # globally addressable endpoint, so an empty allowlist would let any
+    # Telegram user talk to your assistant with your memory and your tools.
+    # Find your numeric id by messaging the bot then reading
+    # https://api.telegram.org/bot<token>/getUpdates
+    gummy_telegram_bot_token: str = ""
+    gummy_telegram_allowed_chat_ids: str = ""  # comma-separated numeric ids
+    # Which account inbound messages are attributed to. Telegram has no
+    # concept of your GUMMY user, so the mapping is explicit rather than
+    # guessed from "the only user in the database".
+    gummy_telegram_owner_user_id: uuid.UUID | None = None
+
+    # ── External tools (Model Context Protocol) ──────────────────────────────
+    # Third-party tool servers, discovered once at startup and then frozen.
+    # Either inline JSON or a path to a .json file. Each entry needs a short
+    # `name` plus either `command`+`args` (stdio) or `url`+optional `token`
+    # (HTTP). Discovered tools are namespaced mcp__<name>__<tool> and are
+    # YELLOW (approval required) unless listed in that server's `green` array
+    # — a server never chooses its own tier. On Windows an npm launcher must
+    # be spelled with its suffix ("npx.cmd"), because the process is spawned
+    # without a shell. Example:
+    #   [{"name":"fs","command":"npx.cmd",
+    #     "args":["-y","@modelcontextprotocol/server-filesystem","E:/work"],
+    #     "green":["list_directory","read_text_file"]}]
+    gummy_mcp_enabled: bool = False
+    gummy_mcp_servers: str = ""
+
+    # ── Energy & cost accounting ─────────────────────────────────────────────
+    # Samples GPU power during local generation so a run can report the joules
+    # it actually cost, and what the same tokens would have cost on a hosted
+    # frontier model. Needs an NVIDIA GPU and `pynvml`; degrades to token-only
+    # accounting (no joules) everywhere else, and never fails a turn.
+    gummy_energy_accounting: bool = True
+    # Sampling period for the GPU power poll. 100ms is fine-grained enough to
+    # catch a short generation without adding measurable overhead.
+    gummy_energy_poll_ms: int = 100
+    # What a comparable hosted frontier model would charge, USD per 1M tokens.
+    # Used only to render the "what you did not pay" figure.
+    gummy_cloud_input_usd_per_mtok: float = 3.0
+    gummy_cloud_output_usd_per_mtok: float = 15.0
+    # Local electricity price, USD per kWh, for turning joules into money.
+    gummy_electricity_usd_per_kwh: float = 0.15
+
     # ── Observability (Langfuse — LLM/agent tracing) ──────────────────────────
     # Tracks every LLM call, token usage, latency, cost, and agent/retrieval
     # metadata. Fully disabled (a no-op) unless BOTH the public and secret keys

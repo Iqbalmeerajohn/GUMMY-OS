@@ -2,7 +2,10 @@
 
 import { Clock } from "lucide-react";
 
-import { CategoryChip, ImportanceBadge } from "@/components/memory/MemoryBadges";
+import {
+  CategoryChip,
+  ImportanceBadge,
+} from "@/components/memory/MemoryBadges";
 import { getSourceLabel } from "@/config/memory";
 import { formatMonthYear } from "@/lib/format";
 import type { Memory } from "@/lib/memory/types";

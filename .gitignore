@@ -108,3 +108,9 @@ temp/
 # broad so a relocated store cannot slip through.
 backend/var/
 var/files/
+
+# /brag working directory: the rendered video and its poster are committed under
+# docs/media, but the composition's audio assets are third-party (the music's
+# licence terms are not documented by the bundling skill) and the extracted
+# per-frame audio data and snapshot PNGs are large regenerable intermediates.
+brag-output/

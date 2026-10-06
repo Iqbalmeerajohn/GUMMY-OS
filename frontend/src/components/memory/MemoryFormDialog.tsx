@@ -124,7 +124,9 @@ export function MemoryFormDialog({
         </div>
 
         <DialogFooter>
-          <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
+          <DialogClose render={<Button variant="outline" />}>
+            Cancel
+          </DialogClose>
           <Button onClick={handleSave} disabled={!canSave}>
             {mode === "add" ? "Save memory" : "Save changes"}
           </Button>

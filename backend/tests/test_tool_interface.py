@@ -26,6 +26,7 @@ from app.models.tool_invocation import ToolInvocation
 from app.repositories import agent_run_repository as run_repo
 from app.repositories import memory_repository as mem_repo
 from app.repositories import tool_invocation_repository as audit_repo
+from app.schemas.agents import AgentManifest
 from app.services.agents.manifests import RECALL_AGENT_KEY
 from app.services.agents.tools import interface
 from app.services.agents.tools.catalog import TOOL_CATALOG
@@ -97,12 +98,66 @@ def test_tool_invocations_table_registered() -> None:
 
 
 def test_catalog_green_tools_have_executors() -> None:
+    """Every Green tool must actually run.
+
+    A Green tool with no executor is the worst combination in the catalog: the
+    gate auto-allows it, so the model is offered a capability that then reports
+    itself unavailable on every call.
+    """
     for spec in TOOL_CATALOG.values():
         if spec.tier == PermissionTier.GREEN:
             assert spec.executor is not None, spec.key
-        else:
-            # Phase 3 invariant: no non-Green executor exists at all.
-            assert spec.executor is None, spec.key
+
+
+def test_catalog_every_executable_tool_declares_an_object_schema() -> None:
+    """A runnable tool must constrain its own arguments.
+
+    ``parameters`` is both what a native tool-calling provider uses to
+    constrain decoding and what the executor validates against. A tool that
+    takes arguments but declares none accepts whatever the model invents.
+    """
+    for spec in TOOL_CATALOG.values():
+        if not spec.is_executable:
+            continue
+        assert isinstance(spec.parameters, dict), spec.key
+        assert spec.parameters.get("type") == "object", spec.key
+
+
+def test_red_tools_are_never_auto_allowed() -> None:
+    """Red is per-action approval, always — no standing allowance covers it.
+
+    This is the invariant that keeps ``shell_exec`` safe. Phase 4 made Yellow
+    and Red tools genuinely executable, so "Red cannot reach the auto-allow
+    path" now has to be asserted directly rather than inferred from the
+    absence of an executor.
+    """
+    from app.services.agents.policy_engine import PolicyDecision, evaluate
+
+    red_keys = [
+        key for key, spec in TOOL_CATALOG.items() if spec.tier is PermissionTier.RED
+    ]
+    assert red_keys, "expected at least one Red tool in the catalog"
+
+    for key in red_keys:
+        # A manifest that permits the tool and whose ceiling is high enough,
+        # so the only thing that can stop an ALLOW is the Red rule itself.
+        manifest = AgentManifest(
+            key="test-red-ceiling",
+            display_name="Test",
+            mission="exercise the Red rule",
+            ceiling=PermissionTier.RED,
+            tools=(key,),
+        )
+        verdict = evaluate(
+            manifest=manifest,
+            tool_key=key,
+            tool_tier=PermissionTier.RED,
+            # Even explicitly pre-allowed, Red must still prompt.
+            standing_allowances=frozenset({key}),
+        )
+        assert (
+            verdict.decision is not PolicyDecision.ALLOW
+        ), f"{key} was auto-allowed despite being Red"
 
 
 # ── invoke paths ──────────────────────────────────────────────────────────────
