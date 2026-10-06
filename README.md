@@ -19,7 +19,7 @@ Postgres container, one Ollama daemon, two dev servers.
 
 ## See it work
 
-https://github.com/Iqbalmeerajohn/GUMMY-OS/raw/main/docs/media/gummy-os.mp4
+https://github.com/Iqbalmeerajohn/GUMMY-OS/raw/2716be98830e40cef85c908dd99c7724280fffd7/docs/media/gummy-os.mp4
 
 [![GUMMY OS answering from a local document, with the page cited](docs/media/gummy-os-poster.jpg)](docs/media/gummy-os.mp4)
 
