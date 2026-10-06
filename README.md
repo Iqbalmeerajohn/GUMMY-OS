@@ -17,6 +17,17 @@ conversations, keeps them in a local PostgreSQL database, and uses them quietly
 **No Supabase. No Railway. No Vercel backend. No paid infrastructure.** One
 Postgres container, one Ollama daemon, two dev servers.
 
+## See it work
+
+https://github.com/Iqbalmeerajohn/GUMMY-OS/raw/main/docs/media/gummy-os.mp4
+
+[![GUMMY OS answering from a local document, with the page cited](docs/media/gummy-os-poster.jpg)](docs/media/gummy-os.mp4)
+
+24 seconds, no narration. The middle of it is the part that matters: a question
+goes in, the `file_search` tool runs against the local document index, and the
+answer comes back carrying `Resume.pdf — page 1`. Nothing in the clip is a
+mockup of a feature that does not exist.
+
 ---
 
 ## Status
