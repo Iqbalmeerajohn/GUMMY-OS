@@ -259,10 +259,16 @@ Postgres, checks the schema, starts Ollama, the backend and the frontend in
 dependency order, and opens the app:
 
 ```bash
-gummy
+.\gummy
 ```
 
-`gummy stop` · `gummy rebuild` · `gummy dev`
+`.\gummy stop` · `.\gummy rebuild` · `.\gummy dev`
+
+The `.\` is not optional. PowerShell never searches the current directory for
+commands, and Command Prompt stops doing so when
+`NoDefaultCurrentDirectoryInExePath` is set — which it is on some Windows
+installs. Without the prefix the shell reports `'gummy' is not recognized`,
+which reads like a missing file rather than a lookup rule.
 
 Everything else — including macOS and Linux — is below.
 
